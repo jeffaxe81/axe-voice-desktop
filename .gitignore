@@ -1,0 +1,46 @@
+# Build outputs
+build/*
+!build/README.md
+
+# Visual Studio / MSVC
+.vs/
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+Debug/
+Release/
+x64/
+x86/
+
+# C/C++ intermediate files
+*.obj
+*.pch
+*.pdb
+*.ilk
+*.idb
+*.ipch
+*.tlog
+*.lastbuildstate
+
+# Packages / temp
+*.zip
+*.7z
+*.tmp
+*.log
+
+# Local secrets / environment
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12
+secrets/
+credentials/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
