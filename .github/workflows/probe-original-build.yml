@@ -66,6 +66,7 @@ jobs:
 
       - name: Install MSVC v140 toolset
         id: install_v140
+        continue-on-error: true
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -75,14 +76,19 @@ jobs:
           $args = @(
             "modify",
             "--installPath", "$env:VS_PATH",
+            "--channelId", "VisualStudio.17.Release",
+            "--productId", "Microsoft.VisualStudio.Product.Enterprise",
             "--add", "Microsoft.VisualStudio.Component.VC.140",
-            "--quiet",
-            "--norestart",
-            "--nocache"
+            "--passive",
+            "--norestart"
           )
 
           Write-Host "Installing Microsoft.VisualStudio.Component.VC.140..."
           $process = Start-Process -FilePath $setup -ArgumentList $args -Wait -PassThru
+          "V140_INSTALL_EXIT_CODE=$($process.ExitCode)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Add-Content build-environment.txt ""
+          Add-Content build-environment.txt "VC.140 installer exit code: $($process.ExitCode)"
+
           if ($process.ExitCode -notin @(0, 3010)) {
             throw "Visual Studio Installer failed with exit code $($process.ExitCode)"
           }
