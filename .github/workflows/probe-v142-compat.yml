@@ -35,6 +35,43 @@ jobs:
 
           "MSVC v142 directory: $($v142.FullName)" | Set-Content v142-environment.txt -Encoding utf8
 
+      - name: Install MFC for v142
+        id: install_mfc_v142
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $setup = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
+          if (-not (Test-Path $setup)) { throw "Visual Studio Installer setup.exe not found" }
+
+          $args = @(
+            "modify",
+            "--installPath", "$env:VS_PATH",
+            "--channelId", "VisualStudio.17.Release",
+            "--productId", "Microsoft.VisualStudio.Product.Enterprise",
+            "--add", "Microsoft.VisualStudio.Component.VC.14.29.16.11.MFC",
+            "--passive",
+            "--norestart"
+          )
+
+          $p = Start-Process -FilePath $setup -ArgumentList $args -Wait -PassThru
+          if ($p.ExitCode -notin @(0,3010)) {
+            throw "MFC v142 installation failed with exit code $($p.ExitCode)"
+          }
+
+          $mfcRoot = Join-Path $env:VS_PATH "VC\Tools\MSVC\14.29.30133\atlmfc"
+          if (-not (Test-Path $mfcRoot)) {
+            $mfcRoot = Get-ChildItem "$env:VS_PATH\VC\Tools\MSVC" -Directory -ErrorAction Stop |
+              Where-Object { $_.Name -like "14.29*" } |
+              ForEach-Object { Join-Path $_.FullName "atlmfc" } |
+              Where-Object { Test-Path $_ } |
+              Select-Object -First 1
+          }
+          if (-not $mfcRoot -or -not (Test-Path $mfcRoot)) {
+            throw "MFC directory not found after component installation"
+          }
+
+          "MFC v142 root: $mfcRoot" | Add-Content v142-environment.txt
+
       - name: Clone official PJSIP 2.15.1
         shell: pwsh
         run: |
@@ -91,44 +128,56 @@ jobs:
         if: always()
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
+
           function Tail([string]$path) {
-            if (Test-Path $path) { return ((Get-Content $path -Tail 120) -join [Environment]::NewLine) }
+            if (Test-Path $path) {
+              return ((Get-Content $path -Tail 120) -join [Environment]::NewLine)
+            }
             return "Log not created."
+          }
+
+          function Indent([string]$text) {
+            return (($text -split "\r?\n") | ForEach-Object { "    $_" }) -join [Environment]::NewLine
           }
 
           $pCode = if ($env:PJSIP_V142_EXIT) { $env:PJSIP_V142_EXIT } else { "not-run" }
           $mCode = if ($env:MICROSIP_V142_EXIT) { $env:MICROSIP_V142_EXIT } else { "not-run" }
           $exeFound = if ($env:MICROSIP_EXE_FOUND) { $env:MICROSIP_EXE_FOUND } else { "no" }
-          $pTail = Tail "pjsip-v142-release-x64.log"
-          $mTail = Tail "microsip-v142-release-x64.log"
+          $pTail = Indent (Tail "pjsip-v142-release-x64.log")
+          $mTail = Indent (Tail "microsip-v142-release-x64.log")
 
           New-Item -ItemType Directory -Force docs/build/probes | Out-Null
-          @"
-          # Compatibility Probe — v142 / Release x64
 
-          ## Rule
+          $lines = @(
+            "# Compatibility Probe — v142 / Release x64",
+            "",
+            "## Rule",
+            "",
+            "No MicroSIP or PJSIP project source file was edited. Toolset v142 was supplied only as an MSBuild command-line override.",
+            "",
+            "## Result",
+            "",
+            "- MicroSIP baseline: 3.22.16.0",
+            "- PJSIP candidate: 2.15.1",
+            "- Toolset override: v142",
+            "- MFC component: Microsoft.VisualStudio.Component.VC.14.29.16.11.MFC",
+            "- Configuration: Release",
+            "- Platform: x64",
+            "- PJSIP exit code: $pCode",
+            "- MicroSIP exit code: $mCode",
+            "- MicroSIP.exe found: $exeFound",
+            "",
+            "## PJSIP log tail",
+            "",
+            $pTail,
+            "",
+            "## MicroSIP log tail",
+            "",
+            $mTail
+          )
 
-          No MicroSIP or PJSIP project source file was edited. Toolset v142 was supplied only as an MSBuild command-line override.
-
-          ## Result
-
-          - MicroSIP baseline: 3.22.16.0
-          - PJSIP candidate: 2.15.1
-          - Toolset override: v142
-          - Configuration: Release
-          - Platform: x64
-          - PJSIP exit code: $pCode
-          - MicroSIP exit code: $mCode
-          - MicroSIP.exe found: $exeFound
-
-          ## PJSIP log tail
-
-              $($pTail -replace [Environment]::NewLine, [Environment]::NewLine + "    ")
-
-          ## MicroSIP log tail
-
-              $($mTail -replace [Environment]::NewLine, [Environment]::NewLine + "    ")
-          "@ | Set-Content "docs/build/probes/V142_RELEASE_X64.md" -Encoding utf8
+          $lines -join [Environment]::NewLine | Set-Content "docs/build/probes/V142_RELEASE_X64.md" -Encoding utf8
 
       - name: Upload logs and executable if present
         if: always()
@@ -149,6 +198,10 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if (-not (Test-Path "docs/build/probes/V142_RELEASE_X64.md")) {
+            Write-Host "Report was not generated; nothing to commit."
+            exit 0
+          }
           git add docs/build/probes/V142_RELEASE_X64.md
           if (git diff --cached --quiet) { exit 0 }
           git commit -m "docs: record v142 compatibility build probe [skip ci]"
