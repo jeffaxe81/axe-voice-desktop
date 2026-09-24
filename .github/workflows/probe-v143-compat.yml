@@ -120,35 +120,35 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          if (-not $vsPath) { throw "Visual Studio C++ tools not found" }
-
-          $devCmd = Join-Path $vsPath "Common7\Tools\VsDevCmd.bat"
-          if (-not (Test-Path $devCmd)) { throw "VsDevCmd.bat not found" }
-
-          $work = (Resolve-Path ".").Path
-          $tmp = Join-Path $work ".probe/chkstk"
+          $tmp = ".probe/chkstk"
           New-Item -ItemType Directory -Force $tmp | Out-Null
 
-          @"
-          extern "C" void axe_chkstk_ms_placeholder(void) {}
-          "@ | Set-Content "$tmp/chkstk_placeholder.cpp" -Encoding ascii
+          'extern "C" void axe_chkstk_ms_placeholder(void) {}' |
+            Set-Content "$tmp/placeholder.cpp" -Encoding ascii
 
-          $cmd = @"
-          call "$devCmd" -arch=x64 -host_arch=x64
-          cl /nologo /c /O2 /MT "$tmp\chkstk_placeholder.cpp" /Fo"$tmp\chkstk_placeholder.obj"
-          lib /nologo /OUT:"$tmp\chkstk_ms.lib" "$tmp\chkstk_placeholder.obj"
-          "@
+          @'
+          cmake_minimum_required(VERSION 3.20)
+          project(chkstk_ms_stub LANGUAGES CXX)
+          add_library(chkstk_ms STATIC placeholder.cpp)
+          set_target_properties(chkstk_ms PROPERTIES OUTPUT_NAME chkstk_ms)
+          set_property(TARGET chkstk_ms PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+          '@ | Set-Content "$tmp/CMakeLists.txt" -Encoding ascii
 
-          cmd.exe /d /s /c $cmd
-          if ($LASTEXITCODE -ne 0) { throw "Failed to create chkstk_ms.lib placeholder" }
+          cmake -S $tmp -B "$tmp/build" -G "Visual Studio 17 2022" -A x64 -T v143
+          if ($LASTEXITCODE -ne 0) { throw "Failed to configure chkstk_ms compatibility library" }
+
+          cmake --build "$tmp/build" --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { throw "Failed to build chkstk_ms compatibility library" }
+
+          $lib = Get-ChildItem "$tmp/build" -Recurse -Filter "chkstk_ms.lib" |
+            Select-Object -First 1
+          if (-not $lib) { throw "chkstk_ms.lib was not produced" }
 
           $libDir = ".probe/pjproject/lib"
           New-Item -ItemType Directory -Force $libDir | Out-Null
-          Copy-Item "$tmp/chkstk_ms.lib" "$libDir/chkstk_ms.lib" -Force
+          Copy-Item $lib.FullName "$libDir/chkstk_ms.lib" -Force
 
-          "chkstk_ms.lib staged as MSVC-built compatibility placeholder" | Add-Content v143-environment.txt
+          "chkstk_ms.lib staged from: $($lib.FullName)" | Add-Content v143-environment.txt
 
       - name: Build MicroSIP with v143 override
         id: microsip
