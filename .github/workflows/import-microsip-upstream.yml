@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install 7zip
         run: |
@@ -87,3 +89,17 @@ jobs:
           fi
           git commit -m "chore: import MicroSIP 3.22.16.0 upstream [skip ci]"
           git push
+
+      - name: Ensure immutable upstream tag
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          IMPORT_COMMIT="$(git log --all --grep='^chore: import MicroSIP 3.22.16.0 upstream' -n 1 --format=%H)"
+          test -n "$IMPORT_COMMIT"
+          TAG="upstream-microsip-3.22.16.0"
+          if git show-ref --tags --verify --quiet "refs/tags/$TAG"; then
+            echo "Tag $TAG already exists."
+          else
+            git tag "$TAG" "$IMPORT_COMMIT"
+            git push origin "$TAG"
+          fi
