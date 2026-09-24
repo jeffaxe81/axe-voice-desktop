@@ -72,6 +72,49 @@ jobs:
           "PJSIP_V143_EXIT=$code" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           if ($code -ne 0) { exit $code }
 
+      - name: Build and stage SQLiteCpp 3.3.3
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          git clone --depth 1 --branch 3.3.3 https://github.com/SRombauts/SQLiteCpp.git .probe/SQLiteCpp
+
+          cmake -S .probe/SQLiteCpp -B .probe/sqlitecpp-build `
+            -G "Visual Studio 17 2022" `
+            -A x64 `
+            -T v143 `
+            -DBUILD_SHARED_LIBS=OFF `
+            -DSQLITECPP_BUILD_TESTS=OFF `
+            -DSQLITECPP_USE_STATIC_RUNTIME=ON `
+            -DSQLITECPP_RUN_CPPLINT=OFF `
+            -DSQLITECPP_RUN_CPPCHECK=OFF
+
+          cmake --build .probe/sqlitecpp-build --config Release --parallel
+
+          $dest = ".probe/pjproject/third_party/SQLiteCpp"
+          New-Item -ItemType Directory -Force "$dest/SQLiteCpp" | Out-Null
+          New-Item -ItemType Directory -Force "$dest/x64/Release" | Out-Null
+
+          Copy-Item ".probe/SQLiteCpp/include/SQLiteCpp/*" "$dest/SQLiteCpp/" -Recurse -Force
+
+          $sqliteCppLib = Get-ChildItem ".probe/sqlitecpp-build" -Recurse -Filter "SQLiteCpp.lib" |
+            Select-Object -First 1
+          $sqlite3Lib = Get-ChildItem ".probe/sqlitecpp-build" -Recurse -Filter "sqlite3.lib" |
+            Select-Object -First 1
+
+          if (-not $sqliteCppLib) { throw "SQLiteCpp.lib not produced" }
+          if (-not $sqlite3Lib) { throw "sqlite3.lib not produced" }
+
+          Copy-Item $sqliteCppLib.FullName "$dest/x64/Release/SQLiteCpp.lib" -Force
+          Copy-Item $sqlite3Lib.FullName "$dest/x64/Release/sqlite3.lib" -Force
+
+          @(
+            "SQLiteCpp tag: 3.3.3",
+            "SQLiteCpp lib: $($sqliteCppLib.FullName)",
+            "sqlite3 lib: $($sqlite3Lib.FullName)",
+            "Staged at: $dest"
+          ) | Add-Content v143-environment.txt
+
       - name: Build MicroSIP with v143 override
         id: microsip
         continue-on-error: true
