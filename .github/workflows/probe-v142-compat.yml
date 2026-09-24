@@ -1,0 +1,155 @@
+name: Probe compatible v142 build
+
+on:
+  push:
+    branches:
+      - build/reproduce-upstream
+    paths:
+      - .github/workflows/probe-v142-compat.yml
+
+permissions:
+  contents: write
+
+jobs:
+  probe-v142-release-x64:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Locate MSBuild
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
+          $msbuild = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
+          if (-not $msbuild) { throw "MSBuild not found" }
+          "VS_PATH=$vsPath" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "MSBUILD_PATH=$msbuild" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+
+          $v142 = Get-ChildItem "$vsPath\VC\Tools\MSVC" -Directory -ErrorAction Stop |
+            Where-Object { $_.Name -like "14.29*" } |
+            Select-Object -First 1
+          if (-not $v142) { throw "MSVC 14.29/v142 not found" }
+
+          "MSVC v142 directory: $($v142.FullName)" | Set-Content v142-environment.txt -Encoding utf8
+
+      - name: Clone official PJSIP 2.15.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force .probe | Out-Null
+          git clone --depth 1 --branch 2.15.1 https://github.com/pjsip/pjproject.git .probe/pjproject
+          New-Item -ItemType File -Path ".probe/pjproject/pjlib/include/pj/config_site.h" -Force | Out-Null
+
+      - name: Copy immutable MicroSIP source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Copy-Item -Recurse -Force "upstream/microsip-3.22.16.0/MicroSIP-3.22.16-src" ".probe/pjproject/MicroSIP-3.22.16-src"
+
+      - name: Build PJSIP with v142 override
+        id: pjsip
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+          & "$env:MSBUILD_PATH" ".probe/pjproject/pjproject-vs14.sln" /m /p:Configuration=Release /p:Platform=x64 /p:BuildToolset=v142 /p:PlatformToolset=v142 /v:minimal 2>&1 |
+            Tee-Object pjsip-v142-release-x64.log
+          $code = $LASTEXITCODE
+          "PJSIP_V142_EXIT=$code" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          if ($code -ne 0) { exit $code }
+
+      - name: Build MicroSIP with v142 override
+        id: microsip
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+          & "$env:MSBUILD_PATH" ".probe/pjproject/MicroSIP-3.22.16-src/microsip.vcxproj" /m /p:Configuration=Release /p:Platform=x64 /p:BuildToolset=v142 /p:PlatformToolset=v142 /v:minimal 2>&1 |
+            Tee-Object microsip-v142-release-x64.log
+          $code = $LASTEXITCODE
+          "MICROSIP_V142_EXIT=$code" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          if ($code -ne 0) { exit $code }
+
+      - name: Locate executable
+        if: always()
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem ".probe/pjproject" -Recurse -Filter "MicroSIP.exe" -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if ($exe) {
+            "MICROSIP_EXE=$($exe.FullName)" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+            "MICROSIP_EXE_FOUND=yes" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+            Write-Host "MicroSIP executable found: $($exe.FullName)"
+          } else {
+            "MICROSIP_EXE_FOUND=no" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+
+      - name: Generate compatibility report
+        if: always()
+        shell: pwsh
+        run: |
+          function Tail([string]$path) {
+            if (Test-Path $path) { return ((Get-Content $path -Tail 120) -join [Environment]::NewLine) }
+            return "Log not created."
+          }
+
+          $pCode = if ($env:PJSIP_V142_EXIT) { $env:PJSIP_V142_EXIT } else { "not-run" }
+          $mCode = if ($env:MICROSIP_V142_EXIT) { $env:MICROSIP_V142_EXIT } else { "not-run" }
+          $exeFound = if ($env:MICROSIP_EXE_FOUND) { $env:MICROSIP_EXE_FOUND } else { "no" }
+          $pTail = Tail "pjsip-v142-release-x64.log"
+          $mTail = Tail "microsip-v142-release-x64.log"
+
+          New-Item -ItemType Directory -Force docs/build/probes | Out-Null
+          @"
+          # Compatibility Probe — v142 / Release x64
+
+          ## Rule
+
+          No MicroSIP or PJSIP project source file was edited. Toolset v142 was supplied only as an MSBuild command-line override.
+
+          ## Result
+
+          - MicroSIP baseline: 3.22.16.0
+          - PJSIP candidate: 2.15.1
+          - Toolset override: v142
+          - Configuration: Release
+          - Platform: x64
+          - PJSIP exit code: $pCode
+          - MicroSIP exit code: $mCode
+          - MicroSIP.exe found: $exeFound
+
+          ## PJSIP log tail
+
+              $($pTail -replace [Environment]::NewLine, [Environment]::NewLine + "    ")
+
+          ## MicroSIP log tail
+
+              $($mTail -replace [Environment]::NewLine, [Environment]::NewLine + "    ")
+          "@ | Set-Content "docs/build/probes/V142_RELEASE_X64.md" -Encoding utf8
+
+      - name: Upload logs and executable if present
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: microsip-v142-compat-probe
+          if-no-files-found: warn
+          path: |
+            v142-environment.txt
+            pjsip-v142-release-x64.log
+            microsip-v142-release-x64.log
+            docs/build/probes/V142_RELEASE_X64.md
+            .probe/pjproject/**/MicroSIP.exe
+
+      - name: Commit report
+        if: always()
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/build/probes/V142_RELEASE_X64.md
+          if (git diff --cached --quiet) { exit 0 }
+          git commit -m "docs: record v142 compatibility build probe [skip ci]"
+          git push
