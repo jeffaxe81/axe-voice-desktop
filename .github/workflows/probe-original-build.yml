@@ -1,0 +1,216 @@
+name: Probe original MicroSIP build
+
+on:
+  push:
+    branches:
+      - build/reproduce-upstream
+    paths:
+      - .github/workflows/probe-original-build.yml
+
+permissions:
+  contents: write
+
+jobs:
+  probe-release-x64:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Inspect Windows build environment
+        id: env
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) { throw "vswhere not found" }
+
+          $vsPath = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
+          $msbuild = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
+          if (-not $msbuild) { throw "MSBuild not found" }
+
+          "VS_PATH=$vsPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "MSBUILD_PATH=$msbuild" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          $sdkRoot = "${env:ProgramFiles(x86)}\Windows Kits\10\Include"
+          $sdks = if (Test-Path $sdkRoot) {
+            (Get-ChildItem $sdkRoot -Directory | Select-Object -ExpandProperty Name) -join ", "
+          } else { "none" }
+
+          $toolRoot = Join-Path $vsPath "VC\Tools\MSVC"
+          $toolsets = if (Test-Path $toolRoot) {
+            (Get-ChildItem $toolRoot -Directory | Select-Object -ExpandProperty Name) -join ", "
+          } else { "none" }
+
+          $v140Candidates = @(
+            (Join-Path $vsPath "VC\Tools\MSVC"),
+            (Join-Path $vsPath "VC\Auxiliary\Build")
+          )
+          $v140Hits = @()
+          foreach ($candidate in $v140Candidates) {
+            if (Test-Path $candidate) {
+              $v140Hits += Get-ChildItem $candidate -Recurse -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -match "v140|14\.0" } |
+                Select-Object -First 20 -ExpandProperty FullName
+            }
+          }
+          $hasV140 = if ($v140Hits.Count -gt 0) { "yes" } else { "no" }
+
+          @"
+          VS installation: $vsPath
+          MSBuild: $msbuild
+          Windows 10 SDK include versions: $sdks
+          Installed MSVC versions: $toolsets
+          v140 indicators found: $hasV140
+          "@ | Set-Content build-environment.txt -Encoding utf8
+
+      - name: Clone official PJSIP 2.15.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force .probe | Out-Null
+          git clone --depth 1 --branch 2.15.1 https://github.com/pjsip/pjproject.git .probe/pjproject
+          $version = Get-Content .probe/pjproject/version.mak -Raw
+          if ($version -notmatch "PJ_VERSION_MAJOR\s*:=\s*2" -or
+              $version -notmatch "PJ_VERSION_MINOR\s*:=\s*15" -or
+              $version -notmatch "PJ_VERSION_REV\s*:=\s*1") {
+            throw "Unexpected PJSIP version"
+          }
+
+      - name: Prepare original source workspace
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $configSite = ".probe/pjproject/pjlib/include/pj/config_site.h"
+          if (-not (Test-Path $configSite)) {
+            New-Item -ItemType File -Path $configSite -Force | Out-Null
+          }
+
+          $microSrc = "upstream/microsip-3.22.16.0/MicroSIP-3.22.16-src"
+          if (-not (Test-Path $microSrc)) { throw "Official MicroSIP baseline not found" }
+
+          Copy-Item -Recurse -Force $microSrc ".probe/pjproject/MicroSIP-3.22.16-src"
+
+          $const = Get-Content ".probe/pjproject/MicroSIP-3.22.16-src/const.h" -Raw
+          if ($const -notmatch '_GLOBAL_VERSION "3\.22\.16"') {
+            throw "MicroSIP version validation failed"
+          }
+
+      - name: Probe PJSIP Release x64 build
+        id: pjsip_build
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+          $log = "pjsip-release-x64.log"
+          & "$env:MSBUILD_PATH" ".probe/pjproject/pjproject-vs14.sln" /m /p:Configuration=Release /p:Platform=x64 /v:minimal 2>&1 |
+            Tee-Object -FilePath $log
+          $exitCode = $LASTEXITCODE
+          "PJSIP_EXIT_CODE=$exitCode" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          if ($exitCode -ne 0) { exit $exitCode }
+
+      - name: Probe MicroSIP Release x64 build
+        id: microsip_build
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+          $log = "microsip-release-x64.log"
+          & "$env:MSBUILD_PATH" ".probe/pjproject/MicroSIP-3.22.16-src/microsip.vcxproj" /m /p:Configuration=Release /p:Platform=x64 /v:minimal 2>&1 |
+            Tee-Object -FilePath $log
+          $exitCode = $LASTEXITCODE
+          "MICROSIP_EXIT_CODE=$exitCode" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          if ($exitCode -ne 0) { exit $exitCode }
+
+      - name: Generate diagnostic report
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+          $pjsipCode = if ($env:PJSIP_EXIT_CODE) { $env:PJSIP_EXIT_CODE } else { "not-run" }
+          $microCode = if ($env:MICROSIP_EXIT_CODE) { $env:MICROSIP_EXIT_CODE } else { "not-run" }
+
+          $envText = if (Test-Path "build-environment.txt") {
+            Get-Content "build-environment.txt" -Raw
+          } else { "Environment probe unavailable." }
+
+          function Get-Tail([string]$path) {
+            if (Test-Path $path) {
+              return ((Get-Content $path -Tail 80) -join "`n")
+            }
+            return "Log not created."
+          }
+
+          $pjsipTail = Get-Tail "pjsip-release-x64.log"
+          $microTail = Get-Tail "microsip-release-x64.log"
+
+          New-Item -ItemType Directory -Force docs/build/probes | Out-Null
+          $report = @"
+          # Original Build Probe — Windows 2022 / Release x64
+
+          ## Scope
+
+          This probe intentionally uses the official MicroSIP 3.22.16.0 baseline without branding or functional patches.
+
+          - Runner: windows-2022
+          - MicroSIP: 3.22.16.0
+          - PJSIP candidate: 2.15.1
+          - Configuration: Release
+          - Platform: x64
+
+          ## Environment
+
+          ```text
+          $envText
+          ```
+
+          ## Result
+
+          - PJSIP MSBuild exit code: `$pjsipCode`
+          - MicroSIP MSBuild exit code: `$microCode`
+
+          ## PJSIP log tail
+
+          ```text
+          $pjsipTail
+          ```
+
+          ## MicroSIP log tail
+
+          ```text
+          $microTail
+          ```
+
+          ## Interpretation
+
+          This file is generated by GitHub Actions. A failed build is considered a valid diagnostic result for this probe; no source patch is applied automatically.
+          "@
+
+          $report | Set-Content "docs/build/probes/WINDOWS_2022_RELEASE_X64.md" -Encoding utf8
+
+      - name: Upload diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: microsip-original-build-probe
+          if-no-files-found: warn
+          path: |
+            build-environment.txt
+            pjsip-release-x64.log
+            microsip-release-x64.log
+            docs/build/probes/WINDOWS_2022_RELEASE_X64.md
+
+      - name: Commit diagnostic report
+        if: always()
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/build/probes/WINDOWS_2022_RELEASE_X64.md
+          if (git diff --cached --quiet) {
+            Write-Host "No report changes to commit."
+            exit 0
+          }
+          git commit -m "docs: record original Release x64 build probe [skip ci]"
+          git push
