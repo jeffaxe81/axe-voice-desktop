@@ -11,15 +11,22 @@
 ## P1.2 — Baseline MicroSIP
 - [x] Identificar versão oficial
 - [x] Registrar origem, versão e data
-- [ ] Completar inventário de licenças e dependências
-- [ ] Obter archive oficial e registrar SHA-256
-- [ ] Importar source
+- [x] Inventariar licenças iniciais
+- [x] Obter archive oficial e registrar SHA-256
+- [x] Importar source sem customização
+- [x] Registrar manifesto de arquivos
+- [x] Inventariar dependências iniciais
 - [ ] Criar tag upstream
 
-Baseline selecionada: **MicroSIP 3.22.16.0**.
+Baseline: **MicroSIP 3.22.16.0**  
+SHA-256: `9c1ff942ae1ae56bdfcdd04c3d6e242a056d7f0dd50bb19f6e13226e7c819b83`
 
 ## P1.3 — Build original
-- [ ] Documentar toolchain
+- [x] Identificar estrutura esperada do PJSIP
+- [x] Identificar plataformas/configurações do projeto
+- [x] Definir primeiro alvo: Release x64
+- [ ] Fixar baseline PJSIP/build dependencies
+- [ ] Criar workspace de build reproduzível
 - [ ] Reproduzir dependências
 - [ ] Compilar sem alterações
 - [ ] Executar
@@ -27,6 +34,7 @@ Baseline selecionada: **MicroSIP 3.22.16.0**.
 - [ ] Testar chamada originada/recebida
 
 ## P1.4 — White label
+- [ ] Criar working tree derivada da baseline
 - [ ] Nome
 - [ ] Ícones
 - [ ] Branding

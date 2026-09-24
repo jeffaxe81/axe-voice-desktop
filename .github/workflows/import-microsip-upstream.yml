@@ -1,0 +1,111 @@
+name: Import official MicroSIP upstream
+
+on:
+  push:
+    branches:
+      - automation/upstream-import
+    paths:
+      - .github/workflows/import-microsip-upstream.yml
+
+permissions:
+  contents: write
+
+jobs:
+  import-upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install 7zip
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full
+
+      - name: Download official MicroSIP source archive
+        run: |
+          set -euo pipefail
+          mkdir -p .tmp/microsip
+          curl --fail --location --retry 3 \
+            --user-agent "AXE-Voice-Desktop-Upstream-Importer/1.0" \
+            "https://www.microsip.org/download/MicroSIP-3.22.16-src.7z" \
+            --output .tmp/microsip/MicroSIP-3.22.16-src.7z
+
+      - name: Calculate SHA-256
+        run: |
+          set -euo pipefail
+          sha256sum .tmp/microsip/MicroSIP-3.22.16-src.7z | tee .tmp/microsip/SHA256SUMS.txt
+
+      - name: Extract archive
+        run: |
+          set -euo pipefail
+          mkdir -p .tmp/microsip/extracted
+          7z x .tmp/microsip/MicroSIP-3.22.16-src.7z -o.tmp/microsip/extracted -y
+          test -n "$(find .tmp/microsip/extracted -type f -print -quit)"
+
+      - name: Import immutable upstream tree
+        run: |
+          set -euo pipefail
+          rm -rf upstream/microsip-3.22.16.0
+          mkdir -p upstream/microsip-3.22.16.0
+          cp -a .tmp/microsip/extracted/. upstream/microsip-3.22.16.0/
+
+      - name: Record provenance and manifest
+        run: |
+          set -euo pipefail
+          HASH="$(cut -d ' ' -f1 .tmp/microsip/SHA256SUMS.txt)"
+          PROVENANCE="docs/upstream/MICROSIP_3.22.16.0_PROVENANCE.md"
+          mkdir -p docs/upstream
+
+          if [ -f "$PROVENANCE" ] && grep -Fq "$HASH" "$PROVENANCE"; then
+            echo "Existing provenance already records SHA-256 $HASH; preserving original import timestamp."
+          else
+            cat > "$PROVENANCE" <<EOF
+          # MicroSIP 3.22.16.0 — Provenance
+
+          - Official source page: https://www.microsip.org/source
+          - Official archive: https://www.microsip.org/download/MicroSIP-3.22.16-src.7z
+          - Archive filename: MicroSIP-3.22.16-src.7z
+          - SHA-256: `$HASH`
+          - Imported by: GitHub Actions
+          - Imported at: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          The archive itself is not committed. The extracted source tree is stored under:
+          `upstream/microsip-3.22.16.0/`
+
+          No custom branding or functional changes are applied in this import commit.
+          EOF
+          fi
+
+          find upstream/microsip-3.22.16.0 -type f -printf '%P\t%s bytes\n' \
+            | LC_ALL=C sort \
+            > docs/upstream/MICROSIP_3.22.16.0_MANIFEST.txt
+
+      - name: Commit imported baseline
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add upstream/microsip-3.22.16.0 docs/upstream/MICROSIP_3.22.16.0_PROVENANCE.md docs/upstream/MICROSIP_3.22.16.0_MANIFEST.txt
+          if git diff --cached --quiet; then
+            echo "No upstream changes to commit."
+            exit 0
+          fi
+          git commit -m "chore: import MicroSIP 3.22.16.0 upstream [skip ci]"
+          git push
+
+      - name: Ensure immutable upstream tag
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          IMPORT_COMMIT="$(git log --all --grep='^chore: import MicroSIP 3.22.16.0 upstream' -n 1 --format=%H)"
+          test -n "$IMPORT_COMMIT"
+          TAG="upstream-microsip-3.22.16.0"
+          if git show-ref --tags --verify --quiet "refs/tags/$TAG"; then
+            echo "Tag $TAG already exists."
+          else
+            git tag "$TAG" "$IMPORT_COMMIT"
+            git push origin "$TAG"
+          fi
