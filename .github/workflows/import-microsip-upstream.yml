@@ -56,22 +56,28 @@ jobs:
         run: |
           set -euo pipefail
           HASH="$(cut -d ' ' -f1 .tmp/microsip/SHA256SUMS.txt)"
+          PROVENANCE="docs/upstream/MICROSIP_3.22.16.0_PROVENANCE.md"
           mkdir -p docs/upstream
-          cat > docs/upstream/MICROSIP_3.22.16.0_PROVENANCE.md <<EOF
+
+          if [ -f "$PROVENANCE" ] && grep -Fq "$HASH" "$PROVENANCE"; then
+            echo "Existing provenance already records SHA-256 $HASH; preserving original import timestamp."
+          else
+            cat > "$PROVENANCE" <<EOF
           # MicroSIP 3.22.16.0 — Provenance
 
           - Official source page: https://www.microsip.org/source
           - Official archive: https://www.microsip.org/download/MicroSIP-3.22.16-src.7z
           - Archive filename: MicroSIP-3.22.16-src.7z
-          - SHA-256: \`$HASH\`
+          - SHA-256: `$HASH`
           - Imported by: GitHub Actions
           - Imported at: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
           The archive itself is not committed. The extracted source tree is stored under:
-          \`upstream/microsip-3.22.16.0/\`
+          `upstream/microsip-3.22.16.0/`
 
           No custom branding or functional changes are applied in this import commit.
           EOF
+          fi
 
           find upstream/microsip-3.22.16.0 -type f -printf '%P\t%s bytes\n' \
             | LC_ALL=C sort \
