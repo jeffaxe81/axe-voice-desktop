@@ -4,16 +4,19 @@
 - [x] Criar repositório GitHub
 - [x] Criar README inicial
 - [x] Criar branch develop
-- [ ] Completar documentação-base
-- [ ] Validar estrutura
-- [ ] Consolidar checkpoint
+- [x] Completar documentação-base
+- [x] Validar estrutura
+- [x] Consolidar checkpoint
 
 ## P1.2 — Baseline MicroSIP
-- [ ] Identificar versão oficial
-- [ ] Registrar origem, versão e data
-- [ ] Inventariar licenças
+- [x] Identificar versão oficial
+- [x] Registrar origem, versão e data
+- [ ] Completar inventário de licenças e dependências
+- [ ] Obter archive oficial e registrar SHA-256
 - [ ] Importar source
 - [ ] Criar tag upstream
+
+Baseline selecionada: **MicroSIP 3.22.16.0**.
 
 ## P1.3 — Build original
 - [ ] Documentar toolchain
