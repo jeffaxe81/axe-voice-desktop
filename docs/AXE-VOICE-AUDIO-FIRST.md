@@ -31,3 +31,11 @@ O AXE Voice utiliza código novo da Axesistemas e um motor externo **Baresip/lib
 - **Multiplataforma:** Web via solução própria compatível com browser e mobile com Flutter como candidata de UI.
 
 **Situação:** a v0.5.0 permanece uma *prévia de desenvolvimento*, não está pronta para produção nem comercialização. Não há executável Windows homologado nesta etapa.
+
+## Incremento privado v0.6.0 — 17/10/2026
+
+A prévia proprietária de áudio evoluiu após este PR documental (sem incorporar MicroSIP nem publicar código privado): parser JSON robusto e estrito, CLI com validação estruturada dos tokens, correlação de chamadas por ID, expiração de comandos pendentes em 6 segundos, regras de comando por estado SIP, UI Mini reduzida a 352×395 px, prevenção de segunda instância e workflow de build Windows para **repositório privado**.
+
+**Evidência do ambiente de desenvolvimento:** 6/6 suítes aprovadas em Linux Release e também sob AddressSanitizer/UndefinedBehaviorSanitizer, incluindo testes mock de protocolo. **Não houve compilação/execução GUI em Windows ou telefonia RTP real.** O pacote de código v0.6.0 deve permanecer privado, separado deste repositório público com a baseline GPL MicroSIP.
+
+**Próximos critérios de aceite:** compilação Windows x64, Baresip/libre empacotados e revisados, IPC autenticado, credenciais seguras, testes SIP/RTP e instalação assinada. Chat e vídeo permanecem fora da primeira entrega.
