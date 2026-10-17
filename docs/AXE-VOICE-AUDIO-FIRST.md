@@ -39,3 +39,9 @@ A prévia proprietária de áudio evoluiu após este PR documental (sem incorpor
 **Evidência do ambiente de desenvolvimento:** 6/6 suítes aprovadas em Linux Release e também sob AddressSanitizer/UndefinedBehaviorSanitizer, incluindo testes mock de protocolo. **Não houve compilação/execução GUI em Windows ou telefonia RTP real.** O pacote de código v0.6.0 deve permanecer privado, separado deste repositório público com a baseline GPL MicroSIP.
 
 **Próximos critérios de aceite:** compilação Windows x64, Baresip/libre empacotados e revisados, IPC autenticado, credenciais seguras, testes SIP/RTP e instalação assinada. Chat e vídeo permanecem fora da primeira entrega.
+
+## Checkpoint v0.7.0 — segurança de estado (17/10/2026)
+
+O pacote **privado** de desenvolvimento v0.7.0 evoluiu a interface e a lógica de áudio sem levar código proprietário a este repositório histórico. Melhorias: eventos `class=call` exigem ID correlacionado, transições duplicadas são ignoradas, cronômetro da chamada baseado em relógio monotônico, contador em memória de chamadas recebidas não atendidas (excluindo rejeições locais), e comandos conflitantes ficam bloqueados durante confirmação. Inclui pré-check read-only para detectar `ctrl_tcp` exposto fora de `127.0.0.1`.
+
+**Testes:** 8/8 suítes em Linux Release, 8/8 sob sanitizadores ASan/UBSan. São testes sintéticos de protocolo e máquina de estados, **não homologação Windows/SIP/RTP real**. A versão Windows, o motor externo Baresip e o canal IPC autenticado continuam pendências impeditivas de comercialização. **Vídeo e chat não fazem parte da entrega inicial.**
