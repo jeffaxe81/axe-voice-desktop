@@ -51,3 +51,9 @@ O pacote **privado** de desenvolvimento v0.7.0 evoluiu a interface e a lógica d
 Entrega apenas de **código-fonte do audio desktop**: proteção contra discagem/atendimento/encerramento duplicados enquanto o motor SIP não confirma a transição; validação estrita de destino SIP com domínio e porta; preferência de modo Mini e janela sobreposta persistida no Registro HKCU (código Win32); filtragem de eventos de registro pela classe UA. Acrescentado script de validação laboratorial Windows, sem iniciar chamadas automaticamente.
 
 **Evidências obtidas somente em Linux:** 10/10 suítes no CMake Release e 10/10 no clang++ com AddressSanitizer/UndefinedBehaviorSanitizer. O mock valida JSON/netstring, não SIP/RTP. **Não houve compilação Windows nem chamadas SIP/RTP reais neste checkpoint.** A conexão `ctrl_tcp` permanece sem autenticação e é bloqueador de produção. Código privado e ZIP não estão publicados neste repositório público MicroSIP GPL. Vídeo e chat seguem fora da primeira versão.
+
+## Checkpoint privado v0.9.0 — 17/10/2026
+
+**Áudio apenas**: adicionada proteção para comandos SIP quando a consulta `reginfo` do Baresip não confirma exatamente uma única conta; 0, 2+ ou resposta inválida bloqueiam controles, inclusive após reconexão. Um novo erro de consulta invalida respostas anteriores (fail closed). O build Windows padrão não habilita mais o `ctrl_tcp` sem autenticação. A habilitação explícita `AXV_UNSAFE_CTRL_TCP_LAB=ON` destina-se SOMENTE a um laboratório isolado, nunca à distribuição.
+
+**Validação em Linux:** 12/12 suítes CTest Release e 12/12 CTest com ASan/UBSan aprovadas. **Sem testes de GUI Windows nem de registro SIP/áudio RTP real.** Nenhum arquivo proprietário, credencial ou executável foi enviado a este repositório histórico público com a baseline MicroSIP GPL. A implementação comercial continuará fora deste repositório; falta IPC autenticado e homologação Windows/PABX.
