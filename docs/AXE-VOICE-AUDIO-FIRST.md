@@ -57,3 +57,9 @@ Entrega apenas de **código-fonte do audio desktop**: proteção contra discagem
 **Áudio apenas**: adicionada proteção para comandos SIP quando a consulta `reginfo` do Baresip não confirma exatamente uma única conta; 0, 2+ ou resposta inválida bloqueiam controles, inclusive após reconexão. Um novo erro de consulta invalida respostas anteriores (fail closed). O build Windows padrão não habilita mais o `ctrl_tcp` sem autenticação. A habilitação explícita `AXV_UNSAFE_CTRL_TCP_LAB=ON` destina-se SOMENTE a um laboratório isolado, nunca à distribuição.
 
 **Validação em Linux:** 12/12 suítes CTest Release e 12/12 CTest com ASan/UBSan aprovadas. **Sem testes de GUI Windows nem de registro SIP/áudio RTP real.** Nenhum arquivo proprietário, credencial ou executável foi enviado a este repositório histórico público com a baseline MicroSIP GPL. A implementação comercial continuará fora deste repositório; falta IPC autenticado e homologação Windows/PABX.
+
+## Checkpoint de desenvolvimento v0.10.0 — 17/10/2026
+
+**Somente áudio SIP desktop**, código proprietário mantido em pacote/repositório separado do MicroSIP/GPL. Adicionado o script de compilação Windows que faltava no ZIP anterior, além de workflow CI destinado **apenas a repositório privado**. O build Windows padrão mantém `ctrl_tcp` desabilitado e não compila o CLI bruto; apenas a variante isolada `AXV_UNSAFE_CTRL_TCP_LAB=ON` permite acesso de laboratório. Nova proteção exige confirmação de exatamente uma conta SIP e zero chamadas ativas pré-existentes antes de liberar discagem, invalida dados em reconexão e bloqueia controles se aparecer um segundo ID de chamada.
+
+**Validações efetivas:** 14/14 testes simulados em Linux Release e 14/14 sob ASan/UBSan; **ainda sem compilação Windows, sem PABX real e sem teste RTP**. O canal `ctrl_tcp` sem autenticação permanece bloqueador comercial. A fonte v0.10.0 não foi publicada neste repositório público. Vídeo e chat continuam fora da primeira entrega.
