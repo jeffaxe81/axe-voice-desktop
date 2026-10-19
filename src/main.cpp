@@ -5,6 +5,8 @@
 #include "sip_status.h"
 #include "call_policy.h"
 #include "sip_diagnostics.h"
+#include "sip_registration_policy.h"
+#include "sip_security_policy.h"
 #include <string>
 
 namespace {
@@ -83,7 +85,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             if (axv::validate_account(account) != axv::AccountError::None) {
                 SetWindowTextW(g_status, L"Servidor ou usuário SIP inválido.");
             } else {
-                SetWindowTextW(g_status, L"Dados válidos. Registro SIP ainda indisponível.");
+                const auto decision = axv::evaluate_registration(account, g_sip_engine.status());
+                if (decision == axv::RegistrationDecision::EngineUnavailable) {
+                    SetWindowTextW(g_status, L"Conta válida. Motor Baresip não conectado.");
+                } else {
+                    SetWindowTextW(g_status, L"Dados válidos. Registro SIP ainda não executado.");
+                }
             }
             return 0;
         }
