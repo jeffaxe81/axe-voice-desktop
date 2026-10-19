@@ -15,7 +15,7 @@ AddressResult validate_address(const std::wstring& input) {
         value = value.substr(colon + 1);
     }
     if (value.empty()) return {AddressError::InvalidUser, L""};
-    if (value.find_first_of(L"<>\\\"?#;") != std::wstring::npos) return {AddressError::InvalidUser, L""};
+    if (value.find_first_of(L"<>\\\"?;") != std::wstring::npos) return {AddressError::InvalidUser, L""};
     auto at = value.find(L'@');
     if (at == std::wstring::npos) {
         // Bare dial strings are allowed. The SIP backend will apply account routing.
