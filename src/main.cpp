@@ -1,4 +1,5 @@
 #include <windows.h>
+#include "sip_address.h"
 #include <string>
 
 namespace {
@@ -30,8 +31,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             GetWindowTextW(g_number, number, 256);
             if (number[0] == L'\0') {
                 SetWindowTextW(g_status, L"Informe um número ou SIP URI.");
+            } else if (!axv::validate_address(number)) {
+                SetWindowTextW(g_status, L"Destino SIP inválido.");
             } else {
-                SetWindowTextW(g_status, L"Chamada indisponível: integrar Baresip.");
+                SetWindowTextW(g_status, L"Destino válido; integrar Baresip para chamar.");
             }
             return 0;
         }
