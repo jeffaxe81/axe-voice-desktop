@@ -1,18 +1,26 @@
 #include "../src/sip_address.h"
-#include <cassert>
+#include <iostream>
+#include <utility>
+#include <vector>
+
 int main() {
-    using axv::validate_address;
-    assert(validate_address(L"1001"));
-    assert(validate_address(L"+5511999999999"));
-    assert(validate_address(L"sip:1001@example.com"));
-    assert(validate_address(L"sips:alice@example.com:5061"));
-    assert(!validate_address(L""));
-    assert(!validate_address(L"sip:"));
-    assert(!validate_address(L"alice@"));
-    assert(!validate_address(L"alice@@example.com"));
-    assert(!validate_address(L"sip:alice@example.com:0"));
-    assert(!validate_address(L"sip:alice@example.com:65536"));
-    assert(!validate_address(L"sip:alice@example.com:abc"));
-    assert(!validate_address(L"sip:alice@ example.com"));
-    assert(!validate_address(L"https://example.com"));
+    const std::vector<std::pair<const wchar_t*, bool>> cases = {
+        {L"1001", true}, {L"+5511999999999", true}, {L"*21#", true},
+        {L"sip:1001@example.com", true},
+        {L"sips:alice@example.com:5061", true},
+        {L"", false}, {L"sip:", false}, {L"alice@", false},
+        {L"alice@@example.com", false},
+        {L"sip:alice@example.com:0", false},
+        {L"sip:alice@example.com:65536", false},
+        {L"sip:alice@example.com:abc", false},
+        {L"sip:alice@ example.com", false},
+        {L"https://example.com", false}
+    };
+    for (const auto& item : cases) {
+        if (static_cast<bool>(axv::validate_address(item.first)) != item.second) {
+            std::wcerr << L"Unexpected validation result for: " << item.first << L"\n";
+            return 1;
+        }
+    }
+    return 0;
 }
