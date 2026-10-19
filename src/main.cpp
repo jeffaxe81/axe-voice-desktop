@@ -7,6 +7,7 @@
 #include "sip_diagnostics.h"
 #include "sip_registration_policy.h"
 #include "sip_security_policy.h"
+#include "sip_engine_factory.h"
 #include <string>
 
 namespace {
@@ -23,7 +24,7 @@ HWND g_server = nullptr;
 HWND g_user = nullptr;
 HWND g_port = nullptr;
 HWND g_tls = nullptr;
-axv::UnavailableSipEngine g_sip_engine;
+axv::EngineSelection g_sip_selection = axv::create_sip_engine();
 
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
@@ -85,7 +86,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             if (axv::validate_account(account) != axv::AccountError::None) {
                 SetWindowTextW(g_status, L"Servidor ou usuário SIP inválido.");
             } else {
-                const auto decision = axv::evaluate_registration(account, g_sip_engine.status());
+                const auto decision = axv::evaluate_registration(account, g_sip_selection.engine->status());
                 if (decision == axv::RegistrationDecision::EngineUnavailable) {
                     SetWindowTextW(g_status, L"Conta válida. Motor Baresip não conectado.");
                 } else {
@@ -102,10 +103,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             } else if (!axv::validate_address(number)) {
                 SetWindowTextW(g_status, L"Destino SIP inválido.");
             } else {
-                if (!axv::can_apply_call_action(g_sip_engine.status(), axv::CallAction::Dial)) {
+                if (!axv::can_apply_call_action(g_sip_selection.engine->status(), axv::CallAction::Dial)) {
                     SetWindowTextW(g_status, axv::diagnostic_text(axv::DiagnosticCode::RegistrationPending));
-                } else if (!g_sip_engine.start_call(axv::validate_address(number).normalized)) {
-                    SetWindowTextW(g_status, g_sip_engine.diagnostic().c_str());
+                } else if (!g_sip_selection.engine->start_call(axv::validate_address(number).normalized)) {
+                    SetWindowTextW(g_status, g_sip_selection.engine->diagnostic().c_str());
                 }
             }
             return 0;
