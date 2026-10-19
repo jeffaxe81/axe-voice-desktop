@@ -1,0 +1,24 @@
+name: AXE Voice Windows CI
+on:
+  push:
+    branches: [main, "feature/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  build-and-test:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Publish executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: AXE-Voice-Windows-Release
+          path: build/Release/AXE-Voice.exe
+          if-no-files-found: error
