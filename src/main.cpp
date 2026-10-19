@@ -1,5 +1,6 @@
 #include <windows.h>
 #include "sip_address.h"
+#include "sip_engine.h"
 #include <string>
 
 namespace {
@@ -7,6 +8,7 @@ constexpr int kCallButton = 1001;
 constexpr int kNumberEdit = 1002;
 HWND g_number = nullptr;
 HWND g_status = nullptr;
+axv::UnavailableSipEngine g_sip_engine;
 
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
@@ -34,7 +36,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             } else if (!axv::validate_address(number)) {
                 SetWindowTextW(g_status, L"Destino SIP inválido.");
             } else {
-                SetWindowTextW(g_status, L"Destino válido; integrar Baresip para chamar.");
+                if (!g_sip_engine.start_call(axv::validate_address(number).normalized)) {
+                    SetWindowTextW(g_status, g_sip_engine.diagnostic().c_str());
+                }
             }
             return 0;
         }
