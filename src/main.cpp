@@ -8,6 +8,7 @@
 #include "sip_registration_policy.h"
 #include "sip_security_policy.h"
 #include "sip_engine_factory.h"
+#include "baresip_probe.h"
 #include <string>
 
 namespace {
@@ -18,6 +19,7 @@ constexpr int kServerEdit = 1004;
 constexpr int kUserEdit = 1005;
 constexpr int kPortEdit = 1006;
 constexpr int kTlsCheckbox = 1007;
+constexpr int kProbeButton = 1008;
 HWND g_number = nullptr;
 HWND g_status = nullptr;
 HWND g_server = nullptr;
@@ -62,9 +64,25 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         CreateWindowW(L"BUTTON", L"Validar conta (sem registrar)",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
             20, 388, 340, 36, window, reinterpret_cast<HMENU>(kValidateAccount), nullptr, nullptr);
+        CreateWindowW(L"BUTTON", L"Verificar Baresip local",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+            20, 432, 340, 32, window, reinterpret_cast<HMENU>(kProbeButton), nullptr, nullptr);
         return 0;
     }
     case WM_COMMAND:
+        if (LOWORD(wparam) == kProbeButton && HIWORD(wparam) == BN_CLICKED) {
+            wchar_t executable[MAX_PATH] = {};
+            DWORD length = GetModuleFileNameW(nullptr, executable, MAX_PATH);
+            if (length == 0 || length >= MAX_PATH) {
+                SetWindowTextW(g_status, L"Não foi possível localizar a pasta do AXE Voice.");
+                return 0;
+            }
+            std::filesystem::path candidate(executable);
+            candidate = candidate.parent_path() / L"baresip.exe";
+            const auto probe = axv::probe_baresip_executable(candidate);
+            SetWindowTextW(g_status, probe.message.c_str());
+            return 0;
+        }
         if (LOWORD(wparam) == kValidateAccount && HIWORD(wparam) == BN_CLICKED) {
             wchar_t server[256] = {}, user[256] = {}, portText[16] = {};
             GetWindowTextW(g_server, server, 256);
@@ -130,7 +148,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     HWND window = CreateWindowExW(0, className, L"AXE Voice — Áudio SIP",
-        WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 410, 510,
+        WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 410, 550,
         nullptr, nullptr, instance, nullptr);
     if (!window) return 2;
     ShowWindow(window, show);
