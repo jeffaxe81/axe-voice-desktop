@@ -2,6 +2,9 @@
 #include "sip_address.h"
 #include "sip_engine.h"
 #include "sip_account.h"
+#include "sip_status.h"
+#include "call_policy.h"
+#include "sip_diagnostics.h"
 #include <string>
 
 namespace {
@@ -92,7 +95,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             } else if (!axv::validate_address(number)) {
                 SetWindowTextW(g_status, L"Destino SIP inválido.");
             } else {
-                if (!g_sip_engine.start_call(axv::validate_address(number).normalized)) {
+                if (!axv::can_apply_call_action(g_sip_engine.status(), axv::CallAction::Dial)) {
+                    SetWindowTextW(g_status, axv::diagnostic_text(axv::DiagnosticCode::RegistrationPending));
+                } else if (!g_sip_engine.start_call(axv::validate_address(number).normalized)) {
                     SetWindowTextW(g_status, g_sip_engine.diagnostic().c_str());
                 }
             }
