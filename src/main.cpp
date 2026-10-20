@@ -9,6 +9,7 @@
 #include "sip_security_policy.h"
 #include "sip_engine_factory.h"
 #include "baresip_probe.h"
+#include "audio_devices.h"
 #include <string>
 
 namespace {
@@ -20,12 +21,14 @@ constexpr int kUserEdit = 1005;
 constexpr int kPortEdit = 1006;
 constexpr int kTlsCheckbox = 1007;
 constexpr int kProbeButton = 1008;
+constexpr int kAudioDevicesButton = 1009;
 HWND g_number = nullptr;
 HWND g_status = nullptr;
 HWND g_server = nullptr;
 HWND g_user = nullptr;
 HWND g_port = nullptr;
 HWND g_tls = nullptr;
+HWND g_audio_status = nullptr;
 axv::EngineSelection g_sip_selection = axv::create_sip_engine();
 
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
@@ -67,9 +70,21 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         CreateWindowW(L"BUTTON", L"Verificar Baresip local",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
             20, 432, 340, 32, window, reinterpret_cast<HMENU>(kProbeButton), nullptr, nullptr);
+        CreateWindowW(L"BUTTON", L"Verificar microfone e saída de áudio",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+            20, 474, 340, 32, window, reinterpret_cast<HMENU>(kAudioDevicesButton), nullptr, nullptr);
+        g_audio_status = CreateWindowW(L"STATIC", L"Áudio ainda não inspecionado.",
+            WS_CHILD | WS_VISIBLE | SS_LEFT,
+            20, 514, 350, 55, window, nullptr, nullptr, nullptr);
         return 0;
     }
     case WM_COMMAND:
+        if (LOWORD(wparam) == kAudioDevicesButton && HIWORD(wparam) == BN_CLICKED) {
+            const axv::AudioInventory inventory = axv::inspect_windows_audio_devices();
+            const std::wstring summary = axv::audio_inventory_summary(inventory);
+            SetWindowTextW(g_audio_status, summary.c_str());
+            return 0;
+        }
         if (LOWORD(wparam) == kProbeButton && HIWORD(wparam) == BN_CLICKED) {
             wchar_t executable[MAX_PATH] = {};
             DWORD length = GetModuleFileNameW(nullptr, executable, MAX_PATH);
@@ -148,7 +163,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     HWND window = CreateWindowExW(0, className, L"AXE Voice — Áudio SIP",
-        WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 410, 550,
+        WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 410, 635,
         nullptr, nullptr, instance, nullptr);
     if (!window) return 2;
     ShowWindow(window, show);
