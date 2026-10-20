@@ -1,64 +1,35 @@
-# AXE Voice Desktop
+# AXE Voice Desktop — Windows, áudio primeiro
 
-Projeto para pesquisa, compilação, customização e evolução controlada de um softphone SIP desktop baseado no MicroSIP/PJSIP.
+Protótipo de softphone SIP corporativo em Windows com motor planejado **Baresip**. A versão atual oferece interface Win32, validação local de parâmetros SIP, verificação offline da presença de baresip.exe e inventário de dispositivos de áudio do Windows.
 
-## Status
+**Não implementa ainda registro SIP, chamadas, RTP/SRTP, áudio bidirecional ou armazenamento protegido de credenciais.** O botão "Chamar" fica bloqueado por padrão.
 
-**Fase atual:** P1.1 — Fundação do Projeto  
-**Estado:** inicialização do repositório  
-**Produção:** não
+## Compilar e abrir no Windows
 
-Neste primeiro ciclo, o objetivo é estabelecer uma base reproduzível e versionada antes de importar ou modificar o código-fonte do MicroSIP.
+Requer CMake no PATH, Visual Studio 2022 Build Tools, workload Desktop development with C++, MSVC e Windows SDK.
 
-## Objetivos
+No PowerShell, a partir da raiz do repositório:
 
-- reproduzir o build do MicroSIP original;
-- manter uma baseline rastreável do upstream;
-- implementar white label de forma incremental;
-- simplificar a experiência do usuário;
-- preparar configuração e provisionamento SIP corporativo;
-- evoluir integrações sem comprometer a estabilidade da telefonia.
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-windows.ps1 -Run
 
-## Princípios
+Ou manualmente:
 
-- microentregas pequenas e testáveis;
-- nenhuma credencial real no repositório;
-- mudanças controladas por Git;
-- documentação e testes acompanhando cada etapa;
-- preservação dos avisos de copyright e das obrigações de licenciamento;
-- nenhuma customização funcional antes da validação do build original.
+    cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+    cmake --build build --config Release --parallel 4
+    ctest --test-dir build -C Release --output-on-failure
+    & ".\build\Release\AXE-Voice.exe"
 
-## Estrutura planejada
+Executável: build\Release\AXE-Voice.exe. O CI publica um artefato do protótipo, não um instalador de produção.
 
-- `src/` — código-fonte do produto;
-- `assets/` — recursos visuais;
-- `installer/` — empacotamento/instalação;
-- `scripts/` — automação de desenvolvimento e build;
-- `tests/` — testes e validações;
-- `docs/` — arquitetura, build, segurança, SIP e decisões;
-- `LICENSES/` — inventário e textos de licenças aplicáveis.
+## Diagnósticos
 
-## Branches
+- **Verificar Baresip local**: verifica apenas a existência de arquivo regular baresip.exe ao lado do AXE-Voice.exe. Não executa nem autentica o arquivo.
+- **Verificar microfone e saída de áudio**: conta dispositivos ativos e identifica os padrões de comunicação no Windows. Não grava, reproduz nem confirma a ligação com Baresip.
 
-- `main` — baseline estável;
-- `develop` — integração das microentregas;
-- `feature/*` — funcionalidades;
-- `fix/*` — correções;
-- `docs/*` — documentação.
+Documentação: [Áudio](docs/AUDIO-DEVICES.md), [Integração Baresip](docs/BARESIP-INTEGRATION.md), [Checklist de release](docs/RELEASE-CHECKLIST.md).
 
-## Próximos marcos
+G.711, G.722 e Opus são alvos do MVP, ainda não homologados; G.729 exige avaliação técnica e de licenciamento. Vídeo e chat são posteriores.
 
-1. Concluir a fundação do repositório.
-2. Definir e documentar a versão baseline oficial do MicroSIP.
-3. Preparar o ambiente de compilação.
-4. Compilar e executar o MicroSIP original sem alterações.
-5. Validar registro SIP e chamadas.
-6. Iniciar white label.
+## Histórico/licenciamento
 
-## Segurança
-
-Não versionar senhas, tokens, certificados privados, chaves privadas, credenciais SIP reais ou arquivos locais contendo segredos.
-
-## Licenciamento
-
-O projeto deverá validar e documentar as licenças do MicroSIP, PJSIP, codecs e demais componentes antes de qualquer distribuição. Nenhum aviso legal do upstream deverá ser removido sem base jurídica/técnica documentada.
+O histórico do repositório inclui pesquisa da baseline MicroSIP/PJSIP sob GPL, que não será usada como backend proprietário sem auditoria de licenças. Antes da distribuição comercial, avaliar dependências, licenças e isolamento do código. Nunca incluir segredos ou credenciais SIP reais no Git.
