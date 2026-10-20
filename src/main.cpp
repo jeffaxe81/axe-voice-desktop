@@ -10,6 +10,7 @@
 #include "sip_engine_factory.h"
 #include "baresip_probe.h"
 #include "audio_devices.h"
+#include "windows_process.h"
 #include <string>
 
 namespace {
@@ -22,6 +23,9 @@ constexpr int kPortEdit = 1006;
 constexpr int kTlsCheckbox = 1007;
 constexpr int kProbeButton = 1008;
 constexpr int kAudioDevicesButton = 1009;
+constexpr int kStartBaresipButton = 1010;
+constexpr int kStopBaresipButton = 1011;
+constexpr UINT_PTR kProcessTimer = 1012;
 HWND g_number = nullptr;
 HWND g_status = nullptr;
 HWND g_server = nullptr;
@@ -29,6 +33,9 @@ HWND g_user = nullptr;
 HWND g_port = nullptr;
 HWND g_tls = nullptr;
 HWND g_audio_status = nullptr;
+HWND g_process_status = nullptr;
+axv::WindowsProcess g_baresip_process;
+axv::ProcessStatus g_last_process_state = axv::ProcessStatus::Stopped;
 axv::EngineSelection g_sip_selection = axv::create_sip_engine();
 
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
@@ -76,9 +83,61 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_audio_status = CreateWindowW(L"STATIC", L"Áudio ainda não inspecionado.",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
             20, 514, 350, 55, window, nullptr, nullptr, nullptr);
+        CreateWindowW(L"BUTTON", L"Iniciar Baresip",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+            20, 575, 163, 34, window, reinterpret_cast<HMENU>(kStartBaresipButton), nullptr, nullptr);
+        CreateWindowW(L"BUTTON", L"Parar motor",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+            197, 575, 163, 34, window, reinterpret_cast<HMENU>(kStopBaresipButton), nullptr, nullptr);
+        g_process_status = CreateWindowW(L"STATIC", L"Processo Baresip parado. Registro SIP indisponível.",
+            WS_CHILD | WS_VISIBLE | SS_LEFT,
+            20, 617, 350, 56, window, nullptr, nullptr, nullptr);
+        SetTimer(window, kProcessTimer, 1000, nullptr);
         return 0;
     }
     case WM_COMMAND:
+        if (LOWORD(wparam) == kStartBaresipButton && HIWORD(wparam) == BN_CLICKED) {
+            wchar_t application[MAX_PATH] = {};
+            const DWORD length = GetModuleFileNameW(nullptr, application, MAX_PATH);
+            if (length == 0 || length >= MAX_PATH) {
+                SetWindowTextW(g_process_status, L"Falha ao localizar o executável do AXE Voice.");
+                return 0;
+            }
+            const std::filesystem::path candidate =
+                std::filesystem::path(application).parent_path() / L"baresip.exe";
+            const auto probe = axv::probe_baresip_executable(candidate);
+            if (probe.status != axv::BaresipProbeStatus::PresentUnverified) {
+                SetWindowTextW(g_process_status, probe.message.c_str());
+                return 0;
+            }
+            if (g_baresip_process.poll() == axv::ProcessStatus::Running) {
+                SetWindowTextW(g_process_status, L"O processo Baresip já está em execução.");
+                return 0;
+            }
+            if (MessageBoxW(window,
+                L"Iniciar baresip.exe desta pasta? Execute somente arquivos de origem e hash verificados. "
+                L"A aplicação não confirma identidade, registro SIP ou chamadas.",
+                L"Confirmar inicialização do Baresip",
+                MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES) return 0;
+            if (g_baresip_process.start(candidate)) {
+                g_last_process_state = axv::ProcessStatus::Running;
+                SetWindowTextW(g_process_status, L"Processo Baresip iniciado. Registro SIP NÃO confirmado.");
+            } else {
+                g_last_process_state = axv::ProcessStatus::Failed;
+                const std::wstring error = L"Falha ao iniciar Baresip. Erro Windows: " +
+                    std::to_wstring(g_baresip_process.last_error());
+                SetWindowTextW(g_process_status, error.c_str());
+            }
+            return 0;
+        }
+        if (LOWORD(wparam) == kStopBaresipButton && HIWORD(wparam) == BN_CLICKED) {
+            const bool stopped = g_baresip_process.stop();
+            g_last_process_state = axv::ProcessStatus::Stopped;
+            SetWindowTextW(g_process_status,
+                stopped ? L"Processo encerrado. Encerramento forçado: não usar em produção."
+                        : L"Falha ao confirmar encerramento do processo.");
+            return 0;
+        }
         if (LOWORD(wparam) == kAudioDevicesButton && HIWORD(wparam) == BN_CLICKED) {
             const axv::AudioInventory inventory = axv::inspect_windows_audio_devices();
             const std::wstring summary = axv::audio_inventory_summary(inventory);
@@ -145,7 +204,24 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             return 0;
         }
         break;
+    case WM_TIMER:
+        if (wparam == kProcessTimer) {
+            const auto state = g_baresip_process.poll();
+            if (state != g_last_process_state) {
+                g_last_process_state = state;
+                if (state == axv::ProcessStatus::Exited) {
+                    SetWindowTextW(g_process_status,
+                        L"Baresip encerrou. Consulte a configuração e dependências do motor.");
+                } else if (state == axv::ProcessStatus::Failed) {
+                    SetWindowTextW(g_process_status, L"Falha ao consultar processo Baresip.");
+                }
+            }
+            return 0;
+        }
+        break;
     case WM_DESTROY:
+        KillTimer(window, kProcessTimer);
+        g_baresip_process.stop();
         PostQuitMessage(0);
         return 0;
     }
@@ -163,7 +239,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     HWND window = CreateWindowExW(0, className, L"AXE Voice — Áudio SIP",
-        WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 410, 635,
+        WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 410, 760,
         nullptr, nullptr, instance, nullptr);
     if (!window) return 2;
     ShowWindow(window, show);
