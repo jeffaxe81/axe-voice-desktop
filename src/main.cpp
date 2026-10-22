@@ -31,6 +31,7 @@
 #include "destination_feedback.h"
 #include "account_form_feedback.h"
 #include "ui_help.h"
+#include "call_readiness.h"
 #include <vector>
 #include <array>
 #include <algorithm>
@@ -61,6 +62,7 @@ constexpr int kPin = 2004;
 constexpr int kCompact = 2005;
 constexpr int kShowAudio = 2006;
 constexpr int kHelpButton = 2007;
+constexpr int kReadinessButton = 2008;
 constexpr int kInputAudioCombo = 2401;
 constexpr int kOutputAudioCombo = 2402;
 constexpr int kWindowWidth = 438;
@@ -112,6 +114,7 @@ bool g_pinned = false;
 bool g_compact = false;
 bool g_smoke_mode = false;
 bool g_help_requested_smoke = false;
+bool g_readiness_requested_smoke = false;
 bool g_destination_invalid = false;
 bool g_account_invalid_server = false;
 bool g_account_invalid_user = false;
@@ -493,6 +496,27 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     if (IsWindowEnabled(button) != (dial ? TRUE : FALSE))
         EnableWindow(button, dial ? TRUE : FALSE);
 }
+std::wstring make_readiness_report() {
+    wchar_t number[129]{}, server[129]{}, user[129]{}, port[129]{};
+    GetWindowTextW(g_number, number, 129);
+    GetWindowTextW(g_server, server, 129);
+    GetWindowTextW(g_user, user, 129);
+    GetWindowTextW(g_port, port, 129);
+    const auto& snapshot = g_sip_projection.snapshot();
+    axv::CallReadiness result{};
+    result.destination_syntax = axv::evaluate_destination(number).valid();
+    result.account_syntax = axv::evaluate_account_form(server, user, port).valid();
+    result.native_engine = g_sip_selection.kind == axv::EngineKind::Baresip &&
+        g_sip_selection.engine &&
+        g_sip_selection.engine->status() != axv::SipStatus::Unavailable;
+    result.running_process = snapshot.process == axv::RuntimeProcess::Running;
+    result.verified_registration = result.native_engine &&
+        axv::sip_proof_is_current(snapshot, snapshot.session) &&
+        snapshot.sip == axv::SipStatus::Registered;
+    // A device inventory is not an RTP/SRTP or headset media test.
+    result.verified_media = false;
+    return axv::format_call_readiness(result);
+}
 void begin_shutdown(HWND window) {
     g_sip_session_guard.revoke(axv::RuntimeProcess::Stopping, g_native_event_mailbox, g_sip_projection);
     const bool queued = g_baresip_process.request_quit_async();
@@ -590,6 +614,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                    39, 537, 350, 46, 2, g_font_small);
         g_headset_status = make_label(window, L"Abra AUDIO para consultar o Windows.",
                                      39, 594, 350, 64, 2, g_font_small);
+        make_button(window, L"PRONTIDAO DE CHAMADAS (F2)",
+                    kReadinessButton, 39, 674, 350, 42, 2);
         g_status = make_label(window, L"Digite um ramal ou endereço SIP.",
                               24, 762, 390, 30, -1, g_font_small);
         refresh_destination_feedback();
@@ -622,6 +648,20 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         if (HIWORD(wparam) == BN_CLICKED || (HIWORD(wparam) == 1 && lparam == 0)) {
             const int control = LOWORD(wparam);
             if (control == kShowDial || control == kFocusNumber) { show_page(window, 0); return 0; }
+            if (control == kReadinessButton) {
+                refresh_runtime_banner(g_baresip_process.poll());
+                const std::wstring report = make_readiness_report();
+                if (g_smoke_mode) {
+                    g_readiness_requested_smoke =
+                        report.find(L"CHAMADAS BLOQUEADAS") != std::wstring::npos &&
+                        report.find(L"sem evidencia real de registro") != std::wstring::npos;
+                } else {
+                    MessageBoxW(window, report.c_str(),
+                                L"Prontidao de chamadas - AXE Voice LAB",
+                                MB_OK | MB_ICONINFORMATION);
+                }
+                return 0;
+            }
             if (control == kHelpButton) {
                 if (g_smoke_mode) g_help_requested_smoke = true;
                 else MessageBoxW(window, axv::frontend_help_text(),
@@ -992,7 +1032,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && std::wcscmp(command_line, L"--ui-smoke") == 0;
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.34",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.37",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         kWindowWidth, kFullHeight,
         nullptr, nullptr, instance, nullptr);
@@ -1099,7 +1139,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             (GetWindowLongW(g_output_audio_combo, GWL_STYLE) & WS_VISIBLE) &&
             !IsWindowEnabled(GetDlgItem(window, kCallButton)) &&
             !IsWindowEnabled(g_input_audio_combo); // No hardware inspected in smoke.
-        ok = ok && audio_ok;
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(kReadinessButton, 1), 0);
+        const bool readiness_ok = g_readiness_requested_smoke &&
+            GetDlgItem(window, kReadinessButton) &&
+            (GetWindowLongW(GetDlgItem(window, kReadinessButton), GWL_STYLE) & WS_VISIBLE) &&
+            !IsWindowEnabled(GetDlgItem(window, kCallButton));
+        ok = ok && audio_ok && readiness_ok;
         if (!ok) {
             std::fprintf(stderr, "UI_SMOKE_FAIL baseline=%d compact=%d restored=%d audio=%d feedback=%d/%d/%d mode=%d page=%d height=%ld\n",
                          baseline_ok ? 1 : 0, compact_ok ? 1 : 0, restored_ok ? 1 : 0,
@@ -1125,7 +1170,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         {FVIRTKEY | FCONTROL, L'3', kShowAudio},
         {FVIRTKEY | FCONTROL, L'R', kRefreshHeadsetsButton},
         {FVIRTKEY, VK_ESCAPE, kShowDial},
-        {FVIRTKEY, VK_F1, kHelpButton}
+        {FVIRTKEY, VK_F1, kHelpButton},
+        {FVIRTKEY, VK_F2, kReadinessButton}
     };
     HACCEL accelerator = CreateAcceleratorTableW(
         const_cast<ACCEL*>(shortcuts), static_cast<int>(sizeof(shortcuts)/sizeof(shortcuts[0])));

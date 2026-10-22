@@ -1,3 +1,11 @@
+# Changelog
+
+## v0.37.0 — prontidão de chamada offline
+- Checklist com seis bloqueadores acessível por F2 e na aba Áudio.
+- Dados de conta e destino nunca aparecem no relatório; somente status locais.
+- Novos testes determinísticos de gates e smoke de interface.
+- Continuam ausentes integração Baresip in-process, registro SIP e mídia real.
+
 ## v0.36.0 — controle único de autorização de discagem (protótipo)
 - Botão Chamar e comando Win32 direto passam pela mesma verificação: destino válido, geração SIP atual, prova nativa auditada, backend Baresip e status registrado.
 - Clique consulta novamente o estado real do processo; evento SIP antigo e botão ativado indevidamente não autorizam chamada.

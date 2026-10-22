@@ -99,3 +99,11 @@ O processo Baresip não mantém registro SIP presumido após falha, parada ou re
 ## v0.36 — autorização unificada de Chamar
 
 A regra do botão habilitado e a execução de `WM_COMMAND` usam agora a mesma função `authorize_dial`. Ela exige destino válido, sessão SIP atual e autenticada por adaptador nativo, tipo de backend e estado de registro do motor. No clique, a aplicação consulta novamente o processo e a caixa de eventos, evitando confiar apenas na aparência do botão. Testes de política usam apenas um motor simulado; no executável distribuído o `UnavailableSipEngine` continua bloqueando todas as chamadas. Registro, RTP/SRTP e áudio bidirecional reais permanecem pendentes.
+
+## v0.37 — Diagnóstico de prontidão (F2)
+
+- Atalho F2 ou botão na aba Áudio abre um relatório offline de seis requisitos: destino, conta, adaptador nativo, processo, registro verificado e mídia.
+- Nenhum usuário, número, senha, domínio SIP ou ID de headset é exibido ou armazenado pelo relatório.
+- Inventário de microfones **não** significa mídia RTP/SRTP funcional. No laboratório atual, a verificação de mídia permanece bloqueada.
+- Smoke test cobre o comando e a impossibilidade de habilitar Chamadas. O novo CTest valida todos os gates isoladamente.
+- O relatório não altera a política de chamada nem substitui testes em PBX real.
