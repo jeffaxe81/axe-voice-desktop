@@ -45,6 +45,10 @@ constexpr int kShowDial = 2001;
 constexpr int kShowSettings = 2002;
 constexpr int kTheme = 2003;
 constexpr int kPin = 2004;
+constexpr int kCompact = 2005;
+constexpr int kWindowWidth = 438;
+constexpr int kFullHeight = 842;
+constexpr int kCompactHeight = 365;
 constexpr int kDigitStart = 2100;
 constexpr int kBackspace = 2201;
 constexpr int kClear = 2202;
@@ -58,6 +62,7 @@ constexpr UINT kTrayIconId = 1;
 constexpr UINT kTrayOpen = 3001;
 constexpr UINT kTrayExit = 3002;
 HWND g_number = nullptr;
+HWND g_number_label = nullptr;
 HWND g_status = nullptr;
 HWND g_server = nullptr;
 HWND g_user = nullptr;
@@ -75,6 +80,8 @@ axv::EngineSelection g_sip_selection = axv::create_sip_engine();
 
 bool g_dark = true;
 bool g_pinned = false;
+bool g_compact = false;
+bool g_smoke_mode = false;
 bool g_tray_visible = false;
 constexpr wchar_t kPrefsKey[] = L"Software\\AXEVoice\\Desktop";
 int g_page = 0; // 0 = dial, 1 = settings
@@ -99,14 +106,23 @@ void load_ui_preferences() {
                      nullptr, &value, &size) == ERROR_SUCCESS) {
         g_pinned = value != 0;
     }
+    value = 0; size = sizeof(value);
+    if (RegGetValueW(HKEY_CURRENT_USER, kPrefsKey, L"CompactMode", RRF_RT_REG_DWORD,
+                     nullptr, &value, &size) == ERROR_SUCCESS) {
+        g_compact = value != 0;
+    }
 }
 void save_ui_preferences() {
+    if (g_smoke_mode) return; // Smoke may not write to the user's registry.
     HKEY key = nullptr;
     DWORD disposition = 0;
     if (RegCreateKeyExW(HKEY_CURRENT_USER, kPrefsKey, 0, nullptr, 0,
                         KEY_SET_VALUE, nullptr, &key, &disposition) != ERROR_SUCCESS) return;
     const DWORD theme = g_dark ? 1u : 0u;
     const DWORD pinned = g_pinned ? 1u : 0u;
+    const DWORD compact = g_compact ? 1u : 0u;
+    RegSetValueExW(key, L"CompactMode", 0, REG_DWORD,
+                   reinterpret_cast<const BYTE*>(&compact), sizeof(compact));
     RegSetValueExW(key, L"DarkTheme", 0, REG_DWORD,
                    reinterpret_cast<const BYTE*>(&theme), sizeof(theme));
     RegSetValueExW(key, L"AlwaysOnTop", 0, REG_DWORD,
@@ -205,11 +221,28 @@ HWND make_edit(HWND root, LPCWSTR initial, int id, int x, int y, int w, int h,
 }
 void show_page(HWND root, int page) {
     g_page = page;
-    for (auto child : g_dial_controls) ShowWindow(child, page == 0 ? SW_SHOW : SW_HIDE);
+    for (auto child : g_dial_controls) {
+        const bool visible = page == 0 &&
+            (!g_compact || child == g_number || child == g_number_label);
+        ShowWindow(child, visible ? SW_SHOW : SW_HIDE);
+    }
     for (auto child : g_settings_controls) ShowWindow(child, page == 1 ? SW_SHOW : SW_HIDE);
     InvalidateRect(root, nullptr, TRUE);
     HWND target = page == 0 ? g_number : g_server;
     if (target) SetFocus(target);
+}
+
+// Mini mode keeps only the target and true SIP state, without fake call actions.
+void apply_compact_layout(HWND root) {
+    if (g_compact && g_page == 1) g_page = 0;
+    MoveWindow(g_number_label, 39, g_compact ? 218 : 246, 320, 20, TRUE);
+    MoveWindow(g_number, 39, g_compact ? 242 : 272, 350, 43, TRUE);
+    MoveWindow(g_status, 24, g_compact ? 298 : 762, 390, 30, TRUE);
+    SetWindowTextW(GetDlgItem(root, kCompact), g_compact ? L"MAX" : L"MINI");
+    SetWindowPos(root, nullptr, 0, 0, kWindowWidth,
+                 g_compact ? kCompactHeight : kFullHeight,
+                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    show_page(root, g_page);
 }
 void draw_card(HDC dc, RECT rect, COLORREF color, int radius) {
     HBRUSH fill = CreateSolidBrush(color);
@@ -322,6 +355,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         refresh_brushes();
         make_label(window, L"AXE  VOICE", 24, 16, 240, 37, -1, g_font_title);
         make_label(window, L"SOFTPHONE DESKTOP  /  LAB", 25, 57, 270, 22, -1, g_font_small);
+        make_button(window, g_compact ? L"MAX" : L"MINI", kCompact, 344, 65, 70, 29);
         make_button(window, g_pinned ? L"SOLTAR" : L"FIXAR", kPin, 265, 18, 70, 36);
         make_button(window, g_dark ? L"CLARO" : L"ESCURO", kTheme, 344, 18, 70, 36);
         if (g_pinned) SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0,
@@ -331,7 +365,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_label(window, L"●  CONTA SIP NÃO REGISTRADA", 42, 164, 347, 25, -1, g_font_regular);
 
         make_label(window, L"DISCAGEM", 39, 220, 290, 23, 0, g_font_small);
-        make_label(window, L"Número ou endereço SIP", 39, 246, 320, 20, 0, g_font_regular);
+        g_number_label = make_label(window, L"Número ou endereço SIP", 39, 246, 320, 20, 0, g_font_regular);
         g_number = make_edit(window, L"", kNumberEdit, 39, 272, 350, 43, 0);
 
         constexpr const wchar_t* dial_labels[] = {
@@ -387,6 +421,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             EnableWindow(GetDlgItem(window, id), FALSE);
         }
         show_page(window, 0);
+        apply_compact_layout(window);
         SetTimer(window, kProcessTimer, 100, nullptr);
         return 0;
     }
@@ -395,7 +430,22 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         if (HIWORD(wparam) == BN_CLICKED || HIWORD(wparam) == 1) {
             const int control = LOWORD(wparam);
             if (control == kShowDial || control == kFocusNumber) { show_page(window, 0); return 0; }
-            if (control == kShowSettings) { show_page(window, 1); return 0; }
+            if (control == kShowSettings) {
+                if (g_compact) {
+                    g_compact = false;
+                    apply_compact_layout(window);
+                    save_ui_preferences();
+                }
+                show_page(window, 1);
+                return 0;
+            }
+            if (control == kCompact) {
+                g_compact = !g_compact;
+                if (g_compact) g_page = 0;
+                apply_compact_layout(window);
+                save_ui_preferences();
+                return 0;
+            }
             if (control == kTheme) {
                 g_dark = !g_dark;
                 SetWindowTextW(GetDlgItem(window, kTheme), g_dark ? L"CLARO" : L"ESCURO");
@@ -629,10 +679,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         GetClientRect(window, &rect);
         FillRect(dc, &rect, g_background_brush);
         draw_card(dc, {24, 151, 414, 198}, panel_color(), 16);
-        draw_card(dc, {24, 206, 414, 742}, panel_color(), 18);
+        draw_card(dc, g_compact ? RECT{24, 206, 414, 289} : RECT{24, 206, 414, 742},
+                  panel_color(), 18);
         HPEN rule = CreatePen(PS_SOLID, 1, line_color());
         HGDIOBJ old = SelectObject(dc, rule);
-        MoveToEx(dc, 24, 747, nullptr); LineTo(dc, 414, 747);
+        const int divider_y = g_compact ? 294 : 747;
+        MoveToEx(dc, 24, divider_y, nullptr); LineTo(dc, 414, divider_y);
         SelectObject(dc, old);
         DeleteObject(rule);
         EndPaint(window, &paint);
@@ -723,11 +775,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.21",
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT, 438, 842,
+    g_smoke_mode = command_line && std::wcscmp(command_line, L"--ui-smoke") == 0;
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.24",
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
+        kWindowWidth, kFullHeight,
         nullptr, nullptr, instance, nullptr);
     if (!window) return 2;
-    if (command_line && std::wcscmp(command_line, L"--ui-smoke") == 0) {
+    if (g_smoke_mode) {
+        // Force a consistent baseline without changing saved HKCU settings.
+        if (g_compact) { g_compact = false; apply_compact_layout(window); }
         // Headless GUI startup check for Windows CI: verify the real controls
         // and both pages without contacting any SIP server or persisting data.
         bool ok = GetDlgItem(window, kShowDial) && GetDlgItem(window, kShowSettings) &&
@@ -744,6 +800,20 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                      reinterpret_cast<LPARAM>(GetDlgItem(window, kShowDial)));
         ok = ok && (GetWindowLongW(g_number, GWL_STYLE) & WS_VISIBLE) &&
              !(GetWindowLongW(g_server, GWL_STYLE) & WS_VISIBLE);
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(kCompact, BN_CLICKED),
+                     reinterpret_cast<LPARAM>(GetDlgItem(window, kCompact)));
+        RECT bounds = {};
+        GetWindowRect(window, &bounds);
+        ok = ok && g_compact && (bounds.bottom - bounds.top == kCompactHeight) &&
+            (GetWindowLongW(g_number, GWL_STYLE) & WS_VISIBLE) &&
+            !(GetWindowLongW(GetDlgItem(window, kDigitStart), GWL_STYLE) & WS_VISIBLE) &&
+            !IsWindowEnabled(GetDlgItem(window, kCallButton));
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(kShowSettings, BN_CLICKED),
+                     reinterpret_cast<LPARAM>(GetDlgItem(window, kShowSettings)));
+        GetWindowRect(window, &bounds);
+        ok = ok && !g_compact && g_page == 1 &&
+            (bounds.bottom - bounds.top == kFullHeight) &&
+            (GetWindowLongW(g_server, GWL_STYLE) & WS_VISIBLE);
         DestroyWindow(window);
         return ok ? 0 : 9;
     }
@@ -754,7 +824,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         {FVIRTKEY | FCONTROL, L'L', kFocusNumber},
         {FVIRTKEY | FCONTROL, VK_OEM_COMMA, kShowSettings},
         {FVIRTKEY | FCONTROL, L'T', kTheme},
-        {FVIRTKEY | FCONTROL, L'P', kPin}
+        {FVIRTKEY | FCONTROL, L'P', kPin},
+        {FVIRTKEY | FCONTROL, L'M', kCompact}
     };
     HACCEL accelerator = CreateAcceleratorTableW(
         const_cast<ACCEL*>(shortcuts), static_cast<int>(sizeof(shortcuts)/sizeof(shortcuts[0])));
