@@ -157,11 +157,17 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             return 0;
         }
         if (LOWORD(wparam) == kStopBaresipButton && HIWORD(wparam) == BN_CLICKED) {
-            const bool stopped = g_baresip_process.stop();
-            g_last_process_state = axv::ProcessStatus::Stopped;
-            SetWindowTextW(g_process_status,
-                stopped ? L"Processo encerrado. Encerramento forçado: não usar em produção."
-                        : L"Falha ao confirmar encerramento do processo.");
+            const auto outcome = g_baresip_process.stop_gracefully(1500);
+            g_last_process_state = outcome == axv::GracefulStopResult::Failed
+                ? axv::ProcessStatus::Failed : axv::ProcessStatus::Stopped;
+            const wchar_t* message = L"Motor parado.";
+            switch (outcome) {
+            case axv::GracefulStopResult::AlreadyStopped: message = L"Motor ja estava parado."; break;
+            case axv::GracefulStopResult::ExitedAfterQuit: message = L"Processo saiu apos tentativa de /quit; SIP nao validado."; break;
+            case axv::GracefulStopResult::Forced: message = L"Timeout: parada forcada pelo Job Object (lab)."; break;
+            case axv::GracefulStopResult::Failed: message = L"Falha ao encerrar; conferir processos."; break;
+            }
+            SetWindowTextW(g_process_status, message);
             return 0;
         }
         if (LOWORD(wparam) == kAudioDevicesButton && HIWORD(wparam) == BN_CLICKED) {
@@ -254,7 +260,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         break;
     case WM_DESTROY:
         KillTimer(window, kProcessTimer);
-        g_baresip_process.stop();
+        g_baresip_process.stop_gracefully(750);
         PostQuitMessage(0);
         return 0;
     }

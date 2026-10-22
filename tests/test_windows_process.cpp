@@ -6,7 +6,7 @@
 
 int wmain(int argc, wchar_t** argv) {
     using namespace axv;
-    if (argc != 3) return 1;
+    if (argc != 4) return 1;
     WindowsProcess process;
     if (process.start(L"__axe_voice_nonexistent_process__.exe")) return 2;
     if (process.last_error() == ERROR_SUCCESS) return 3;
@@ -50,5 +50,12 @@ int wmain(int argc, wchar_t** argv) {
     }
     if (!exited || !process.exit_code() || *process.exit_code() != 7) return 19;
     if (!process.stop() || process.exit_code().has_value()) return 20;
+    if (!process.start(std::filesystem::path(argv[3]))) return 21;
+    if (process.stop_gracefully(2000) != GracefulStopResult::ExitedAfterQuit) return 22;
+    if (process.poll() != ProcessStatus::Stopped ||
+        !process.exit_code() || *process.exit_code() != 0) return 23;
+    if (!process.start(std::filesystem::path(argv[1]))) return 24;
+    if (process.stop_gracefully(120) != GracefulStopResult::Forced) return 25;
+    if (process.poll() != ProcessStatus::Stopped || process.exit_code().has_value()) return 26;
     return 0;
 }
