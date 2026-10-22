@@ -117,3 +117,12 @@ A regra do botão habilitado e a execução de `WM_COMMAND` usam agora a mesma f
 - Não altera credenciais, registros, telefonia ou preferências HKCU ao receber uma mudança de acessibilidade.
 
 A validação de contraste percebido, leitores de tela e escala DPI **ainda exige testes manuais em Windows 10/11**. 
+
+
+## v0.42 — DPI por monitor
+
+- Solicita Per-Monitor DPI Awareness V2 no Windows 10/11.
+- Redesenha todos os controles e fontes a partir do layout lógico original de 96 DPI, prevenindo deriva entre mudanças repetidas de escala.
+- Cartões, teclado telefônico, indicadores e botões owner-draw acompanham o DPI. MINI/MAX preserva proporções, incluindo 150% e 200%.
+- O smoke test Win32 verifica coordenadas do campo, troca de página e MINI nas escalas 150% e 200%, sem alterar as configurações reais do Windows. Novo teste unitário cobre a matemática do escalonamento.
+- Seguem pendentes os testes manuais em monitores físicos de DPI distintos, leitores de tela, truncamento de textos e resoluções pequenas. Registro SIP e áudio de chamada continuam não homologados.

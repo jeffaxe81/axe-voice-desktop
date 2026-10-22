@@ -1,4 +1,4 @@
-# AXE Voice Desktop — Windows, áudio primeiro (v0.40.0 laboratório)
+# AXE Voice Desktop — Windows, áudio primeiro (v0.42.0 laboratório)
 
 Protótipo de softphone SIP corporativo em Windows com motor planejado **Baresip**. A versão atual oferece interface Win32, validação local de parâmetros SIP, verificação offline da presença de baresip.exe e inventário de dispositivos de áudio do Windows.
 
@@ -20,6 +20,9 @@ Ou manualmente:
     & ".\build\Release\AXE-Voice.exe"
 
 Executável: build\Release\AXE-Voice.exe. O CI publica um artefato do protótipo, não um instalador de produção.
+
+## Frontend DPI v0.42
+Interface, fontes, botões e modo MINI se adaptam a monitores com DPI diferentes. A rotina de atualização usa coordenadas lógicas fixas de 96 DPI e acompanha WM_DPICHANGED, com teste Win32 de reflow sintético em 150% e 200%. Não há liberação de chamadas SIP. Falta validação manual em monitores físicos.
 
 ## Frontend acessível v0.40
 A interface adapta suas cores automaticamente ao modo Alto Contraste do Windows, incluindo mudanças durante a execução. Os estados SIP continuam distintos do estado do processo e nenhum controle de chamada é desbloqueado por alterações de aparência. Ver [documentação de frontend](docs/FRONTEND-WINDOWS.md). Ainda falta homologação manual com leitores de tela e escalas de DPI.

@@ -33,6 +33,7 @@
 #include "ui_help.h"
 #include "call_readiness.h"
 #include "ui_contrast_policy.h"
+#include "ui_dpi_policy.h"
 #include <vector>
 #include <array>
 #include <algorithm>
@@ -67,6 +68,7 @@ constexpr int kReadinessButton = 2008;
 constexpr int kInputAudioCombo = 2401;
 constexpr int kOutputAudioCombo = 2402;
 constexpr int kWindowWidth = 438;
+unsigned g_dpi = axv::kBaseDpi;
 constexpr int kFullHeight = 842;
 constexpr int kCompactHeight = 365;
 constexpr int kDigitStart = 2100;
@@ -128,6 +130,9 @@ int g_page = 0; // 0 = dial, 1 = settings, 2 = audio
 std::vector<HWND> g_dial_controls;
 std::vector<HWND> g_settings_controls;
 std::vector<HWND> g_audio_controls;
+enum class UiFontKind { Regular, Title, Small, Digit };
+struct ChildLayout { HWND handle; axv::DpiBox logical; UiFontKind font; };
+std::vector<ChildLayout> g_layout;
 HFONT g_font_regular = nullptr;
 HFONT g_font_title = nullptr;
 HFONT g_font_small = nullptr;
@@ -247,19 +252,58 @@ void refresh_brushes() {
     g_invalid_field_brush = CreateSolidBrush(invalid_field_color());
 }
 HFONT create_font(int size, int weight) {
-    return CreateFontW(-size, 0, 0, 0, weight, FALSE, FALSE, FALSE,
+    return CreateFontW(-axv::dpi_pixels(size, g_dpi), 0, 0, 0, weight, FALSE, FALSE, FALSE,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
 }
 
+HFONT font_for_kind(UiFontKind kind) {
+    switch(kind) {
+    case UiFontKind::Title: return g_font_title;
+    case UiFontKind::Small: return g_font_small;
+    case UiFontKind::Digit: return g_font_digit;
+    case UiFontKind::Regular: return g_font_regular;
+    }
+    return g_font_regular;
+}
+void rebuild_fonts() {
+    HFONT next[] = {create_font(17,FW_MEDIUM), create_font(27,FW_BOLD),
+                    create_font(13,FW_NORMAL), create_font(25,FW_SEMIBOLD)};
+    for(HFONT font : next) if(!font) {
+        for(HFONT allocated : next) if(allocated) DeleteObject(allocated);
+        return;
+    }
+    HFONT prior[] = {g_font_regular, g_font_title, g_font_small, g_font_digit};
+    g_font_regular=next[0]; g_font_title=next[1];
+    g_font_small=next[2]; g_font_digit=next[3];
+    for(const auto& child : g_layout)
+        SendMessageW(child.handle, WM_SETFONT,
+                     reinterpret_cast<WPARAM>(font_for_kind(child.font)), FALSE);
+    for(HFONT old : prior) if(old) DeleteObject(old);
+}
+void position_logical(HWND child, int x,int y,int width,int height) {
+    if(!child) return;
+    const auto box = axv::scaled_box({x,y,width,height},g_dpi);
+    SetWindowPos(child,nullptr,box.x,box.y,box.width,box.height,
+                 SWP_NOACTIVATE|SWP_NOZORDER);
+}
+RECT logical_rect(int x,int y,int right,int bottom) {
+    return {axv::dpi_pixels(x,g_dpi), axv::dpi_pixels(y,g_dpi),
+            axv::dpi_pixels(right,g_dpi), axv::dpi_pixels(bottom,g_dpi)};
+}
 HWND make_control(HWND root, LPCWSTR type, LPCWSTR title, DWORD style,
                   int x, int y, int width, int height, int id,
                   int page = -1, HFONT font = nullptr) {
+    const auto box = axv::scaled_box({x,y,width,height},g_dpi);
     HWND child = CreateWindowExW(0, type, title, WS_CHILD | WS_VISIBLE | style,
-        x, y, width, height, root,
+        box.x, box.y, box.width, box.height, root,
         id ? reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)) : nullptr,
         GetModuleHandleW(nullptr), nullptr);
     if (child) {
+        const UiFontKind kind = font == g_font_title ? UiFontKind::Title :
+            font == g_font_small ? UiFontKind::Small :
+            font == g_font_digit ? UiFontKind::Digit : UiFontKind::Regular;
+        g_layout.push_back({child,{x,y,width,height},kind});
         SendMessageW(child, WM_SETFONT,
             reinterpret_cast<WPARAM>(font ? font : g_font_regular), TRUE);
         if (page == 0) g_dial_controls.push_back(child);
@@ -337,12 +381,12 @@ void show_page(HWND root, int page) {
 // Mini mode keeps only the target and true SIP state, without fake call actions.
 void apply_compact_layout(HWND root) {
     if (g_compact && g_page != 0) g_page = 0;
-    MoveWindow(g_number_label, 39, g_compact ? 218 : 246, 320, 20, TRUE);
-    MoveWindow(g_number, 39, g_compact ? 242 : 272, 350, 43, TRUE);
-    MoveWindow(g_status, 24, g_compact ? 298 : 762, 390, 30, TRUE);
+    position_logical(g_number_label,39,g_compact?218:246,320,20);
+    position_logical(g_number,39,g_compact?242:272,350,43);
+    position_logical(g_status,24,g_compact?298:762,390,30);
     SetWindowTextW(GetDlgItem(root, kCompact), g_compact ? L"MAX" : L"MINI");
-    SetWindowPos(root, nullptr, 0, 0, kWindowWidth,
-                 g_compact ? kCompactHeight : kFullHeight,
+    SetWindowPos(root, nullptr, 0, 0, axv::dpi_pixels(kWindowWidth,g_dpi),
+                 axv::dpi_pixels(g_compact?kCompactHeight:kFullHeight,g_dpi),
                  SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     show_page(root, g_page);
 }
@@ -351,7 +395,8 @@ void draw_card(HDC dc, RECT rect, COLORREF color, int radius) {
     HPEN border = CreatePen(PS_SOLID, 1, line_color());
     HGDIOBJ old_brush = SelectObject(dc, fill);
     HGDIOBJ old_pen = SelectObject(dc, border);
-    RoundRect(dc, rect.left, rect.top, rect.right, rect.bottom, radius, radius);
+    RoundRect(dc, rect.left, rect.top, rect.right, rect.bottom,
+              axv::dpi_pixels(radius,g_dpi),axv::dpi_pixels(radius,g_dpi));
     SelectObject(dc, old_pen);
     SelectObject(dc, old_brush);
     DeleteObject(border);
@@ -375,8 +420,10 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     HPEN outline = CreatePen(PS_SOLID, 1, selected_tab ? accent_color() : line_color());
     HGDIOBJ brush_old = SelectObject(item.hDC, fill);
     HGDIOBJ pen_old = SelectObject(item.hDC, outline);
-    RoundRect(item.hDC, rect.left + 1, rect.top + 1,
-              rect.right - 1, rect.bottom - 1, 13, 13);
+    const int offset=axv::dpi_pixels(1,g_dpi);
+    const int curve=axv::dpi_pixels(13,g_dpi);
+    RoundRect(item.hDC,rect.left+offset,rect.top+offset,
+              rect.right-offset,rect.bottom-offset,curve,curve);
     SelectObject(item.hDC, pen_old);
     SelectObject(item.hDC, brush_old);
     DeleteObject(outline);
@@ -395,9 +442,9 @@ void paint_button(const DRAWITEMSTRUCT& item) {
         const auto digit = axv::dialpad_keys()[index];
         const wchar_t primary[2] = {digit, 0};
         RECT number = rect;
-        number.bottom = number.top + 37;
+        number.bottom = number.top + axv::dpi_pixels(37,g_dpi);
         RECT subtitle = rect;
-        subtitle.top += 36;
+        subtitle.top += axv::dpi_pixels(36,g_dpi);
         auto old = SelectObject(item.hDC, g_font_digit);
         DrawTextW(item.hDC, primary, -1, &number, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
         SelectObject(item.hDC, g_font_small);
@@ -415,7 +462,7 @@ void paint_button(const DRAWITEMSTRUCT& item) {
         SelectObject(item.hDC, old_font);
     }
     if (item.itemState & ODS_FOCUS) {
-        InflateRect(&rect, -5, -5);
+        InflateRect(&rect,-axv::dpi_pixels(5,g_dpi),-axv::dpi_pixels(5,g_dpi));
         DrawFocusRect(item.hDC, &rect);
     }
 }
@@ -555,6 +602,7 @@ void begin_shutdown(HWND window) {
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
     case WM_CREATE: {
+        g_dpi=axv::normalized_dpi(GetDpiForWindow(window));
         load_ui_preferences();
         read_windows_contrast();
         g_font_regular = create_font(17, FW_MEDIUM);
@@ -882,6 +930,25 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             return 0;
         }
         break;
+    case WM_DPICHANGED: {
+        const unsigned next=axv::normalized_dpi(LOWORD(wparam));
+        if(next!=g_dpi) {
+            g_dpi=next;
+            rebuild_fonts();
+            for(const auto& child:g_layout)
+                position_logical(child.handle, child.logical.x, child.logical.y,
+                                 child.logical.width, child.logical.height);
+        }
+        if(lparam) {
+            const auto* suggested=reinterpret_cast<const RECT*>(lparam);
+            SetWindowPos(window,nullptr,suggested->left,suggested->top,0,0,
+                         SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE);
+        }
+        apply_compact_layout(window);
+        InvalidateRect(window,nullptr,TRUE);
+        EnumChildWindows(window,repaint_child,0);
+        return 0;
+    }
     case WM_SIZE:
         if (wparam == SIZE_MINIMIZED && install_tray(window)) {
             ShowWindow(window, SW_HIDE);
@@ -966,13 +1033,14 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         RECT rect = {};
         GetClientRect(window, &rect);
         FillRect(dc, &rect, g_background_brush);
-        draw_card(dc, {24, 151, 414, 198}, panel_color(), 16);
-        draw_card(dc, g_compact ? RECT{24, 206, 414, 289} : RECT{24, 206, 414, 742},
-                  panel_color(), 18);
+        draw_card(dc,logical_rect(24,151,414,198),panel_color(),16);
+        draw_card(dc,g_compact?logical_rect(24,206,414,289)
+                               :logical_rect(24,206,414,742),panel_color(),18);
         HPEN rule = CreatePen(PS_SOLID, 1, line_color());
         HGDIOBJ old = SelectObject(dc, rule);
         const int divider_y = g_compact ? 294 : 747;
-        MoveToEx(dc, 24, divider_y, nullptr); LineTo(dc, 414, divider_y);
+        MoveToEx(dc,axv::dpi_pixels(24,g_dpi),axv::dpi_pixels(divider_y,g_dpi),nullptr);
+        LineTo(dc,axv::dpi_pixels(414,g_dpi),axv::dpi_pixels(divider_y,g_dpi));
         SelectObject(dc, old);
         DeleteObject(rule);
         EndPaint(window, &paint);
@@ -1041,6 +1109,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_sip_session_guard.revoke(axv::RuntimeProcess::Stopped, g_native_event_mailbox, g_sip_projection);
         KillTimer(window, kProcessTimer);
         remove_tray(window);
+        g_layout.clear();
         if (g_font_regular) DeleteObject(g_font_regular);
         if (g_font_title) DeleteObject(g_font_title);
         if (g_font_small) DeleteObject(g_font_small);
@@ -1058,6 +1127,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
 }
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show) {
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    g_dpi=axv::normalized_dpi(GetDpiForSystem());
     const wchar_t* className = L"AXEVoiceDesktopWindow";
     WNDCLASSW wc = {};
     wc.lpfnWndProc = WindowProc;
@@ -1067,9 +1138,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && std::wcscmp(command_line, L"--ui-smoke") == 0;
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.37",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.42",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
-        kWindowWidth, kFullHeight,
+        axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
     if (!window) return 2;
     if (g_smoke_mode) {
@@ -1154,7 +1225,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                      reinterpret_cast<LPARAM>(GetDlgItem(window, kCompact)));
         RECT bounds = {};
         GetWindowRect(window, &bounds);
-        const bool compact_ok = g_compact && (bounds.bottom - bounds.top == kCompactHeight) &&
+        const bool compact_ok = g_compact &&
+            (bounds.bottom - bounds.top == axv::dpi_pixels(kCompactHeight,g_dpi)) &&
             (GetWindowLongW(g_number, GWL_STYLE) & WS_VISIBLE) &&
             !(GetWindowLongW(GetDlgItem(window, kDigitStart), GWL_STYLE) & WS_VISIBLE) &&
             !IsWindowEnabled(GetDlgItem(window, kCallButton));
@@ -1164,7 +1236,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         GetWindowRect(window, &bounds);
         const bool restored_ok = !g_compact && g_page == 1 &&
             // CI desktop work area may clamp the requested 842px window height.
-            (bounds.bottom - bounds.top > kCompactHeight + 200) &&
+            (bounds.bottom - bounds.top > axv::dpi_pixels(kCompactHeight+200,g_dpi)) &&
             (GetWindowLongW(g_server, GWL_STYLE) & WS_VISIBLE);
         ok = ok && restored_ok;
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(kShowAudio, BN_CLICKED),
@@ -1188,7 +1260,35 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             ui_color(axv::UiRole::SelectedText) == GetSysColor(COLOR_HIGHLIGHTTEXT) &&
             !IsWindowEnabled(GetDlgItem(window, kCallButton));
         g_high_contrast = original_contrast;
-        ok = ok && audio_ok && readiness_ok && contrast_ok;
+        ok=ok && audio_ok && readiness_ok && contrast_ok;
+        // DPI reflow is synthetic; no display settings, HKCU or SIP are touched.
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kShowDial,BN_CLICKED),
+                     reinterpret_cast<LPARAM>(GetDlgItem(window,kShowDial)));
+        SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(144,144),0);
+        RECT target{};
+        GetWindowRect(g_number,&target);
+        MapWindowPoints(HWND_DESKTOP,window,reinterpret_cast<LPPOINT>(&target),2);
+        const bool dpi_150_ok=g_dpi==144 &&
+            target.left==axv::dpi_pixels(39,144) &&
+            target.top==axv::dpi_pixels(272,144) &&
+            target.right-target.left==axv::dpi_pixels(350,144) &&
+            !IsWindowEnabled(GetDlgItem(window,kCallButton));
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),
+                     reinterpret_cast<LPARAM>(GetDlgItem(window,kCompact)));
+        GetWindowRect(window,&bounds);
+        const bool compact_150_ok=g_compact &&
+            bounds.bottom-bounds.top==axv::dpi_pixels(kCompactHeight,144);
+        SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(192,192),0);
+        GetWindowRect(window,&bounds);
+        const bool compact_200_ok=g_dpi==192 && g_compact &&
+            bounds.bottom-bounds.top==axv::dpi_pixels(kCompactHeight,192);
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kShowSettings,BN_CLICKED),
+                     reinterpret_cast<LPARAM>(GetDlgItem(window,kShowSettings)));
+        const bool full_200_ok=!g_compact && g_page==1 &&
+            !IsWindowEnabled(GetDlgItem(window,kCallButton));
+        SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(96,96),0);
+        ok=ok && dpi_150_ok && compact_150_ok && compact_200_ok &&
+           full_200_ok && g_dpi==96 && !IsWindowEnabled(GetDlgItem(window,kCallButton));
         if (!ok) {
             std::fprintf(stderr, "UI_SMOKE_FAIL baseline=%d compact=%d restored=%d audio=%d feedback=%d/%d/%d mode=%d page=%d height=%ld\n",
                          baseline_ok ? 1 : 0, compact_ok ? 1 : 0, restored_ok ? 1 : 0,
