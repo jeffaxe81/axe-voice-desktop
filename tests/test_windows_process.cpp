@@ -71,5 +71,21 @@ int wmain(int argc, wchar_t** argv) {
     if (!process.start(std::filesystem::path(argv[1]))) return 32;
     if (!process.request_quit()) return 33;
     if (!process.stop()) return 34; // forced fallback is still possible
+
+    // Nonblocking UI path: worker sends once, test child acknowledges with exit 0.
+    if (!process.start(std::filesystem::path(argv[3]))) return 35;
+    if (!process.request_quit_async()) return 36;
+    if (process.request_quit_async()) return 37; // duplicate request is rejected
+    bool async_exited = false;
+    for (int i = 0; i != 100; ++i) {
+        if (process.poll() == ProcessStatus::Exited) { async_exited = true; break; }
+        Sleep(20);
+    }
+    if (!async_exited || !process.exit_code() || *process.exit_code() != 0) return 38;
+    if (!process.stop()) return 39;
+    // Worker must not access the WindowsProcess object after forced shutdown.
+    if (!process.start(std::filesystem::path(argv[1]))) return 40;
+    if (!process.request_quit_async()) return 41;
+    if (!process.stop()) return 42;
     return 0;
 }
