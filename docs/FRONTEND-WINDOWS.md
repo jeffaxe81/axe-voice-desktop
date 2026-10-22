@@ -1,4 +1,4 @@
-# AXE Voice — Frontend Windows v0.22 (prototipagem)
+# AXE Voice — Frontend Windows v0.23 (prototipagem)
 
 ## Telas
 
@@ -8,6 +8,8 @@
 
 **Aparência:** alternância claro/escuro, opção FIXAR/SOLTAR para manter a janela acima das demais. Janela compacta, sem instalador e sem execução em segundo plano. Somente estas preferências de interface são persistidas no Registro do usuário em HKCU\\Software\\AXEVoice\\Desktop; não há armazenamento de credenciais.
 
+**Segundo plano:** ao minimizar, tenta criar um ícone na bandeja de notificações. Duplo clique restaura a janela; o menu oferece Abrir e Sair. Se o shell rejeitar o ícone, não esconde a janela. A saída continua usando encerramento supervisionado do motor.
+
 **Controles de chamada:** botões Chamar, Mudo, Espera, Transferir e Encerrar são visíveis porém indisponíveis, para não simular funções de telefone inexistentes.
 
 **Acessibilidade:** Tab e Shift+Tab navegam pelos campos e botões; Ctrl+K abre o teclado, Ctrl+L foca o destino, Ctrl+, abre Ajustes, Ctrl+T alterna o tema, Ctrl+P fixa/solta. Labels permanecem acessíveis como controles Win32. Leitores de tela e zoom precisam de validação manual.
@@ -15,7 +17,7 @@
 ## Critérios automatizados
 
 - Teste de modelo de teclado: mapeamento 12 teclas, backspace, rejeição de metacaracteres e limite de caracteres.
-- CMake/MSVC e suíte CTest no CI.
+- CMake/MSVC e suíte CTest no CI, incluindo `ui_smoke`, que cria a janela de verdade e verifica os controles principais e a troca de abas (sem SIP e sem mostrar a janela).
 - Evidência manual ainda necessária: renderização real em Windows 10/11, zoom/DPI, navegação por Tab, compatibilidade com leitores de tela e contraste visual.
 
 ## Limites e segurança

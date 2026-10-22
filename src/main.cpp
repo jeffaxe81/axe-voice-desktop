@@ -1,5 +1,6 @@
 #include <windows.h>
 #include <shlobj.h>
+#include <shellapi.h>
 #include "baresip_profile.h"
 #include "sip_address.h"
 #include "sip_engine.h"
@@ -23,6 +24,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <initializer_list>
+#include <cwchar>
+#include <iterator>
 
 
 namespace {
@@ -50,6 +53,10 @@ constexpr int kHoldFuture = 2302;
 constexpr int kTransferFuture = 2303;
 constexpr int kHangupFuture = 2304;
 constexpr int kFocusNumber = 2305;
+constexpr UINT kTrayCallback = WM_APP + 41;
+constexpr UINT kTrayIconId = 1;
+constexpr UINT kTrayOpen = 3001;
+constexpr UINT kTrayExit = 3002;
 HWND g_number = nullptr;
 HWND g_status = nullptr;
 HWND g_server = nullptr;
@@ -68,6 +75,7 @@ axv::EngineSelection g_sip_selection = axv::create_sip_engine();
 
 bool g_dark = true;
 bool g_pinned = false;
+bool g_tray_visible = false;
 constexpr wchar_t kPrefsKey[] = L"Software\\AXEVoice\\Desktop";
 int g_page = 0; // 0 = dial, 1 = settings
 std::vector<HWND> g_dial_controls;
@@ -104,6 +112,40 @@ void save_ui_preferences() {
     RegSetValueExW(key, L"AlwaysOnTop", 0, REG_DWORD,
                    reinterpret_cast<const BYTE*>(&pinned), sizeof(pinned));
     RegCloseKey(key);
+}
+
+NOTIFYICONDATAW create_tray_data(HWND window) {
+    NOTIFYICONDATAW tray = {};
+    tray.cbSize = sizeof(tray);
+    tray.hWnd = window;
+    tray.uID = kTrayIconId;
+    tray.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+    tray.uCallbackMessage = kTrayCallback;
+    tray.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    const wchar_t caption[] = L"AXE Voice - laboratorio";
+    std::copy(std::begin(caption), std::end(caption), std::begin(tray.szTip));
+    return tray;
+}
+bool install_tray(HWND window) {
+    if (g_tray_visible) return true;
+    auto data = create_tray_data(window);
+    g_tray_visible = Shell_NotifyIconW(NIM_ADD, &data) != FALSE;
+    if (g_tray_visible) {
+        data.uVersion = NOTIFYICON_VERSION_4;
+        Shell_NotifyIconW(NIM_SETVERSION, &data);
+    }
+    return g_tray_visible;
+}
+void remove_tray(HWND window) {
+    if (!g_tray_visible) return;
+    auto data = create_tray_data(window);
+    Shell_NotifyIconW(NIM_DELETE, &data);
+    g_tray_visible = false;
+}
+void restore_tray(HWND window) {
+    remove_tray(window);
+    ShowWindow(window, SW_RESTORE);
+    SetForegroundWindow(window);
 }
 BOOL CALLBACK repaint_child(HWND child, LPARAM) {
     InvalidateRect(child, nullptr, TRUE);
@@ -517,6 +559,36 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             return 0;
         }
         break;
+    case WM_SIZE:
+        if (wparam == SIZE_MINIMIZED && install_tray(window)) {
+            ShowWindow(window, SW_HIDE);
+            return 0;
+        }
+        break;
+    case kTrayCallback:
+        if (lparam == WM_LBUTTONDBLCLK) {
+            restore_tray(window);
+            return 0;
+        }
+        if (lparam == WM_RBUTTONUP || lparam == WM_CONTEXTMENU) {
+            POINT location = {};
+            GetCursorPos(&location);
+            HMENU menu = CreatePopupMenu();
+            if (menu) {
+                AppendMenuW(menu, MF_STRING, kTrayOpen, L"Abrir AXE Voice");
+                AppendMenuW(menu, MF_STRING, kTrayExit, L"Sair do AXE Voice");
+                SetForegroundWindow(window);
+                const auto choice = TrackPopupMenu(menu,
+                    TPM_NONOTIFY | TPM_RETURNCMD | TPM_RIGHTBUTTON,
+                    location.x, location.y, 0, window, nullptr);
+                DestroyMenu(menu);
+                if (choice == kTrayOpen) restore_tray(window);
+                if (choice == kTrayExit) SendMessageW(window, WM_CLOSE, 0, 0);
+                PostMessageW(window, WM_NULL, 0, 0);
+            }
+            return 0;
+        }
+        break;
     case WM_ERASEBKGND: {
         RECT rect = {};
         GetClientRect(window, &rect);
@@ -625,6 +697,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         return 0;
     case WM_DESTROY:
         KillTimer(window, kProcessTimer);
+        remove_tray(window);
         if (g_font_regular) DeleteObject(g_font_regular);
         if (g_font_title) DeleteObject(g_font_title);
         if (g_font_small) DeleteObject(g_font_small);
@@ -640,7 +713,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
 }
 }
 
-int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
+int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show) {
     const wchar_t* className = L"AXEVoiceDesktopWindow";
     WNDCLASSW wc = {};
     wc.lpfnWndProc = WindowProc;
@@ -653,6 +726,26 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT, 438, 842,
         nullptr, nullptr, instance, nullptr);
     if (!window) return 2;
+    if (command_line && std::wcscmp(command_line, L"--ui-smoke") == 0) {
+        // Headless GUI startup check for Windows CI: verify the real controls
+        // and both pages without contacting any SIP server or persisting data.
+        bool ok = GetDlgItem(window, kShowDial) && GetDlgItem(window, kShowSettings) &&
+                  GetDlgItem(window, kNumberEdit) && GetDlgItem(window, kCallButton) &&
+                  GetDlgItem(window, kServerEdit) && GetDlgItem(window, kAudioDevicesButton) &&
+                  !IsWindowEnabled(GetDlgItem(window, kCallButton));
+        for (int i = 0; i != 12; ++i)
+            ok = ok && GetDlgItem(window, kDigitStart + i) != nullptr;
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(kShowSettings, BN_CLICKED),
+                     reinterpret_cast<LPARAM>(GetDlgItem(window, kShowSettings)));
+        ok = ok && (GetWindowLongW(g_server, GWL_STYLE) & WS_VISIBLE) &&
+             !(GetWindowLongW(g_number, GWL_STYLE) & WS_VISIBLE);
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(kShowDial, BN_CLICKED),
+                     reinterpret_cast<LPARAM>(GetDlgItem(window, kShowDial)));
+        ok = ok && (GetWindowLongW(g_number, GWL_STYLE) & WS_VISIBLE) &&
+             !(GetWindowLongW(g_server, GWL_STYLE) & WS_VISIBLE);
+        DestroyWindow(window);
+        return ok ? 0 : 9;
+    }
     ShowWindow(window, show);
     UpdateWindow(window);
     const ACCEL shortcuts[] = {
