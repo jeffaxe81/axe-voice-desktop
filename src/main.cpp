@@ -22,6 +22,7 @@
 #include "audio_devices.h"
 #include "audio_selection_feedback.h"
 #include "audio_hotplug_refresh.h"
+#include "audio_panel_refresh.h"
 #include "windows_process.h"
 #include "shutdown_policy.h"
 #include <string>
@@ -435,45 +436,49 @@ void edit_number(HWND root, wchar_t action) {
 }
 
 // Audio preferences are previews only: they never configure or contact Baresip.
-axv::AudioSelectionRefresh fill_audio_combo(
-    HWND combo, const std::vector<axv::AudioEndpoint>& devices,
-    std::wstring& selected_id) {
-    const auto selection = axv::refresh_audio_selection(devices, selected_id);
+// Selections are planned first, allowing a failed device query to keep user
+// preferences without presenting a stale inventory as currently available.
+void fill_audio_combo(HWND combo, const std::vector<axv::AudioEndpoint>& devices,
+                      const axv::AudioSelectionRefresh& selection) {
     SendMessageW(combo, CB_RESETCONTENT, 0, 0);
     for (const auto& device : devices) {
         const std::wstring title = (device.default_communications ? L"[PADRAO] " : L"") +
                                    device.name;
         SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(title.c_str()));
     }
-    EnableWindow(combo, selection.index >= 0);
-    if (selection.index >= 0) {
+    EnableWindow(combo, selection.available() ? TRUE : FALSE);
+    if (selection.available())
         SendMessageW(combo, CB_SETCURSEL, static_cast<WPARAM>(selection.index), 0);
-    }
-    selected_id = selection.selected_id;
-    return selection;
 }
 
 void refresh_audio_panel(bool only_if_changed = false) {
     const auto inventory = axv::inspect_windows_audio_devices();
-    // A periodic check must not reset a user's combo selection or focus.
+    // Do not reset a user's selection on an unchanged periodic poll.
     if (only_if_changed && g_audio_seen &&
         !axv::audio_inventory_changed(g_previous_audio_inventory, inventory)) return;
     g_previous_audio_inventory = inventory;
     g_audio_seen = true;
-    if (inventory.error != axv::AudioInventoryError::None) {
-        g_audio_inputs.clear(); g_audio_outputs.clear();
-        fill_audio_combo(g_input_audio_combo, g_audio_inputs, g_selected_input_id);
-        fill_audio_combo(g_output_audio_combo, g_audio_outputs, g_selected_output_id);
-        SetWindowTextW(g_headset_status, L"Falha ao consultar os dispositivos do Windows.");
+
+    const auto plan = axv::plan_audio_panel_refresh(
+        inventory, g_selected_input_id, g_selected_output_id);
+    if (!plan.scan_ok) {
+        // Core Audio may recover on the next poll. Keep IDs only in RAM, but
+        // disable stale device rows rather than implying the devices are active.
+        EnableWindow(g_input_audio_combo, FALSE);
+        EnableWindow(g_output_audio_combo, FALSE);
+        SetWindowTextW(g_headset_status,
+            L"Falha temporaria na consulta. Preferencias preservadas nesta sessao. Sem audio SIP.");
         return;
     }
+
     g_audio_inputs = inventory.input_devices;
     g_audio_outputs = inventory.output_devices;
-    const auto microphone = fill_audio_combo(
-        g_input_audio_combo, g_audio_inputs, g_selected_input_id);
-    const auto speaker = fill_audio_combo(
-        g_output_audio_combo, g_audio_outputs, g_selected_output_id);
-    SetWindowTextW(g_headset_status, axv::audio_selection_feedback(microphone, speaker));
+    fill_audio_combo(g_input_audio_combo, g_audio_inputs, plan.microphone);
+    fill_audio_combo(g_output_audio_combo, g_audio_outputs, plan.speaker);
+    g_selected_input_id = plan.microphone.selected_id;
+    g_selected_output_id = plan.speaker.selected_id;
+    SetWindowTextW(g_headset_status,
+                   axv::audio_selection_feedback(plan.microphone, plan.speaker));
 }
 
 axv::RuntimeProcess observed_process(axv::ProcessStatus status, bool stopping) {
@@ -1057,7 +1062,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && std::wcscmp(command_line, L"--ui-smoke") == 0;
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.38",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.39",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         kWindowWidth, kFullHeight,
         nullptr, nullptr, instance, nullptr);
