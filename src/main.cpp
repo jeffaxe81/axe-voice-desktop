@@ -566,11 +566,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         }
         break;
     case kTrayCallback:
-        if (lparam == WM_LBUTTONDBLCLK) {
+        // NOTIFYICON_VERSION_4 puts the event in LOWORD(lParam).
+        if (LOWORD(lparam) == WM_LBUTTONDBLCLK) {
             restore_tray(window);
             return 0;
         }
-        if (lparam == WM_RBUTTONUP || lparam == WM_CONTEXTMENU) {
+        if (LOWORD(lparam) == WM_RBUTTONUP || LOWORD(lparam) == WM_CONTEXTMENU) {
             POINT location = {};
             GetCursorPos(&location);
             HMENU menu = CreatePopupMenu();
