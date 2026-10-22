@@ -23,3 +23,18 @@ This change **does not implement a SIP engine, trusted-binary verification, regi
 ## Complemento v0.17.0
 
 Antes de iniciar, o Windows verifica se baresip.exe e a pasta modules adjacente não são symlinks/junctions/reparse points. Bibliotecas de áudio são apenas inventariadas, sem carregamento. Diretório modules ausente não bloqueia a execução, pois o projeto pode ser estático ou ter layout diferente. O processo reporta o código de saída natural quando encerra, sem interpretar isso como registro SIP. Detalhes em [BARESIP-MODULE-AUDIT.md](BARESIP-MODULE-AUDIT.md).
+
+
+## v0.33 — Regras conservadoras de inspeção de configuração
+
+O perfil local de laboratório rejeita entradas `include`, `module_path`, `module_preload` e
+`module_dir`, para impedir referências externas ainda não auditadas. A procura por
+`ctrl_tcp`, `ctrl_http` e `ctrl_ws` nas linhas ativas passa a ignorar caixa
+(maiúsculas/minúsculas), enquanto comentários isolados seguem permitidos.
+Arquivos `config` e `accounts` acima de 128 KiB, linhas acima de 4096 bytes e
+bytes NUL em linhas são recusados preventivamente.
+
+A detecção é deliberadamente restritiva e **não** equivale a analisar toda a gramática do
+Baresip, assinar módulos, autenticar o processo, validar permissões ACL ou prevenir
+alteração concorrente dos arquivos (TOCTOU). A política precisa ser revista
+quando o motor real, módulos e distribuição forem vinculados.

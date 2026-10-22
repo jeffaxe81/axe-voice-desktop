@@ -1,6 +1,9 @@
 #pragma once
 #include <filesystem>
 #include <fstream>
+#include <algorithm>
+#include <cctype>
+#include <cstdint>
 #include <string>
 #include <system_error>
 #ifdef _WIN32
@@ -16,10 +19,43 @@ enum class BaresipProfileStatus {
     UnsafeFile,
     AccountsConfigured,
     InsecureRemoteControl,
+    UnsafeConfiguration,
+    OversizedConfiguration,
     ReadFailed
 };
 
 // Laboratory profile only. This does not provide credential storage or a secure IPC channel.
+// Restrictive parsing is intentional: referenced config files and redirected module
+// paths cannot be audited through the current prototype.
+inline std::string baresip_lowercase_ascii(std::string input) {
+    std::transform(input.begin(), input.end(), input.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return input;
+}
+inline BaresipProfileStatus inspect_baresip_config_line(const std::string& line) {
+    if (line.size() > 4096 || line.find('\0') != std::string::npos)
+        return BaresipProfileStatus::UnsafeConfiguration;
+    const auto start = line.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos || line[start] == '#')
+        return BaresipProfileStatus::Ready;
+    std::string active = baresip_lowercase_ascii(line.substr(start));
+    const auto comment = active.find('#');
+    if (comment != std::string::npos) active.resize(comment);
+    const auto end = active.find_first_of(" \t=\r\n");
+    const std::string key = active.substr(0, end);
+    if (key == "include" || key == "module_path" || key == "module_preload" ||
+        key == "module_dir")
+        return BaresipProfileStatus::UnsafeConfiguration;
+    // Conservative: block even if the suspicious name appears in an unknown
+    // directive. This is not a full Baresip configuration grammar.
+    if (active.find("ctrl_tcp") != std::string::npos ||
+        active.find("ctrl_http") != std::string::npos ||
+        active.find("ctrl_ws") != std::string::npos)
+        return BaresipProfileStatus::InsecureRemoteControl;
+    return BaresipProfileStatus::Ready;
+}
+
 inline BaresipProfileStatus prepare_baresip_lab_profile(const std::filesystem::path& directory) {
     namespace fs = std::filesystem;
     if (directory.empty()) return BaresipProfileStatus::UnsafePath;
@@ -58,20 +94,22 @@ inline BaresipProfileStatus prepare_baresip_lab_profile(const std::filesystem::p
             return BaresipProfileStatus::UnsafeFile;
 #endif
         if (std::string(filename) != "accounts" && std::string(filename) != "config") continue;
+        error.clear();
+        const auto size = fs::file_size(file, error);
+        if (error) return BaresipProfileStatus::ReadFailed;
+        if (size > 128 * 1024) return BaresipProfileStatus::OversizedConfiguration;
         std::ifstream input(file, std::ios::binary);
         if (!input.is_open()) return BaresipProfileStatus::ReadFailed;
         std::string line;
         while (std::getline(input, line)) {
+            if (line.size() > 4096 || line.find('\0') != std::string::npos)
+                return BaresipProfileStatus::UnsafeConfiguration;
             const auto start = line.find_first_not_of(" \t\r\n");
             if (start == std::string::npos || line[start] == '#') continue;
             if (std::string(filename) == "accounts")
                 return BaresipProfileStatus::AccountsConfigured;
-            // No unauthenticated control listener in a laboratory process.
-            const std::string active = line.substr(start);
-            if (active.find("ctrl_tcp") != std::string::npos ||
-                active.find("ctrl_http") != std::string::npos ||
-                active.find("ctrl_ws") != std::string::npos)
-                return BaresipProfileStatus::InsecureRemoteControl;
+            const auto decision = inspect_baresip_config_line(line);
+            if (decision != BaresipProfileStatus::Ready) return decision;
         }
         if (input.bad()) return BaresipProfileStatus::ReadFailed;
     }
@@ -85,7 +123,9 @@ inline const wchar_t* baresip_profile_diagnostic(BaresipProfileStatus status) {
     case BaresipProfileStatus::UnsafePath: return L"Pasta de perfil insegura ou inacessível.";
     case BaresipProfileStatus::UnsafeFile: return L"Perfil contém arquivos redirecionados ou inválidos.";
     case BaresipProfileStatus::AccountsConfigured: return L"Contas SIP já configuradas: inicialização automática bloqueada.";
-    case BaresipProfileStatus::InsecureRemoteControl: return L"Controle TCP/HTTP não autenticado detectado: execução bloqueada.";
+    case BaresipProfileStatus::InsecureRemoteControl: return L"Controle remoto não auditado detectado: execução bloqueada.";
+    case BaresipProfileStatus::UnsafeConfiguration: return L"Configuração Baresip não segura: include, caminho externo ou conteúdo inválido.";
+    case BaresipProfileStatus::OversizedConfiguration: return L"Perfil Baresip excede o limite de leitura segura (128 KiB).";
     case BaresipProfileStatus::ReadFailed: return L"Não foi possível inspecionar o perfil Baresip.";
     }
     return L"Erro ao validar o perfil Baresip.";
