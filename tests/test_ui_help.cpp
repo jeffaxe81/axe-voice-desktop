@@ -9,5 +9,6 @@ int main() {
     if (text.find(L"Sem registro SIP real") == text.npos ||
         text.find(L"NAO comprova registro SIP") == text.npos) return 3;
     if (text.find(L"Ctrl+R: Atualizar") == text.npos) return 4;
+    if (text.find(L"Ctrl+Shift+D: Copiar") == text.npos) return 5;
     return 0;
 }
