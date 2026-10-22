@@ -53,3 +53,11 @@ A interface passa a drenar uma caixa de eventos thread-safe do futuro adaptador 
 - `destination_feedback` testa as classes de retorno com entradas válidas/inválidas; `ui_smoke` exercita o evento `EN_CHANGE` e verifica que nenhuma chamada é habilitada.
 
 **Limites:** sem registro SIP, sessão autenticada, interface de mídia ou chamada real. Teste de cores, DPI e leitores de tela em Windows 10/11 ainda necessário.
+
+## v0.29 — Teclado que respeita cursor e seleção
+
+- As teclas do discador inserem na posição do cursor, substituem a seleção e removem a seleção com **Apagar**.
+- O controle Win32 usa `EM_REPLACESEL`, preservando o histórico de desfazer do campo.
+- O limite continua em 128 caracteres e os caracteres permitidos do teclado telefônico permanecem os mesmos.
+- O teste unitário cobre cursor, seleção, limite e bloqueio de metacaracteres; o smoke Windows exercita cliques reais.
+- Nada é discado; registro SIP e áudio bidirecional continuam indisponíveis.

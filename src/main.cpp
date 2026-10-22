@@ -355,16 +355,20 @@ void refresh_destination_feedback() {
 }
 
 void edit_number(HWND root, wchar_t action) {
-    wchar_t buffer[129] = {};
-    GetWindowTextW(g_number, buffer, 129);
-    std::wstring candidate(buffer);
-    if (action == L'\b') axv::dial_backspace(candidate);
-    else if (action == L'\0') candidate.clear();
-    else axv::dial_append(candidate, action);
-    SetWindowTextW(g_number, candidate.c_str());
-    SendMessageW(g_number, EM_SETSEL, candidate.length(), candidate.length());
+    if (!g_number) return;
+    wchar_t current[129] = {};
+    GetWindowTextW(g_number, current, 129);
+    DWORD selection_start = 0, selection_end = 0;
+    SendMessageW(g_number, EM_GETSEL, reinterpret_cast<WPARAM>(&selection_start),
+                 reinterpret_cast<LPARAM>(&selection_end));
+    const auto plan = axv::plan_dial_edit(current, selection_start, selection_end, action);
+    if (!plan.accepted) return;
     SetFocus(g_number);
-    // SetWindowTextW triggers EN_CHANGE, the same path used for manual typing/paste.
+    SendMessageW(g_number, EM_SETSEL, static_cast<WPARAM>(plan.start),
+                 static_cast<LPARAM>(plan.end));
+    SendMessageW(g_number, EM_REPLACESEL, TRUE,
+                 reinterpret_cast<LPARAM>(plan.replacement.c_str()));
+    // EM_REPLACESEL triggers EN_CHANGE and preserves native undo.
     (void)root;
 }
 
@@ -949,7 +953,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && std::wcscmp(command_line, L"--ui-smoke") == 0;
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.28",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.29",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         kWindowWidth, kFullHeight,
         nullptr, nullptr, instance, nullptr);
@@ -988,6 +992,19 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         const bool valid_feedback_ok = !g_destination_invalid &&
             std::wstring_view(feedback_message).find(L"Ramal valido") != std::wstring_view::npos &&
             !IsWindowEnabled(GetDlgItem(window, kCallButton));
+        SetWindowTextW(g_number, L"1234");
+        SendMessageW(g_number, EM_SETSEL, 2, 2);
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(kDigitStart + 4, BN_CLICKED),
+                     reinterpret_cast<LPARAM>(GetDlgItem(window, kDigitStart + 4)));
+        wchar_t edited[32] = {};
+        GetWindowTextW(g_number, edited, 32);
+        const bool insert_at_caret_ok = std::wstring_view(edited) == L"12534";
+        SendMessageW(g_number, EM_SETSEL, 1, 4);
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(kBackspace, BN_CLICKED),
+                     reinterpret_cast<LPARAM>(GetDlgItem(window, kBackspace)));
+        GetWindowTextW(g_number, edited, 32);
+        const bool selected_delete_ok = std::wstring_view(edited) == L"14";
+        ok = ok && insert_at_caret_ok && selected_delete_ok;
         SetWindowTextW(g_number, L"");
         GetWindowTextW(g_status, feedback_message, 160);
         const bool empty_feedback_ok = !g_destination_invalid &&
