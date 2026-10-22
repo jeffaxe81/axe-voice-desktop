@@ -30,8 +30,8 @@ static void emit(bevent_ev kind, bevent* event) {
 int main() {
     using namespace axv;
     BaresipEventMailbox mailbox;
-    BaresipCallbackIngress ingress(mailbox);
-    BaresipSdkEventAdapter adapter(ingress);
+    BaresipCallbackLifecycle lifecycle(mailbox);
+    BaresipSdkEventAdapter adapter(lifecycle);
     ua account{1}, other{2};
     call c1{&account, 1}, c2{&account, 2}, alien{&other, 3};
     bevent ua_event{&account, nullptr};
@@ -40,7 +40,7 @@ int main() {
 
     if (adapter.start(nullptr) || adapter.active()) return 1;
     g_fail_registration = true;
-    if (adapter.start(&account) || ingress.session() != 0) return 2;
+    if (adapter.start(&account) || mailbox.drain().session != 0) return 2;
     g_fail_registration = false;
     if (!adapter.start(&account) || !adapter.active() || adapter.start(&other)) return 3;
     const auto a = adapter.session();
@@ -71,7 +71,7 @@ int main() {
     if (state.sip != SipStatus::Calling || state.call_id != 2) return 9;
     // Wrong old call closure must revoke the whole session, not the new call.
     emit(BEVENT_CALL_CLOSED, &one);
-    if (adapter.active() || ingress.session() || mailbox.drain().size) return 10;
+    if (adapter.active() || mailbox.drain().session || mailbox.drain().size) return 10;
     adapter.stop();
     if (g_callback || adapter.active()) return 11;
     if (!adapter.start(&account) || adapter.session() <= a) return 12;
@@ -81,7 +81,7 @@ int main() {
     emit(BEVENT_CALL_CLOSED, &one);
     // Pointer reuse after closure in SAME generation is conservatively rejected.
     emit(BEVENT_CALL_INCOMING, &one);
-    if (adapter.active() || ingress.session()) return 13;
+    if (adapter.active() || mailbox.drain().session) return 13;
     adapter.stop();
     if (!adapter.start(&account)) return 14;
 
@@ -92,7 +92,7 @@ int main() {
     emit(BEVENT_REGISTERING, &ua_event);
     if (mailbox.drain().size != 1) return 16;
     emit(BEVENT_SHUTDOWN, &ua_event);
-    if (adapter.active() || ingress.session() || mailbox.drain().session) return 17;
+    if (adapter.active() || mailbox.drain().session || mailbox.drain().session) return 17;
     adapter.stop();
 
     // A failure on another UA is also ignored.
@@ -113,7 +113,7 @@ int main() {
     // BEVENT_EXIT is a global event and requires no associated UA.
     if (!adapter.start(&account)) return 24;
     emit(BEVENT_EXIT, nullptr);
-    if (adapter.active() || ingress.session() || mailbox.drain().session) return 25;
+    if (adapter.active() || mailbox.drain().session || mailbox.drain().session) return 25;
     adapter.stop();
     if (g_callback != nullptr || g_registered != g_unregistered) return 26;
     return 0;

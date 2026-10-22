@@ -63,3 +63,25 @@ and licenses; implement an owned native event-loop with callback quiescence;
 secure account credential handling; trust issuance; call controls; device
 routing; TLS/SRTP verification; call/SIP integration tests and manual Windows
 audio/headset QA.
+
+## Callback epochs and lifecycle integration (parallel workstream)
+
+`BaresipSdkEventAdapter` now uses `BaresipCallbackLifecycle`. Each
+`bevent_register` receives a distinct immutable callback context (fence
+generation + mailbox session), retained until adapter destruction. A delayed
+callback from an older registration cannot be mistaken for a current callback.
+
+On malformed, terminal or wrong-call events, `reject_current()` closes the
+admission gate and invalidates the mailbox **without waiting in the callback**.
+At normal stop, the adapter unregisters the SDK handler and waits for admitted
+lifecycle work. The number of retained contexts is bounded to 512.
+
+**Critical external requirement:** only a serialized Baresip event-loop owner
+can make C API callback dispatch, start, and stop safe. Before adapter
+destruction it must guarantee a native callback quiescence barrier. The fence
+does not make late callbacks into a destroyed object safe. No SIP/media
+functionality or VerifiedNativeApi token is implemented in this workstream.
+
+`baresip_sdk_callback_epochs` (mock SDK) checks stale callback dispatch
+after stop/start and 100 consecutive restarts. This workstream deliberately
+does not bump the application's version until integration into the main lab PR.

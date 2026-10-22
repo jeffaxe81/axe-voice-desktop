@@ -133,6 +133,22 @@ public:
         return lease && ingress_.call_changed(captured.mailbox_session, native_key, event);
     }
 
+    // Safe to call INSIDE a callback: revoke without waiting on its own lease.
+    // Normal stop() must still unregister the SDK handler and call
+    // revoke_and_wait() after the native event-loop reaches quiescence.
+    void reject_current() {
+        std::lock_guard<std::mutex> lock(lifecycle_);
+        fence_.close();
+        ingress_.revoke();
+    }
+
+    // Non-authorizing view of a captured session. Neither a process probe
+    // nor a native callback pointer proves registration or media security.
+    bool is_live(CapturedSession captured) {
+        auto lease = fence_.admit(captured.fence_generation);
+        return lease && ingress_.session() == captured.mailbox_session;
+    }
+
     // Unregister the native callback FIRST to prevent new native C API entries;
     // then use this operation to reject queued/stale work, drop pending events
     // and wait for callbacks already admitted to finish. Not callable from one
