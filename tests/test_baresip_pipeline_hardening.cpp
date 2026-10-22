@@ -5,15 +5,16 @@
 
 int main() {
     using namespace axv;
+    constexpr std::uintptr_t account = 0xA1;
     BaresipEventMailbox mailbox;
     BaresipCallbackIngress ingress(mailbox);
     SipEventProjection projection;
 
     // An admitted callback stream does not independently establish provenance.
-    const auto untrusted = ingress.begin_session();
+    const auto untrusted = ingress.begin_session(account);
     if (!untrusted ||
-        !ingress.registration(untrusted, BaresipEventKind::Registering) ||
-        !ingress.registration(untrusted, BaresipEventKind::RegisterOk))
+        !ingress.registration(untrusted, account, BaresipEventKind::Registering) ||
+        !ingress.registration(untrusted, account, BaresipEventKind::RegisterOk))
         return 1;
     auto state = projection.observe(RuntimeProcess::Running,
                                     SipEvidence::None, mailbox.drain());
@@ -23,10 +24,10 @@ int main() {
 
     // In this UNIT TEST ONLY the synthetic proof below exercises the reducer.
     // Neither the ingress nor the production UI can grant VerifiedNativeApi.
-    const auto session = ingress.begin_session();
+    const auto session = ingress.begin_session(account);
     if (session <= untrusted ||
-        !ingress.registration(session, BaresipEventKind::Registering) ||
-        !ingress.registration(session, BaresipEventKind::RegisterOk))
+        !ingress.registration(session, account, BaresipEventKind::Registering) ||
+        !ingress.registration(session, account, BaresipEventKind::RegisterOk))
         return 3;
     state = projection.observe(RuntimeProcess::Running,
                                SipEvidence::VerifiedNativeApi, mailbox.drain());
@@ -34,14 +35,14 @@ int main() {
         !may_use_call_control(state, session, CallAction::Dial)) return 4;
 
     // A call identity remains stable while its UI state progresses.
-    if (!ingress.call_started(session, 101, BaresipEventKind::CallIncoming))
+    if (!ingress.call_started(session, account, 101, BaresipEventKind::CallIncoming))
         return 5;
     state = projection.observe(RuntimeProcess::Running,
                                SipEvidence::VerifiedNativeApi, mailbox.drain());
     if (state.sip != SipStatus::Ringing || state.call_id != 1 ||
         !may_use_call_control(state, session, CallAction::Answer)) return 6;
-    if (!ingress.call_changed(session, 101, BaresipEventKind::CallEstablished) ||
-        !ingress.call_changed(session, 101, BaresipEventKind::CallClosed))
+    if (!ingress.call_changed(session, account, 101, BaresipEventKind::CallEstablished) ||
+        !ingress.call_changed(session, account, 101, BaresipEventKind::CallClosed))
         return 7;
     state = projection.observe(RuntimeProcess::Running,
                                SipEvidence::VerifiedNativeApi, mailbox.drain());
@@ -50,7 +51,7 @@ int main() {
 
     // The mailbox has fixed storage; a fabricated oversized batch MUST be
     // rejected without reading beyond the array or resurrecting the session.
-    if (!ingress.call_started(session, 102, BaresipEventKind::CallOutgoing))
+    if (!ingress.call_started(session, account, 102, BaresipEventKind::CallOutgoing))
         return 9;
     auto malformed = mailbox.drain();
     malformed.size = BaresipEventMailbox::kCapacity + 1;
@@ -58,18 +59,18 @@ int main() {
                                SipEvidence::VerifiedNativeApi, malformed);
     if (state.evidence != SipEvidence::None || state.session != 0 ||
         may_use_call_control(state, session, CallAction::Hangup)) return 10;
-    if (!ingress.call_changed(session, 102, BaresipEventKind::CallEstablished))
+    if (!ingress.call_changed(session, account, 102, BaresipEventKind::CallEstablished))
         return 11;
     state = projection.observe(RuntimeProcess::Running,
                                SipEvidence::VerifiedNativeApi, mailbox.drain());
     if (state.evidence != SipEvidence::None) return 12;
 
     ingress.revoke();
-    const auto fresh = ingress.begin_session();
-    if (fresh <= session || ingress.registration(session, BaresipEventKind::RegisterOk))
+    const auto fresh = ingress.begin_session(account);
+    if (fresh <= session || ingress.registration(session, account, BaresipEventKind::RegisterOk))
         return 13;
-    if (!ingress.registration(fresh, BaresipEventKind::Registering) ||
-        !ingress.registration(fresh, BaresipEventKind::RegisterOk))
+    if (!ingress.registration(fresh, account, BaresipEventKind::Registering) ||
+        !ingress.registration(fresh, account, BaresipEventKind::RegisterOk))
         return 14;
     state = projection.observe(RuntimeProcess::Running,
                                SipEvidence::VerifiedNativeApi, mailbox.drain());
@@ -77,9 +78,9 @@ int main() {
 
     // Invalid event class revokes and erases ALL queued data, without
     // implicitly granting the next generation.
-    if (!ingress.registration(fresh, BaresipEventKind::Registering))
+    if (!ingress.registration(fresh, account, BaresipEventKind::Registering))
         return 16;
-    if (ingress.registration(fresh, BaresipEventKind::CallIncoming) ||
+    if (ingress.registration(fresh, account, BaresipEventKind::CallIncoming) ||
         ingress.session() != 0 || mailbox.drain().session != 0)
         return 17;
     state = projection.observe(RuntimeProcess::Running,
@@ -89,18 +90,22 @@ int main() {
 
     // Revoke is mutex-synchronized with in-flight worker callbacks; even
     // if some callbacks race ahead, no history survives a completed teardown.
-    const auto last = ingress.begin_session();
+    const auto last = ingress.begin_session(account);
     if (last <= fresh) return 19;
     std::atomic<bool> start{false};
     std::thread worker([&] {
         while (!start.load()) std::this_thread::yield();
         for (int i = 0; i < 200; ++i)
-            ingress.registration(last, BaresipEventKind::Registering);
+            ingress.registration(last, account, BaresipEventKind::Registering);
     });
     start = true;
     ingress.revoke();
     worker.join();
     if (ingress.session() != 0 || mailbox.drain().session != 0 ||
-        ingress.registration(last, BaresipEventKind::RegisterOk)) return 20;
+        ingress.registration(last, account, BaresipEventKind::RegisterOk)) return 20;
+    const auto mismatched = ingress.begin_session(account);
+    if (mismatched <= last ||
+        ingress.registration(mismatched, account + 1, BaresipEventKind::Registering) ||
+        ingress.session() != 0 || mailbox.drain().session != 0) return 21;
     return 0;
 }
