@@ -17,6 +17,7 @@
 #include "windows_process.h"
 #include "shutdown_policy.h"
 #include <string>
+#include <cstdio>
 
 #include "dialpad_model.h"
 #include <vector>
@@ -800,20 +801,29 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                      reinterpret_cast<LPARAM>(GetDlgItem(window, kShowDial)));
         ok = ok && (GetWindowLongW(g_number, GWL_STYLE) & WS_VISIBLE) &&
              !(GetWindowLongW(g_server, GWL_STYLE) & WS_VISIBLE);
+        const bool baseline_ok = ok;
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(kCompact, BN_CLICKED),
                      reinterpret_cast<LPARAM>(GetDlgItem(window, kCompact)));
         RECT bounds = {};
         GetWindowRect(window, &bounds);
-        ok = ok && g_compact && (bounds.bottom - bounds.top == kCompactHeight) &&
+        const bool compact_ok = g_compact && (bounds.bottom - bounds.top == kCompactHeight) &&
             (GetWindowLongW(g_number, GWL_STYLE) & WS_VISIBLE) &&
             !(GetWindowLongW(GetDlgItem(window, kDigitStart), GWL_STYLE) & WS_VISIBLE) &&
             !IsWindowEnabled(GetDlgItem(window, kCallButton));
+        ok = ok && compact_ok;
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(kShowSettings, BN_CLICKED),
                      reinterpret_cast<LPARAM>(GetDlgItem(window, kShowSettings)));
         GetWindowRect(window, &bounds);
-        ok = ok && !g_compact && g_page == 1 &&
+        const bool restored_ok = !g_compact && g_page == 1 &&
             (bounds.bottom - bounds.top == kFullHeight) &&
             (GetWindowLongW(g_server, GWL_STYLE) & WS_VISIBLE);
+        ok = ok && restored_ok;
+        if (!ok) {
+            std::fprintf(stderr, "UI_SMOKE_FAIL baseline=%d compact=%d restored=%d mode=%d page=%d height=%ld\n",
+                         baseline_ok ? 1 : 0, compact_ok ? 1 : 0, restored_ok ? 1 : 0,
+                         g_compact ? 1 : 0, g_page, bounds.bottom - bounds.top);
+            std::fflush(stderr);
+        }
         DestroyWindow(window);
         return ok ? 0 : 9;
     }
