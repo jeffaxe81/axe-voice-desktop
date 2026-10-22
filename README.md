@@ -1,4 +1,4 @@
-# AXE Voice Desktop — Windows, áudio primeiro (v0.19.0 laboratório)
+# AXE Voice Desktop — Windows, áudio primeiro (v0.20.0 laboratório)
 
 Protótipo de softphone SIP corporativo em Windows com motor planejado **Baresip**. A versão atual oferece interface Win32, validação local de parâmetros SIP, verificação offline da presença de baresip.exe e inventário de dispositivos de áudio do Windows.
 
@@ -23,7 +23,7 @@ Executável: build\Release\AXE-Voice.exe. O CI publica um artefato do protótipo
 
 ## Diagnósticos
 
-- **Parar motor (v0.19)**: solicita `/quit` por stdin privado sem esperar a saída na thread da interface; a UI monitora o processo a cada 100 ms e aplica timeout de 1,5 s com fallback por Job Object. O mecanismo ainda não foi homologado com Baresip real.
+- **Parada e fechamento (v0.20)**: `/quit` é enfileirado em uma thread Win32 própria, sem escrita no pipe pela interface. Ao fechar a janela, a UI acompanha a saída a cada 100 ms, com prazo de 1,5 s e fallback por Job Object. A confirmação de execução do comando pelo Baresip ainda está pendente.
 - **Iniciar Baresip (laboratório)**: executa o processo com perfil separado em LocalAppData/AXEVoice/baresip-lab; bloqueia contas SIP pré-configuradas e módulos de controle remoto não autenticados. Ainda não estabelece chamadas.
 - **Verificar Baresip local**: audita a presença de módulos locais G.711, G.722, Opus, WASAPI, WinWave e SRTP, sem carregar ou autenticar bibliotecas. Não certifica codecs disponíveis em chamada.
 - **Verificar microfone e saída de áudio**: conta dispositivos ativos e identifica os padrões de comunicação no Windows. Não grava, reproduz nem confirma a ligação com Baresip.
