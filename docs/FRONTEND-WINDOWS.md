@@ -107,3 +107,12 @@ A regra do botão habilitado e a execução de `WM_COMMAND` usam agora a mesma f
 - Inventário de microfones **não** significa mídia RTP/SRTP funcional. No laboratório atual, a verificação de mídia permanece bloqueada.
 - Smoke test cobre o comando e a impossibilidade de habilitar Chamadas. O novo CTest valida todos os gates isoladamente.
 - O relatório não altera a política de chamada nem substitui testes em PBX real.
+
+## v0.38 — Atualização automática do inventário de áudio
+
+- Enquanto a aba Áudio está visível, o Windows Core Audio é consultado a cada **3 segundos**.
+- A UI só atualiza o inventário quando IDs, nomes, padrão de comunicação, quantidades ou erro de leitura mudarem. Listas suspensas abertas não são interrompidas.
+- Na desconexão de headset, o fallback v0.34 é reaplicado automaticamente, mantendo uma preferência que ainda exista. A verificação para quando sai da aba.
+- Um refresh manual continua disponível. O smoke test não usa hardware nem inicia o timer em modo de teste.
+- `audio_hotplug_refresh` cobre catálogo inalterado, alteração de padrão, nome, entrada/saída, remoção e erro de enumeração.
+- **Limite:** polling é diagnóstico de dispositivos; não prova permissão de microfone, fluxo de áudio SIP/RTP ou compatibilidade com Baresip. Ainda exige teste manual de plug/unplug em Windows 10/11.
