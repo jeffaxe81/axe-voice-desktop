@@ -34,6 +34,7 @@
 #include "account_form_feedback.h"
 #include "ui_help.h"
 #include "call_readiness.h"
+#include "diagnostic_export.h"
 #include <vector>
 #include <array>
 #include <algorithm>
@@ -67,6 +68,7 @@ constexpr int kCompact = 2005;
 constexpr int kShowAudio = 2006;
 constexpr int kHelpButton = 2007;
 constexpr int kReadinessButton = 2008;
+constexpr int kCopyDiagnosticButton = 2009;
 constexpr int kInputAudioCombo = 2401;
 constexpr int kOutputAudioCombo = 2402;
 constexpr int kWindowWidth = 438;
@@ -121,6 +123,7 @@ bool g_compact = false;
 bool g_smoke_mode = false;
 bool g_help_requested_smoke = false;
 bool g_readiness_requested_smoke = false;
+bool g_diagnostic_copy_requested_smoke = false;
 bool g_destination_invalid = false;
 bool g_account_invalid_server = false;
 bool g_account_invalid_user = false;
@@ -516,7 +519,7 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     if (IsWindowEnabled(button) != (dial ? TRUE : FALSE))
         EnableWindow(button, dial ? TRUE : FALSE);
 }
-std::wstring make_readiness_report() {
+axv::CallReadiness collect_call_readiness() {
     wchar_t number[129]{}, server[129]{}, user[129]{}, port[129]{};
     GetWindowTextW(g_number, number, 129);
     GetWindowTextW(g_server, server, 129);
@@ -535,7 +538,42 @@ std::wstring make_readiness_report() {
         snapshot.sip == axv::SipStatus::Registered;
     // A device inventory is not an RTP/SRTP or headset media test.
     result.verified_media = false;
-    return axv::format_call_readiness(result);
+    return result;
+}
+std::wstring make_readiness_report() {
+    return axv::format_call_readiness(collect_call_readiness());
+}
+
+// A bounded diagnostic containing only boolean states is explicitly copied
+// by the user; no account, dialed address or audio device ID is collected.
+bool copy_diagnostic_to_clipboard(HWND owner, const std::wstring& report) {
+    if (report.empty() || report.size() > 4096) return false;
+    const SIZE_T bytes = (report.size() + 1) * sizeof(wchar_t);
+    HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (!memory) return false;
+    auto* dest = static_cast<wchar_t*>(GlobalLock(memory));
+    if (!dest) {
+        GlobalFree(memory);
+        return false;
+    }
+    std::wmemcpy(dest, report.c_str(), report.size() + 1);
+    GlobalUnlock(memory);
+    if (!OpenClipboard(owner)) {
+        GlobalFree(memory);
+        return false;
+    }
+    if (!EmptyClipboard()) {
+        CloseClipboard();
+        GlobalFree(memory);
+        return false;
+    }
+    const HANDLE copied = SetClipboardData(CF_UNICODETEXT, memory);
+    CloseClipboard();
+    if (!copied) {
+        GlobalFree(memory);
+        return false;
+    }
+    return true;
 }
 void begin_shutdown(HWND window) {
     g_sip_session_guard.revoke(axv::RuntimeProcess::Stopping, g_native_event_mailbox, g_sip_projection);
@@ -634,8 +672,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                    39, 537, 350, 46, 2, g_font_small);
         g_headset_status = make_label(window, L"Abra AUDIO para consultar o Windows.",
                                      39, 594, 350, 64, 2, g_font_small);
-        make_button(window, L"PRONTIDAO DE CHAMADAS (F2)",
-                    kReadinessButton, 39, 674, 350, 42, 2);
+        make_button(window, L"PRONTIDAO (F2)",
+                    kReadinessButton, 39, 674, 167, 42, 2);
+        make_button(window, L"COPIAR STATUS",
+                    kCopyDiagnosticButton, 214, 674, 175, 42, 2);
         g_status = make_label(window, L"Digite um ramal ou endereço SIP.",
                               24, 762, 390, 30, -1, g_font_small);
         refresh_destination_feedback();
@@ -679,6 +719,25 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                     MessageBoxW(window, report.c_str(),
                                 L"Prontidao de chamadas - AXE Voice LAB",
                                 MB_OK | MB_ICONINFORMATION);
+                }
+                return 0;
+            }
+            if (control == kCopyDiagnosticButton) {
+                refresh_runtime_banner(g_baresip_process.poll());
+                const std::wstring report =
+                    axv::format_diagnostic_export(collect_call_readiness());
+                if (g_smoke_mode) {
+                    // The Windows CI smoke test must not change the real clipboard.
+                    g_diagnostic_copy_requested_smoke =
+                        report.find(L"CHAMADAS BLOQUEADAS") != std::wstring::npos &&
+                        report.find(L"Somente estados") != std::wstring::npos;
+                } else {
+                    const bool copied = copy_diagnostic_to_clipboard(window, report);
+                    const wchar_t* message = copied
+                        ? L"Status copiado sem dados de conta, destino ou dispositivos."
+                        : L"Falha ao copiar. Area de transferencia pode estar ocupada.";
+                    if (g_page == 2) SetWindowTextW(g_headset_status, message);
+                    else SetWindowTextW(g_status, message);
                 }
                 return 0;
             }
@@ -1062,7 +1121,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && std::wcscmp(command_line, L"--ui-smoke") == 0;
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.39",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.40",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         kWindowWidth, kFullHeight,
         nullptr, nullptr, instance, nullptr);
@@ -1174,7 +1233,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             GetDlgItem(window, kReadinessButton) &&
             (GetWindowLongW(GetDlgItem(window, kReadinessButton), GWL_STYLE) & WS_VISIBLE) &&
             !IsWindowEnabled(GetDlgItem(window, kCallButton));
-        ok = ok && audio_ok && readiness_ok;
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(kCopyDiagnosticButton, 1), 0);
+        const bool diagnostic_ok = g_diagnostic_copy_requested_smoke &&
+            GetDlgItem(window, kCopyDiagnosticButton) &&
+            (GetWindowLongW(GetDlgItem(window, kCopyDiagnosticButton), GWL_STYLE) & WS_VISIBLE) &&
+            !IsWindowEnabled(GetDlgItem(window, kCallButton));
+        ok = ok && audio_ok && readiness_ok && diagnostic_ok;
         if (!ok) {
             std::fprintf(stderr, "UI_SMOKE_FAIL baseline=%d compact=%d restored=%d audio=%d feedback=%d/%d/%d mode=%d page=%d height=%ld\n",
                          baseline_ok ? 1 : 0, compact_ok ? 1 : 0, restored_ok ? 1 : 0,
@@ -1201,7 +1265,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         {FVIRTKEY | FCONTROL, L'R', kRefreshHeadsetsButton},
         {FVIRTKEY, VK_ESCAPE, kShowDial},
         {FVIRTKEY, VK_F1, kHelpButton},
-        {FVIRTKEY, VK_F2, kReadinessButton}
+        {FVIRTKEY, VK_F2, kReadinessButton},
+        {FVIRTKEY | FCONTROL | FSHIFT, L'D', kCopyDiagnosticButton}
     };
     HACCEL accelerator = CreateAcceleratorTableW(
         const_cast<ACCEL*>(shortcuts), static_cast<int>(sizeof(shortcuts)/sizeof(shortcuts[0])));
