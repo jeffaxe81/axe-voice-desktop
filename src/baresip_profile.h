@@ -53,8 +53,8 @@ inline BaresipProfileStatus prepare_baresip_lab_profile(const std::filesystem::p
         if (fs::is_symlink(file_status) || !fs::is_regular_file(file_status))
             return BaresipProfileStatus::UnsafeFile;
 #ifdef _WIN32
-        const DWORD attributes = GetFileAttributesW(file.c_str());
-        if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_REPARSE_POINT))
+        const DWORD file_attributes = GetFileAttributesW(file.c_str());
+        if (file_attributes == INVALID_FILE_ATTRIBUTES || (file_attributes & FILE_ATTRIBUTE_REPARSE_POINT))
             return BaresipProfileStatus::UnsafeFile;
 #endif
         if (std::string(filename) != "accounts" && std::string(filename) != "config") continue;

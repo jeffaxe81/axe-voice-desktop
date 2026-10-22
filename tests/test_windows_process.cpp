@@ -1,6 +1,7 @@
 #include "../src/windows_process.h"
 #include <filesystem>
 #include <iostream>
+#include <string>
 
 int wmain(int argc, wchar_t** argv) {
     using namespace axv;

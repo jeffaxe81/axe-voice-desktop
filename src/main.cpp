@@ -85,7 +85,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_audio_status = CreateWindowW(L"STATIC", L"Áudio ainda não inspecionado.",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
             20, 514, 350, 55, window, nullptr, nullptr, nullptr);
-        CreateWindowW(L"BUTTON", L"Iniciar Baresip (laboratório)",
+        CreateWindowW(L"BUTTON", L"Iniciar Baresip (lab)",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
             20, 575, 163, 34, window, reinterpret_cast<HMENU>(kStartBaresipButton), nullptr, nullptr);
         CreateWindowW(L"BUTTON", L"Parar motor",
