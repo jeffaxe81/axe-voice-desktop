@@ -3,6 +3,20 @@
 #include <vector>
 
 namespace axv {
+namespace {
+DWORD WINAPI send_quit_on_worker(LPVOID pipe_handle) {
+    HANDLE write_end = static_cast<HANDLE>(pipe_handle);
+    constexpr char command[] = "/quit\n";
+    DWORD count = 0;
+    const BOOL sent = WriteFile(write_end, command, sizeof(command) - 1,
+                                &count, nullptr);
+    const DWORD result = sent && count == sizeof(command) - 1
+        ? ERROR_SUCCESS : (sent ? ERROR_WRITE_FAULT : GetLastError());
+    CloseHandle(write_end);
+    return result;
+}
+} // namespace
+
 WindowsProcess::~WindowsProcess() { stop(); }
 
 void WindowsProcess::release_handles() {
@@ -191,6 +205,32 @@ bool WindowsProcess::request_quit() {
     if (!closed) last_error_ = GetLastError();
     stdin_write_ = nullptr;
     return sent && bytes == sizeof(command)-1 && closed;
+}
+
+bool WindowsProcess::request_quit_async() {
+    if (!process_ || !stdin_write_) {
+        last_error_ = ERROR_INVALID_HANDLE;
+        return false;
+    }
+    // Detached Win32 worker owns a separate non-inheritable pipe handle;
+    // it never accesses WindowsProcess, whose lifetime may end first.
+    HANDLE duplicate = nullptr;
+    if (!DuplicateHandle(GetCurrentProcess(), stdin_write_, GetCurrentProcess(),
+                         &duplicate, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
+        last_error_ = GetLastError();
+        return false;
+    }
+    HANDLE worker = CreateThread(nullptr, 0, send_quit_on_worker, duplicate, 0, nullptr);
+    if (!worker) {
+        last_error_ = GetLastError();
+        CloseHandle(duplicate);
+        return false;
+    }
+    CloseHandle(worker);
+    CloseHandle(stdin_write_);
+    stdin_write_ = nullptr; // No second /quit for this process instance.
+    last_error_ = ERROR_SUCCESS;
+    return true;
 }
 
 GracefulStopResult WindowsProcess::stop_gracefully(DWORD timeout_ms) {
