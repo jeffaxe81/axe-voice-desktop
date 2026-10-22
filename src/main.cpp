@@ -23,6 +23,7 @@
 #include "audio_selection_feedback.h"
 #include "audio_preference_state.h"
 #include "audio_hotplug_refresh.h"
+#include "audio_inventory_async.h"
 #include "windows_process.h"
 #include "shutdown_policy.h"
 #include <string>
@@ -101,6 +102,7 @@ std::vector<axv::AudioEndpoint> g_audio_inputs;
 std::vector<axv::AudioEndpoint> g_audio_outputs;
 axv::AudioInventory g_previous_audio_inventory;
 bool g_audio_seen = false;
+axv::AudioInventoryAsync g_audio_worker(axv::inspect_windows_audio_devices);
 axv::AudioDeviceChoice g_input_choice;
 axv::AudioDeviceChoice g_output_choice;
 axv::WindowsProcess g_baresip_process;
@@ -304,8 +306,10 @@ void show_page(HWND root, int page) {
     // Poll Core Audio only while the Audio tab is visible.
     if (page == 2 && !g_smoke_mode)
         SetTimer(root, kAudioInventoryTimer, kAudioInventoryIntervalMs, nullptr);
-    else
+    else {
         KillTimer(root, kAudioInventoryTimer);
+        g_audio_worker.invalidate();
+    }
     for (auto child : g_dial_controls) {
         const bool visible = page == 0 &&
             (!g_compact || child == g_number || child == g_number_label);
@@ -453,8 +457,8 @@ axv::AudioChoiceResolution fill_audio_combo(
     return selection;
 }
 
-void refresh_audio_panel(bool only_if_changed = false) {
-    const auto inventory = axv::inspect_windows_audio_devices();
+void apply_audio_inventory(const axv::AudioInventory& inventory,
+                           bool only_if_changed = false) {
     // A periodic check must not reset a user's combo selection or focus.
     if (only_if_changed && g_audio_seen &&
         !axv::audio_inventory_changed(g_previous_audio_inventory, inventory)) return;
@@ -480,6 +484,12 @@ void refresh_audio_panel(bool only_if_changed = false) {
         g_output_audio_combo, g_audio_outputs, g_output_choice);
     const auto message = axv::audio_choice_feedback(microphone, speaker);
     SetWindowTextW(g_headset_status, message);
+}
+void request_audio_refresh(bool show_waiting = false) {
+    if (g_smoke_mode) return;
+    if (g_audio_worker.request() && show_waiting)
+        SetWindowTextW(g_headset_status,
+            L"Consultando dispositivos do Windows sem bloquear a interface...");
 }
 
 axv::RuntimeProcess observed_process(axv::ProcessStatus status, bool stopping) {
@@ -690,7 +700,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 return 0;
             }
             if (control == kRefreshHeadsetsButton && g_page == 2) {
-                if (!g_smoke_mode) refresh_audio_panel();
+                request_audio_refresh(true);
                 return 0;
             }
             if (control == kShowAudio) {
@@ -700,7 +710,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                     save_ui_preferences();
                 }
                 show_page(window, 2);
-                if (!g_smoke_mode) refresh_audio_panel();
+                request_audio_refresh(true);
                 return 0;
             }
             if (control == kShowSettings) {
@@ -815,7 +825,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             return 0;
         }
         if (LOWORD(wparam) == kRefreshHeadsetsButton && HIWORD(wparam) == BN_CLICKED) {
-            if (!g_smoke_mode) refresh_audio_panel();
+            request_audio_refresh(true);
             return 0;
         }
         if (HIWORD(wparam) == CBN_SELCHANGE) {
@@ -966,15 +976,22 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
     }
     case WM_TIMER:
         if (wparam == kAudioInventoryTimer) {
-            // Do not replace an open drop-down while the user is choosing.
+            // Never call Windows device enumeration on the UI timer.
             if (g_page == 2 && !g_smoke_mode && IsWindowVisible(window) &&
                 !SendMessageW(g_input_audio_combo, CB_GETDROPPEDSTATE, 0, 0) &&
                 !SendMessageW(g_output_audio_combo, CB_GETDROPPEDSTATE, 0, 0)) {
-                refresh_audio_panel(true);
+                request_audio_refresh();
             }
             return 0;
         }
         if (wparam == kProcessTimer) {
+            // Consume a completed worker snapshot without blocking Win32.
+            if (g_page == 2 && !g_smoke_mode && IsWindowVisible(window) &&
+                !SendMessageW(g_input_audio_combo, CB_GETDROPPEDSTATE, 0, 0) &&
+                !SendMessageW(g_output_audio_combo, CB_GETDROPPEDSTATE, 0, 0)) {
+                const auto result = g_audio_worker.take();
+                if (result) apply_audio_inventory(*result, true);
+            }
             refresh_runtime_banner(g_baresip_process.poll());
             if (g_shutdown.pending()) {
                 const auto state = g_baresip_process.poll();
@@ -1036,6 +1053,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_sip_session_guard.revoke(axv::RuntimeProcess::Stopped, g_native_event_mailbox, g_sip_projection);
         KillTimer(window, kProcessTimer);
         KillTimer(window, kAudioInventoryTimer);
+        g_audio_worker.invalidate();
         remove_tray(window);
         if (g_font_regular) DeleteObject(g_font_regular);
         if (g_font_title) DeleteObject(g_font_title);
@@ -1063,7 +1081,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && std::wcscmp(command_line, L"--ui-smoke") == 0;
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.39",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.41",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         kWindowWidth, kFullHeight,
         nullptr, nullptr, instance, nullptr);
