@@ -11,7 +11,7 @@ enum bevent_ev {
   BEVENT_UNREGISTERING, BEVENT_SHUTDOWN, BEVENT_EXIT,
   BEVENT_CALL_INCOMING, BEVENT_CALL_OUTGOING,
   BEVENT_CALL_ESTABLISHED, BEVENT_CALL_CLOSED,
-  BEVENT_CALL_PROGRESS
+  BEVENT_CALL_PROGRESS, BEVENT_AUDIO_ERROR, BEVENT_SIPSESS_FAILED
 };
 typedef void (bevent_h)(enum bevent_ev, struct bevent*, void*);
 int bevent_register(bevent_h* handler, void* argument);
