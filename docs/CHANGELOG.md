@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.28.0 — feedback de discagem em tempo real (protótipo)
+- Campo de destino com validação na digitação, colagem e teclado numérico via EN_CHANGE.
+- Feedback semântico de erros e aviso de bloqueio SIP; destaque suave para destino inválido.
+- Guarda dupla: somente engine SIP utilizável, evento nativo comprovado e destino válido podem habilitar chamada em uma versão futura. Sem backend Baresip integrado.
+- Novo teste determinístico de feedback e mais cenários no smoke da janela.
+
+
 ## v0.19.0 — parada responsiva do motor (laboratório)
 - Solicitação `request_quit()` separada da espera pelo encerramento.
 - Timer da janela supervisiona o processo a cada 100 ms, aplica 1,5 s de tolerância e desabilita start/stop durante parada.

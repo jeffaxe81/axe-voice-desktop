@@ -23,6 +23,7 @@
 #include <cstdio>
 
 #include "dialpad_model.h"
+#include "destination_feedback.h"
 #include <vector>
 #include <array>
 #include <algorithm>
@@ -100,6 +101,7 @@ bool g_dark = true;
 bool g_pinned = false;
 bool g_compact = false;
 bool g_smoke_mode = false;
+bool g_destination_invalid = false;
 bool g_tray_visible = false;
 constexpr wchar_t kPrefsKey[] = L"Software\\AXEVoice\\Desktop";
 int g_page = 0; // 0 = dial, 1 = settings, 2 = audio
@@ -112,6 +114,7 @@ HFONT g_font_small = nullptr;
 HFONT g_font_digit = nullptr;
 HBRUSH g_background_brush = nullptr;
 HBRUSH g_field_brush = nullptr;
+HBRUSH g_invalid_field_brush = nullptr;
 
 
 void load_ui_preferences() {
@@ -189,6 +192,7 @@ BOOL CALLBACK repaint_child(HWND child, LPARAM) {
 COLORREF background_color() { return g_dark ? RGB(14, 22, 38) : RGB(245, 248, 252); }
 COLORREF panel_color() { return g_dark ? RGB(25, 38, 58) : RGB(255, 255, 255); }
 COLORREF field_color() { return g_dark ? RGB(31, 48, 73) : RGB(238, 244, 249); }
+COLORREF invalid_field_color() { return g_dark ? RGB(79, 39, 53) : RGB(255, 231, 235); }
 COLORREF text_color() { return g_dark ? RGB(236, 244, 255) : RGB(20, 38, 62); }
 COLORREF muted_color() { return g_dark ? RGB(157, 176, 200) : RGB(91, 108, 128); }
 COLORREF accent_color() { return RGB(38, 178, 198); }
@@ -197,8 +201,10 @@ COLORREF line_color() { return g_dark ? RGB(57, 74, 97) : RGB(207, 218, 230); }
 void refresh_brushes() {
     if (g_background_brush) DeleteObject(g_background_brush);
     if (g_field_brush) DeleteObject(g_field_brush);
+    if (g_invalid_field_brush) DeleteObject(g_invalid_field_brush);
     g_background_brush = CreateSolidBrush(background_color());
     g_field_brush = CreateSolidBrush(field_color());
+    g_invalid_field_brush = CreateSolidBrush(invalid_field_color());
 }
 HFONT create_font(int size, int weight) {
     return CreateFontW(-size, 0, 0, 0, weight, FALSE, FALSE, FALSE,
@@ -338,6 +344,16 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     }
 }
 
+void refresh_destination_feedback() {
+    if (!g_number || !g_status) return;
+    wchar_t value[129] = {};
+    GetWindowTextW(g_number, value, 129);
+    const auto feedback = axv::evaluate_destination(value);
+    g_destination_invalid = feedback.kind == axv::DestinationFeedbackKind::Invalid;
+    SetWindowTextW(g_status, feedback.message);
+    InvalidateRect(g_number, nullptr, TRUE);
+}
+
 void edit_number(HWND root, wchar_t action) {
     wchar_t buffer[129] = {};
     GetWindowTextW(g_number, buffer, 129);
@@ -348,11 +364,7 @@ void edit_number(HWND root, wchar_t action) {
     SetWindowTextW(g_number, candidate.c_str());
     SendMessageW(g_number, EM_SETSEL, candidate.length(), candidate.length());
     SetFocus(g_number);
-    if (candidate.empty()) {
-        SetWindowTextW(g_status, L"Digite um ramal ou endereço SIP.");
-    } else {
-        SetWindowTextW(g_status, L"Destino preparado. Chamadas reais ainda não habilitadas.");
-    }
+    // SetWindowTextW triggers EN_CHANGE, the same path used for manual typing/paste.
     (void)root;
 }
 
@@ -424,7 +436,13 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     GetWindowTextW(g_runtime_banner, previous, 160);
     if (std::wstring_view(previous) != std::wstring_view(banner))
         SetWindowTextW(g_runtime_banner, banner);
-    const bool dial = axv::may_use_call_control(observed, pending.session, axv::CallAction::Dial);
+    wchar_t destination[129]{};
+    GetWindowTextW(g_number, destination, 129);
+    // Defense in depth: native proof alone cannot activate the current
+    // UnavailableSipEngine, nor can an invalid destination.
+    const bool dial = axv::may_use_call_control(observed, pending.session, axv::CallAction::Dial) &&
+        g_sip_selection.engine->status() == axv::SipStatus::Registered &&
+        axv::evaluate_destination(destination).valid();
     const HWND button = GetDlgItem(GetParent(g_runtime_banner), kCallButton);
     if (IsWindowEnabled(button) != (dial ? TRUE : FALSE))
         EnableWindow(button, dial ? TRUE : FALSE);
@@ -527,6 +545,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                                      39, 594, 350, 64, 2, g_font_small);
         g_status = make_label(window, L"Digite um ramal ou endereço SIP.",
                               24, 762, 390, 30, -1, g_font_small);
+        refresh_destination_feedback();
 
         EnableWindow(g_input_audio_combo, FALSE);
         EnableWindow(g_output_audio_combo, FALSE);
@@ -542,6 +561,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         return 0;
     }
     case WM_COMMAND:
+        if (LOWORD(wparam) == kNumberEdit && HIWORD(wparam) == EN_CHANGE) {
+            refresh_destination_feedback(); // keyboard, paste and dialpad share validation.
+            return 0;
+        }
         // Combo selection uses code 1 too; accelerator commands have lParam == 0.
         if (HIWORD(wparam) == BN_CLICKED || (HIWORD(wparam) == 1 && lparam == 0)) {
             const int control = LOWORD(wparam);
@@ -799,9 +822,11 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
     }
     case WM_CTLCOLOREDIT: {
         HDC dc = reinterpret_cast<HDC>(wparam);
+        const bool invalid = reinterpret_cast<HWND>(lparam) == g_number &&
+                             g_destination_invalid;
         SetTextColor(dc, text_color());
-        SetBkColor(dc, field_color());
-        return reinterpret_cast<LRESULT>(g_field_brush);
+        SetBkColor(dc, invalid ? invalid_field_color() : field_color());
+        return reinterpret_cast<LRESULT>(invalid ? g_invalid_field_brush : g_field_brush);
     }
     case WM_CTLCOLORBTN: {
         HDC dc = reinterpret_cast<HDC>(wparam);
@@ -904,6 +929,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         if (g_font_digit) DeleteObject(g_font_digit);
         if (g_background_brush) DeleteObject(g_background_brush);
         if (g_field_brush) DeleteObject(g_field_brush);
+        if (g_invalid_field_brush) DeleteObject(g_invalid_field_brush);
         // Normally stopped through WM_CLOSE. Forced fallback on external destruction.
         g_baresip_process.stop();
         PostQuitMessage(0);
@@ -923,7 +949,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && std::wcscmp(command_line, L"--ui-smoke") == 0;
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.27",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.28",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         kWindowWidth, kFullHeight,
         nullptr, nullptr, instance, nullptr);
@@ -951,6 +977,22 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         GetWindowTextW(g_runtime_banner, engine_banner, 160);
         ok = ok && std::wstring_view(engine_banner).find(L"NAO REGISTRADO") != std::wstring_view::npos;
         const bool baseline_ok = ok;
+        // EN_CHANGE must validate keyboard/paste input, without enabling SIP calls.
+        wchar_t feedback_message[160]{};
+        SetWindowTextW(g_number, L"ana@bad host");
+        GetWindowTextW(g_status, feedback_message, 160);
+        const bool invalid_feedback_ok = g_destination_invalid &&
+            std::wstring_view(feedback_message).find(L"espacos") != std::wstring_view::npos;
+        SetWindowTextW(g_number, L"1001");
+        GetWindowTextW(g_status, feedback_message, 160);
+        const bool valid_feedback_ok = !g_destination_invalid &&
+            std::wstring_view(feedback_message).find(L"Ramal valido") != std::wstring_view::npos &&
+            !IsWindowEnabled(GetDlgItem(window, kCallButton));
+        SetWindowTextW(g_number, L"");
+        GetWindowTextW(g_status, feedback_message, 160);
+        const bool empty_feedback_ok = !g_destination_invalid &&
+            std::wstring_view(feedback_message).find(L"Digite") != std::wstring_view::npos;
+        ok = ok && invalid_feedback_ok && valid_feedback_ok && empty_feedback_ok;
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(kCompact, BN_CLICKED),
                      reinterpret_cast<LPARAM>(GetDlgItem(window, kCompact)));
         RECT bounds = {};
@@ -977,9 +1019,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             !IsWindowEnabled(g_input_audio_combo); // No hardware inspected in smoke.
         ok = ok && audio_ok;
         if (!ok) {
-            std::fprintf(stderr, "UI_SMOKE_FAIL baseline=%d compact=%d restored=%d audio=%d mode=%d page=%d height=%ld\n",
+            std::fprintf(stderr, "UI_SMOKE_FAIL baseline=%d compact=%d restored=%d audio=%d feedback=%d/%d/%d mode=%d page=%d height=%ld\n",
                          baseline_ok ? 1 : 0, compact_ok ? 1 : 0, restored_ok ? 1 : 0,
-                         audio_ok ? 1 : 0, g_compact ? 1 : 0, g_page, bounds.bottom - bounds.top);
+                         audio_ok ? 1 : 0, invalid_feedback_ok ? 1 : 0,
+                         valid_feedback_ok ? 1 : 0, empty_feedback_ok ? 1 : 0,
+                         g_compact ? 1 : 0, g_page, bounds.bottom - bounds.top);
             std::fflush(stderr);
         }
         DestroyWindow(window);

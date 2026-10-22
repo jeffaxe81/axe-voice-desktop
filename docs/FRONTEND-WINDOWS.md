@@ -43,3 +43,13 @@ A faixa superior mostra o estado real do processo Windows (parado, ativo, encerr
 ## v0.27 — Preparação de eventos nativos
 
 A interface passa a drenar uma caixa de eventos thread-safe do futuro adaptador Baresip a cada ciclo de atualização, mas não tem produtor nem sessão verificada. O banner não interpreta o processo ativo como registro SIP e não habilita chamadas. O modelo inclui Ringing para distinguir chamadas recebidas e autorizar Answer somente nessa condição em testes de política.
+
+## v0.28 — Validação imediata do destino
+
+- Digitação, colagem e teclado de 12 teclas usam o mesmo evento Win32 `EN_CHANGE`.
+- Mensagem no rodapé identifica ramal válido, URI SIP válida, espaços, esquema incorreto, domínio/usuário e porta incorreta.
+- Campo do destino fica discretamente vermelho quando inválido (também em tema claro); vazio mantém estilo neutro.
+- O botão **Chamar** continua bloqueado no protótipo: validade sintática **não** é registro SIP, e uma prova nativa futura não habilita `UnavailableSipEngine`.
+- `destination_feedback` testa as classes de retorno com entradas válidas/inválidas; `ui_smoke` exercita o evento `EN_CHANGE` e verifica que nenhuma chamada é habilitada.
+
+**Limites:** sem registro SIP, sessão autenticada, interface de mídia ou chamada real. Teste de cores, DPI e leitores de tela em Windows 10/11 ainda necessário.
