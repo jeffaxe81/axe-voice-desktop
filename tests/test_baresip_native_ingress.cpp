@@ -21,8 +21,12 @@ int main() {
         gate.accept({NativeSignal::CallEstablished, a, account, call}) != NativeIngressResult::Queued ||
         gate.accept({NativeSignal::CallClosed, a, account, call}) != NativeIngressResult::Queued ||
         gate.accept({NativeSignal::CallOutgoing, a, account, call + 1}) != NativeIngressResult::Queued) return 7;
+    const auto calls = mailbox.drain();
+    if (calls.size != 4 ||
+        calls.events[0].call_id != 1 || calls.events[1].call_id != 1 ||
+        calls.events[2].call_id != 1 || calls.events[3].call_id != 2) return 8;
     if (gate.accept({NativeSignal::CallClosed, a, account, call}) != NativeIngressResult::Revoked ||
-        gate.fault() != NativeIngressFault::CallMismatch || mailbox.drain().size) return 8;
+        gate.fault() != NativeIngressFault::CallMismatch || mailbox.drain().size) return 9;
     if (gate.bind_validated_account(account)) return 9; // fault latched
     gate.reset_after_teardown();
     const auto b = gate.bind_validated_account(account);

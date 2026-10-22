@@ -1,6 +1,7 @@
 #pragma once
 #include "baresip_event_mailbox.h"
 #include <cstdint>
+#include <limits>
 #include <mutex>
 
 namespace axv {
@@ -45,6 +46,8 @@ public:
         account_ = account;
         session_ = next;
         call_ = 0;
+        call_token_ = 0;
+        last_call_token_ = 0;
         return next;
     }
 
@@ -95,10 +98,28 @@ public:
                 return revoke(NativeIngressFault::CallMismatch);
             }
         }
-        if (!queue_.enqueue({event, session_}))
+        // Baresip call pointers are NOT durable sequence IDs. Translate the
+        // validated active-call identity into a monotonic per-session token.
+        std::uint64_t event_call_token = 0;
+        if (call_signal) {
+            if (starts_call && !call_) {
+                if (last_call_token_ == (std::numeric_limits<std::uint64_t>::max)())
+                    return revoke(NativeIngressFault::CallMismatch);
+                event_call_token = last_call_token_ + 1;
+            } else {
+                event_call_token = call_token_;
+            }
+        }
+        if (!queue_.enqueue({event, session_, event_call_token}))
             return revoke(NativeIngressFault::QueueRejected);
-        if (starts_call && !call_) call_ = cb.call;
-        if (closes_call || cb.signal == NativeSignal::TransportLost) call_ = 0;
+        if (starts_call && !call_) {
+            call_ = cb.call;
+            call_token_ = last_call_token_ = event_call_token;
+        }
+        if (closes_call || cb.signal == NativeSignal::TransportLost) {
+            call_ = 0;
+            call_token_ = 0;
+        }
         return NativeIngressResult::Queued;
     }
 
@@ -109,6 +130,7 @@ public:
         queue_.invalidate_session();
         session_ = 0;
         account_ = call_ = 0;
+        call_token_ = last_call_token_ = 0;
         fault_ = NativeIngressFault::None;
     }
     std::uint64_t session() const {
@@ -124,6 +146,7 @@ private:
         queue_.invalidate_session();  // revoke ALL already queued SIP evidence
         session_ = 0;
         account_ = call_ = 0;
+        call_token_ = last_call_token_ = 0;
         fault_ = why;
         return NativeIngressResult::Revoked;
     }
@@ -132,6 +155,8 @@ private:
     std::uint64_t session_ = 0;
     std::uintptr_t account_ = 0;
     std::uintptr_t call_ = 0;
+    std::uint64_t call_token_ = 0;
+    std::uint64_t last_call_token_ = 0;
     NativeIngressFault fault_ = NativeIngressFault::None;
 };
 } // namespace axv
