@@ -16,5 +16,10 @@ int main() {
     if (!can_apply_call_action(SipStatus::Registered, CallAction::Dial)) return 9;
     if (can_apply_call_action(SipStatus::Disconnected, CallAction::Answer)) return 10;
     if (!can_apply_call_action(SipStatus::InCall, CallAction::Hangup)) return 11;
+    if (can_apply_call_action(SipStatus::Registered, CallAction::Answer)) return 12;
+    if (!can_apply_call_action(SipStatus::Ringing, CallAction::Answer)) return 13;
+    if (!can_apply_call_action(SipStatus::Ringing, CallAction::Hangup)) return 14;
+    if (can_apply_call_action(SipStatus::Ringing, CallAction::Dial)) return 15;
+    if (std::wstring_view(sip_status_label(SipStatus::Ringing)) != L"Recebendo chamada") return 16;
     return 0;
 }

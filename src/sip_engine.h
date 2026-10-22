@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 namespace axv {
-enum class SipStatus { Unavailable, Disconnected, Registering, Registered, Calling, InCall, Failed };
+enum class SipStatus { Unavailable, Disconnected, Registering, Registered, Calling, Ringing, InCall, Failed };
 struct SipAccount {
     std::wstring server;
     std::wstring username;

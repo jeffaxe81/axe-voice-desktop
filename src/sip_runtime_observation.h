@@ -42,6 +42,7 @@ inline const wchar_t* runtime_status_banner(const SipRuntimeObservation& observa
     switch (observation.sip) {
     case SipStatus::Registered: return L"SIP REGISTRADO  |  EVENTO NATIVO VALIDADO";
     case SipStatus::Calling: return L"CHAMADA ORIGINANDO  |  EVENTO NATIVO VALIDADO";
+    case SipStatus::Ringing: return L"CHAMADA ENTRANTE  |  EVENTO NATIVO VALIDADO";
     case SipStatus::InCall: return L"EM CHAMADA  |  EVENTO NATIVO VALIDADO";
     case SipStatus::Registering: return L"REGISTRO SIP EM ANDAMENTO";
     case SipStatus::Failed: return L"FALHA NO REGISTRO SIP";

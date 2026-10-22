@@ -8,6 +8,7 @@ inline const wchar_t* sip_status_label(SipStatus s) {
     case SipStatus::Registering: return L"Registrando";
     case SipStatus::Registered: return L"Registrado";
     case SipStatus::Calling: return L"Chamando";
+    case SipStatus::Ringing: return L"Recebendo chamada";
     case SipStatus::InCall: return L"Em chamada";
     case SipStatus::Failed: return L"Falha SIP";
     }
