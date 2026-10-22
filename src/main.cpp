@@ -39,6 +39,7 @@ constexpr int kPortEdit = 1006;
 constexpr int kTlsCheckbox = 1007;
 constexpr int kProbeButton = 1008;
 constexpr int kAudioDevicesButton = 1009;
+constexpr int kRefreshHeadsetsButton = 1013;
 constexpr int kStartBaresipButton = 1010;
 constexpr int kStopBaresipButton = 1011;
 constexpr UINT_PTR kProcessTimer = 1012;
@@ -47,6 +48,9 @@ constexpr int kShowSettings = 2002;
 constexpr int kTheme = 2003;
 constexpr int kPin = 2004;
 constexpr int kCompact = 2005;
+constexpr int kShowAudio = 2006;
+constexpr int kInputAudioCombo = 2401;
+constexpr int kOutputAudioCombo = 2402;
 constexpr int kWindowWidth = 438;
 constexpr int kFullHeight = 842;
 constexpr int kCompactHeight = 365;
@@ -71,6 +75,13 @@ HWND g_port = nullptr;
 HWND g_tls = nullptr;
 HWND g_audio_status = nullptr;
 HWND g_process_status = nullptr;
+HWND g_input_audio_combo = nullptr;
+HWND g_output_audio_combo = nullptr;
+HWND g_headset_status = nullptr;
+std::vector<axv::AudioEndpoint> g_audio_inputs;
+std::vector<axv::AudioEndpoint> g_audio_outputs;
+std::wstring g_selected_input_id;
+std::wstring g_selected_output_id;
 axv::WindowsProcess g_baresip_process;
 axv::ProcessStatus g_last_process_state = axv::ProcessStatus::Stopped;
 axv::ShutdownDeadline g_shutdown;
@@ -85,9 +96,10 @@ bool g_compact = false;
 bool g_smoke_mode = false;
 bool g_tray_visible = false;
 constexpr wchar_t kPrefsKey[] = L"Software\\AXEVoice\\Desktop";
-int g_page = 0; // 0 = dial, 1 = settings
+int g_page = 0; // 0 = dial, 1 = settings, 2 = audio
 std::vector<HWND> g_dial_controls;
 std::vector<HWND> g_settings_controls;
+std::vector<HWND> g_audio_controls;
 HFONT g_font_regular = nullptr;
 HFONT g_font_title = nullptr;
 HFONT g_font_small = nullptr;
@@ -200,6 +212,7 @@ HWND make_control(HWND root, LPCWSTR type, LPCWSTR title, DWORD style,
             reinterpret_cast<WPARAM>(font ? font : g_font_regular), TRUE);
         if (page == 0) g_dial_controls.push_back(child);
         if (page == 1) g_settings_controls.push_back(child);
+        if (page == 2) g_audio_controls.push_back(child);
     }
     return child;
 }
@@ -228,14 +241,15 @@ void show_page(HWND root, int page) {
         ShowWindow(child, visible ? SW_SHOW : SW_HIDE);
     }
     for (auto child : g_settings_controls) ShowWindow(child, page == 1 ? SW_SHOW : SW_HIDE);
+    for (auto child : g_audio_controls) ShowWindow(child, page == 2 ? SW_SHOW : SW_HIDE);
     InvalidateRect(root, nullptr, TRUE);
-    HWND target = page == 0 ? g_number : g_server;
+    HWND target = page == 0 ? g_number : (page == 1 ? g_server : g_input_audio_combo);
     if (target) SetFocus(target);
 }
 
 // Mini mode keeps only the target and true SIP state, without fake call actions.
 void apply_compact_layout(HWND root) {
-    if (g_compact && g_page == 1) g_page = 0;
+    if (g_compact && g_page != 0) g_page = 0;
     MoveWindow(g_number_label, 39, g_compact ? 218 : 246, 320, 20, TRUE);
     MoveWindow(g_number, 39, g_compact ? 242 : 272, 350, 43, TRUE);
     MoveWindow(g_status, 24, g_compact ? 298 : 762, 390, 30, TRUE);
@@ -261,7 +275,8 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     const bool disabled = (item.itemState & ODS_DISABLED) != 0;
     const bool pressed = (item.itemState & ODS_SELECTED) != 0;
     const bool selected_tab = (id == kShowDial && g_page == 0) ||
-                              (id == kShowSettings && g_page == 1);
+                              (id == kShowSettings && g_page == 1) ||
+                              (id == kShowAudio && g_page == 2);
     COLORREF color = panel_color();
     if (selected_tab || id == kCallButton) color = accent_color();
     if (id >= kDigitStart && id < kDigitStart + 12) color = field_color();
@@ -335,6 +350,42 @@ void edit_number(HWND root, wchar_t action) {
     (void)root;
 }
 
+// Audio preferences are previews only: they never configure or contact Baresip.
+void fill_audio_combo(HWND combo, const std::vector<axv::AudioEndpoint>& devices,
+                      std::wstring& selected_id) {
+    SendMessageW(combo, CB_RESETCONTENT, 0, 0);
+    for (const auto& device : devices) {
+        const std::wstring title = (device.default_communications ? L"[PADRAO] " : L"") +
+                                   device.name;
+        SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(title.c_str()));
+    }
+    const int index = axv::preferred_audio_endpoint_index(devices, selected_id);
+    EnableWindow(combo, index >= 0);
+    if (index >= 0) {
+        SendMessageW(combo, CB_SETCURSEL, static_cast<WPARAM>(index), 0);
+        selected_id = devices[static_cast<std::size_t>(index)].id;
+    } else {
+        selected_id.clear();
+    }
+}
+
+void refresh_audio_panel() {
+    const auto inventory = axv::inspect_windows_audio_devices();
+    if (inventory.error != axv::AudioInventoryError::None) {
+        g_audio_inputs.clear(); g_audio_outputs.clear();
+        fill_audio_combo(g_input_audio_combo, g_audio_inputs, g_selected_input_id);
+        fill_audio_combo(g_output_audio_combo, g_audio_outputs, g_selected_output_id);
+        SetWindowTextW(g_headset_status, L"Falha ao consultar os dispositivos do Windows.");
+        return;
+    }
+    g_audio_inputs = inventory.input_devices;
+    g_audio_outputs = inventory.output_devices;
+    fill_audio_combo(g_input_audio_combo, g_audio_inputs, g_selected_input_id);
+    fill_audio_combo(g_output_audio_combo, g_audio_outputs, g_selected_output_id);
+    SetWindowTextW(g_headset_status,
+        L"Preferencia local somente. Baresip e chamadas ainda nao conectados.");
+}
+
 void begin_shutdown(HWND window) {
     const bool queued = g_baresip_process.request_quit_async();
     g_shutdown.begin(GetTickCount64());
@@ -361,8 +412,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_button(window, g_dark ? L"CLARO" : L"ESCURO", kTheme, 344, 18, 70, 36);
         if (g_pinned) SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0,
                                    SWP_NOMOVE | SWP_NOSIZE);
-        make_button(window, L"TECLADO", kShowDial, 24, 103, 186, 42);
-        make_button(window, L"AJUSTES", kShowSettings, 216, 103, 198, 42);
+        make_button(window, L"TECLADO", kShowDial, 24, 103, 122, 42);
+        make_button(window, L"AJUSTES", kShowSettings, 153, 103, 123, 42);
+        make_button(window, L"AUDIO", kShowAudio, 283, 103, 131, 42);
         make_label(window, L"●  CONTA SIP NÃO REGISTRADA", 42, 164, 347, 25, -1, g_font_regular);
 
         make_label(window, L"DISCAGEM", 39, 220, 290, 23, 0, g_font_small);
@@ -413,9 +465,26 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                                     39, 654, 350, 41, 1, g_font_small);
         g_process_status = make_label(window, L"Baresip parado; registro SIP indisponível.",
                                       39, 702, 350, 43, 1, g_font_small);
+        make_label(window, L"HEADSET / AUDIO - DIAGNOSTICO", 39, 221, 352, 27, 2, g_font_small);
+        make_label(window, L"Microfone (dispositivos ativos)", 39, 269, 340, 26, 2);
+        g_input_audio_combo = make_control(window, L"COMBOBOX", L"",
+            WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
+            39, 302, 350, 230, kInputAudioCombo, 2);
+        make_label(window, L"Saida de audio (dispositivos ativos)", 39, 358, 350, 27, 2);
+        g_output_audio_combo = make_control(window, L"COMBOBOX", L"",
+            WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
+            39, 391, 350, 230, kOutputAudioCombo, 2);
+        make_button(window, L"ATUALIZAR DISPOSITIVOS", kRefreshHeadsetsButton,
+                    39, 460, 350, 43, 2);
+        make_label(window, L"A selecao nao e aplicada ao motor Baresip.",
+                   39, 537, 350, 46, 2, g_font_small);
+        g_headset_status = make_label(window, L"Abra AUDIO para consultar o Windows.",
+                                     39, 594, 350, 64, 2, g_font_small);
         g_status = make_label(window, L"Digite um ramal ou endereço SIP.",
                               24, 762, 390, 30, -1, g_font_small);
 
+        EnableWindow(g_input_audio_combo, FALSE);
+        EnableWindow(g_output_audio_combo, FALSE);
         // A clear disabled affordance: no real SIP engine has been connected yet.
         for (int id : {kCallButton, kMuteFuture, kHoldFuture,
                        kTransferFuture, kHangupFuture}) {
@@ -427,10 +496,20 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         return 0;
     }
     case WM_COMMAND:
-        // BN_CLICKED comes from buttons (0); accelerator-generated commands use 1.
-        if (HIWORD(wparam) == BN_CLICKED || HIWORD(wparam) == 1) {
+        // Combo selection uses code 1 too; accelerator commands have lParam == 0.
+        if (HIWORD(wparam) == BN_CLICKED || (HIWORD(wparam) == 1 && lparam == 0)) {
             const int control = LOWORD(wparam);
             if (control == kShowDial || control == kFocusNumber) { show_page(window, 0); return 0; }
+            if (control == kShowAudio) {
+                if (g_compact) {
+                    g_compact = false;
+                    apply_compact_layout(window);
+                    save_ui_preferences();
+                }
+                show_page(window, 2);
+                if (!g_smoke_mode) refresh_audio_panel();
+                return 0;
+            }
             if (control == kShowSettings) {
                 if (g_compact) {
                     g_compact = false;
@@ -540,6 +619,25 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             }
             begin_shutdown(window);
             return 0;
+        }
+        if (LOWORD(wparam) == kRefreshHeadsetsButton && HIWORD(wparam) == BN_CLICKED) {
+            if (!g_smoke_mode) refresh_audio_panel();
+            return 0;
+        }
+        if (HIWORD(wparam) == CBN_SELCHANGE) {
+            const int id = LOWORD(wparam);
+            if (id == kInputAudioCombo || id == kOutputAudioCombo) {
+                HWND combo = id == kInputAudioCombo ? g_input_audio_combo : g_output_audio_combo;
+                const auto& devices = id == kInputAudioCombo ? g_audio_inputs : g_audio_outputs;
+                const LRESULT index = SendMessageW(combo, CB_GETCURSEL, 0, 0);
+                if (index >= 0 && static_cast<std::size_t>(index) < devices.size()) {
+                    (id == kInputAudioCombo ? g_selected_input_id : g_selected_output_id) =
+                        devices[static_cast<std::size_t>(index)].id;
+                    SetWindowTextW(g_headset_status,
+                        L"Preferencia alterada nesta sessao; nao aplicada ao Baresip.");
+                }
+                return 0;
+            }
         }
         if (LOWORD(wparam) == kAudioDevicesButton && HIWORD(wparam) == BN_CLICKED) {
             const axv::AudioInventory inventory = axv::inspect_windows_audio_devices();
@@ -777,7 +875,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && std::wcscmp(command_line, L"--ui-smoke") == 0;
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.24",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.25",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         kWindowWidth, kFullHeight,
         nullptr, nullptr, instance, nullptr);
@@ -819,10 +917,18 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             (bounds.bottom - bounds.top > kCompactHeight + 200) &&
             (GetWindowLongW(g_server, GWL_STYLE) & WS_VISIBLE);
         ok = ok && restored_ok;
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(kShowAudio, BN_CLICKED),
+                     reinterpret_cast<LPARAM>(GetDlgItem(window, kShowAudio)));
+        const bool audio_ok = g_page == 2 &&
+            (GetWindowLongW(g_input_audio_combo, GWL_STYLE) & WS_VISIBLE) &&
+            (GetWindowLongW(g_output_audio_combo, GWL_STYLE) & WS_VISIBLE) &&
+            !IsWindowEnabled(GetDlgItem(window, kCallButton)) &&
+            !IsWindowEnabled(g_input_audio_combo); // No hardware inspected in smoke.
+        ok = ok && audio_ok;
         if (!ok) {
-            std::fprintf(stderr, "UI_SMOKE_FAIL baseline=%d compact=%d restored=%d mode=%d page=%d height=%ld\n",
+            std::fprintf(stderr, "UI_SMOKE_FAIL baseline=%d compact=%d restored=%d audio=%d mode=%d page=%d height=%ld\n",
                          baseline_ok ? 1 : 0, compact_ok ? 1 : 0, restored_ok ? 1 : 0,
-                         g_compact ? 1 : 0, g_page, bounds.bottom - bounds.top);
+                         audio_ok ? 1 : 0, g_compact ? 1 : 0, g_page, bounds.bottom - bounds.top);
             std::fflush(stderr);
         }
         DestroyWindow(window);

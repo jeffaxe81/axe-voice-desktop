@@ -1,6 +1,8 @@
-# AXE Voice — Frontend Windows v0.24 (prototipagem)
+# AXE Voice — Frontend Windows v0.25 (prototipagem)
 
 ## Telas
+
+**Áudio (v0.25):** terceira aba para inventário Core Audio do Windows. Mostra nomes de entradas e saídas ativas, marca padrão de comunicação e permite preferência efêmera com fallback após hotplug. **Não escolhe o dispositivo do Baresip** nem prova mídia de chamadas.
 
 **Teclado:** marca AXE Voice, indicação de conta SIP não registrada, campo editável para destino, teclado 12 teclas, comandos Apagar/Limpar e CTA de Chamar explicitamente desativado. Os botões permitem montar um ramal; o campo aceita também entrada manual com URI SIP. Não existe discagem automática.
 
@@ -16,6 +18,7 @@
 
 ## Critérios automatizados
 
+- O smoke test da v0.25 também cobre a aba ÁUDIO sem consultar hardware. O teste de política cobre seleção e dispositivo removido.
 - O smoke test da v0.24 valida MINI/MAX, restauração automática de Ajustes, dimensões da janela e chamada desabilitada, sem gravar HKCU.
 - Teste de modelo de teclado: mapeamento 12 teclas, backspace, rejeição de metacaracteres e limite de caracteres.
 - CMake/MSVC e suíte CTest no CI, incluindo `ui_smoke`, que cria a janela de verdade e verifica os controles principais e a troca de abas (sem SIP e sem mostrar a janela).

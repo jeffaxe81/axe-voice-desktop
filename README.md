@@ -1,4 +1,4 @@
-# AXE Voice Desktop — Windows, áudio primeiro (v0.24.0 laboratório)
+# AXE Voice Desktop — Windows, áudio primeiro (v0.25.0 laboratório)
 
 Protótipo de softphone SIP corporativo em Windows com motor planejado **Baresip**. A versão atual oferece interface Win32, validação local de parâmetros SIP, verificação offline da presença de baresip.exe e inventário de dispositivos de áudio do Windows.
 
@@ -24,6 +24,8 @@ Executável: build\Release\AXE-Voice.exe. O CI publica um artefato do protótipo
 ## Interface de softphone v0.24
 
 O frontend Win32 foi reorganizado em duas telas, **Teclado** e **Ajustes**, com teclado telefônico completo (0–9, * e #), apagar/limpar destino, tema claro/escuro e opção de janela sempre no topo (FIXAR/SOLTAR), comandos visuais de mudo/espera/transferência/encerrar (intencionalmente desativados) e preferências de tema/fixação salvas em HKCU. Os comandos são acessíveis pelo teclado e a entrada aceita ramais ou SIP URI.
+
+Na v0.25, a aba **ÁUDIO** consulta nomes de microfones e saídas do Windows Core Audio. Permite escolher uma preferência **somente em memória** com retorno seguro ao dispositivo padrão após desconexão. **Não configura nem encaminha áudio no Baresip**.
 
 O modo **MINI/MAX** da v0.24 oferece uma janela reduzida com destino e status SIP. Abrir **Ajustes** expande automaticamente a janela. Apenas a preferência compacta é persistida em HKCU, sem salvar número, histórico ou credenciais.
 
