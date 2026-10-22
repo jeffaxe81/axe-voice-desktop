@@ -996,7 +996,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
     }
     case WM_TIMER:
         if (wparam == kProcessTimer) {
-            if (g_audio_hotplug.take_if_due(GetTickCount64(), g_page == 2) &&
+            if (g_audio_hotplug.take_if_due(GetTickCount64(),
+                    g_page == 2 && IsWindowVisible(window) && !IsIconic(window)) &&
                 !g_smoke_mode)
                 refresh_audio_panel();
             refresh_runtime_banner(g_baresip_process.poll());
