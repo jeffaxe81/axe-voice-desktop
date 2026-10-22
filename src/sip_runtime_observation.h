@@ -13,6 +13,10 @@ struct SipRuntimeObservation {
     SipStatus sip = SipStatus::Unavailable;
     SipEvidence evidence = SipEvidence::None;
     std::uint64_t session = 0;
+    // Opaque monotonic call token assigned by a future native adapter.
+    // Never derive this from a phone number or expose a raw pointer.
+    std::uint64_t call_id = 0;
+    std::uint64_t last_call_id = 0;
 };
 inline bool sip_proof_is_current(const SipRuntimeObservation& observation,
                                  std::uint64_t current_session) {
