@@ -61,3 +61,11 @@ A interface passa a drenar uma caixa de eventos thread-safe do futuro adaptador 
 - O limite continua em 128 caracteres e os caracteres permitidos do teclado telefônico permanecem os mesmos.
 - O teste unitário cobre cursor, seleção, limite e bloqueio de metacaracteres; o smoke Windows exercita cliques reais.
 - Nada é discado; registro SIP e áudio bidirecional continuam indisponíveis.
+
+## v0.30 — Validação de conta em tempo real
+
+- Servidor, usuário e porta SIP são inspecionados ao digitar/colar, com erro específico e destaque visual somente em campos inválidos.
+- Porta aceita somente dígitos entre 1 e 65535; texto vazio solicita preenchimento sem marcar erro.
+- O botão **Validar dados** usa o mesmo modelo puro da validação instantânea, sem configurar conta, enviar credenciais ou registrar no servidor.
+- Smoke testa porta inválida/válida, mensagens e bloqueio de chamada. CTest `account_form_feedback` cobre casos extremos.
+- O feedback retorna para o destino ao mudar para **Teclado** e indica somente inventário local em **Áudio**.

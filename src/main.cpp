@@ -24,6 +24,7 @@
 
 #include "dialpad_model.h"
 #include "destination_feedback.h"
+#include "account_form_feedback.h"
 #include <vector>
 #include <array>
 #include <algorithm>
@@ -102,6 +103,9 @@ bool g_pinned = false;
 bool g_compact = false;
 bool g_smoke_mode = false;
 bool g_destination_invalid = false;
+bool g_account_invalid_server = false;
+bool g_account_invalid_user = false;
+bool g_account_invalid_port = false;
 bool g_tray_visible = false;
 constexpr wchar_t kPrefsKey[] = L"Software\\AXEVoice\\Desktop";
 int g_page = 0; // 0 = dial, 1 = settings, 2 = audio
@@ -245,6 +249,25 @@ HWND make_edit(HWND root, LPCWSTR initial, int id, int x, int y, int w, int h,
     SendMessageW(edit, EM_LIMITTEXT, 128, 0);
     return edit;
 }
+void refresh_destination_feedback();
+void refresh_account_feedback() {
+    if (!g_server || !g_user || !g_port || !g_status) return;
+    wchar_t server[129] = {}, username[129] = {}, port_text[129] = {};
+    GetWindowTextW(g_server, server, 129);
+    GetWindowTextW(g_user, username, 129);
+    GetWindowTextW(g_port, port_text, 129);
+    const auto feedback = axv::evaluate_account_form(server, username, port_text);
+    g_account_invalid_server = feedback.kind == axv::AccountFeedbackKind::Invalid &&
+                               feedback.error == axv::AccountError::InvalidServer;
+    g_account_invalid_user = feedback.kind == axv::AccountFeedbackKind::Invalid &&
+                             feedback.error == axv::AccountError::InvalidUser;
+    g_account_invalid_port = feedback.kind == axv::AccountFeedbackKind::Invalid &&
+                             feedback.error == axv::AccountError::InvalidPort;
+    if (g_page == 1) SetWindowTextW(g_status, feedback.message);
+    InvalidateRect(g_server, nullptr, TRUE);
+    InvalidateRect(g_user, nullptr, TRUE);
+    InvalidateRect(g_port, nullptr, TRUE);
+}
 void show_page(HWND root, int page) {
     g_page = page;
     for (auto child : g_dial_controls) {
@@ -257,6 +280,10 @@ void show_page(HWND root, int page) {
     InvalidateRect(root, nullptr, TRUE);
     HWND target = page == 0 ? g_number : (page == 1 ? g_server : g_input_audio_combo);
     if (target) SetFocus(target);
+    if (page == 0) refresh_destination_feedback();
+    else if (page == 1) refresh_account_feedback();
+    else if (g_status) SetWindowTextW(g_status,
+        L"Dispositivos inspecionados localmente. Sem audio SIP ativo.");
 }
 
 // Mini mode keeps only the target and true SIP state, without fake call actions.
@@ -569,6 +596,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             refresh_destination_feedback(); // keyboard, paste and dialpad share validation.
             return 0;
         }
+        if (HIWORD(wparam) == EN_CHANGE &&
+            (LOWORD(wparam) == kServerEdit || LOWORD(wparam) == kUserEdit ||
+             LOWORD(wparam) == kPortEdit)) {
+            if (g_page == 1) refresh_account_feedback();
+            return 0;
+        }
         // Combo selection uses code 1 too; accelerator commands have lParam == 0.
         if (HIWORD(wparam) == BN_CLICKED || (HIWORD(wparam) == 1 && lparam == 0)) {
             const int control = LOWORD(wparam);
@@ -735,33 +768,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             return 0;
         }
         if (LOWORD(wparam) == kValidateAccount && HIWORD(wparam) == BN_CLICKED) {
-            wchar_t server[256] = {}, user[256] = {}, portText[16] = {};
-            GetWindowTextW(g_server, server, 256);
-            GetWindowTextW(g_user, user, 256);
-            GetWindowTextW(g_port, portText, 16);
-            unsigned long port = 0;
-            bool digitsOnly = portText[0] != L'\0';
-            for (const wchar_t* p = portText; *p; ++p) {
-                if (*p < L'0' || *p > L'9') { digitsOnly = false; break; }
-                port = port * 10 + static_cast<unsigned long>(*p - L'0');
-                if (port > 65535) { digitsOnly = false; break; }
-            }
-            if (!digitsOnly || port == 0) {
-                SetWindowTextW(g_status, L"Porta SIP inválida.");
-                return 0;
-            }
-            axv::SipAccount account{server, user, static_cast<unsigned short>(port),
-                SendMessageW(g_tls, BM_GETCHECK, 0, 0) == BST_CHECKED};
-            if (axv::validate_account(account) != axv::AccountError::None) {
-                SetWindowTextW(g_status, L"Servidor ou usuário SIP inválido.");
-            } else {
-                const auto decision = axv::evaluate_registration(account, g_sip_selection.engine->status());
-                if (decision == axv::RegistrationDecision::EngineUnavailable) {
-                    SetWindowTextW(g_status, L"Conta válida. Motor Baresip não conectado.");
-                } else {
-                    SetWindowTextW(g_status, L"Dados válidos. Registro SIP ainda não executado.");
-                }
-            }
+            // Local syntax only, never invokes configure() or register_account().
+            refresh_account_feedback();
             return 0;
         }
         if (LOWORD(wparam) == kCallButton && HIWORD(wparam) == BN_CLICKED) {
@@ -826,8 +834,11 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
     }
     case WM_CTLCOLOREDIT: {
         HDC dc = reinterpret_cast<HDC>(wparam);
-        const bool invalid = reinterpret_cast<HWND>(lparam) == g_number &&
-                             g_destination_invalid;
+        const HWND edit = reinterpret_cast<HWND>(lparam);
+        const bool invalid = (edit == g_number && g_destination_invalid) ||
+                             (edit == g_server && g_account_invalid_server) ||
+                             (edit == g_user && g_account_invalid_user) ||
+                             (edit == g_port && g_account_invalid_port);
         SetTextColor(dc, text_color());
         SetBkColor(dc, invalid ? invalid_field_color() : field_color());
         return reinterpret_cast<LRESULT>(invalid ? g_invalid_field_brush : g_field_brush);
@@ -953,7 +964,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && std::wcscmp(command_line, L"--ui-smoke") == 0;
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.29",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.30",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         kWindowWidth, kFullHeight,
         nullptr, nullptr, instance, nullptr);
@@ -973,6 +984,19 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                      reinterpret_cast<LPARAM>(GetDlgItem(window, kShowSettings)));
         ok = ok && (GetWindowLongW(g_server, GWL_STYLE) & WS_VISIBLE) &&
              !(GetWindowLongW(g_number, GWL_STYLE) & WS_VISIBLE);
+        SetWindowTextW(g_server, L"pbx.example.org");
+        SetWindowTextW(g_user, L"1001");
+        SetWindowTextW(g_port, L"65536");
+        wchar_t account_message[160] = {};
+        GetWindowTextW(g_status, account_message, 160);
+        const bool account_invalid_ok = g_account_invalid_port &&
+            std::wstring_view(account_message).find(L"intervalo") != std::wstring_view::npos;
+        SetWindowTextW(g_port, L"5060");
+        GetWindowTextW(g_status, account_message, 160);
+        const bool account_valid_ok = !g_account_invalid_port &&
+            std::wstring_view(account_message).find(L"Registro SIP nao realizado") != std::wstring_view::npos &&
+            !IsWindowEnabled(GetDlgItem(window, kCallButton));
+        ok = ok && account_invalid_ok && account_valid_ok;
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(kShowDial, BN_CLICKED),
                      reinterpret_cast<LPARAM>(GetDlgItem(window, kShowDial)));
         ok = ok && (GetWindowLongW(g_number, GWL_STYLE) & WS_VISIBLE) &&
