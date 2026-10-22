@@ -1,3 +1,9 @@
+## v0.41.0 — isolamento de eventos de terminal e falhas SIP (laboratório)
+- Corrigido `BEVENT_SHUTDOWN`: somente eventos da UA selecionada encerram a sessão; `BEVENT_EXIT` permanece global.
+- `BEVENT_AUDIO_ERROR` e `BEVENT_SIPSESS_FAILED` da UA selecionada invalidam evidências pendentes e a sessão do bridge.
+- Teste com SDK simulado ampliado para outras UAs, falhas de áudio/SIP, encerramento global e reinício.
+- Adaptador continua isolado da GUI, sem conta registrada ou chamadas reais.
+
 # Changelog
 
 ## v0.37.0 — prontidão de chamada offline
