@@ -86,6 +86,9 @@ if(BUILD_TESTING)
   add_executable(test_baresip_callback_ingress tests/test_baresip_callback_ingress.cpp)
   target_compile_features(test_baresip_callback_ingress PRIVATE cxx_std_17)
   add_test(NAME baresip_callback_ingress COMMAND test_baresip_callback_ingress)
+  add_executable(test_baresip_callback_lifecycle tests/test_baresip_callback_lifecycle.cpp)
+  target_compile_features(test_baresip_callback_lifecycle PRIVATE cxx_std_17)
+  add_test(NAME baresip_callback_lifecycle COMMAND test_baresip_callback_lifecycle)
   add_executable(test_baresip_sdk_event_adapter
     tests/test_baresip_sdk_event_adapter.cpp
     src/baresip_sdk_event_adapter.cpp)
