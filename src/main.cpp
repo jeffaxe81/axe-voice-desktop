@@ -64,48 +64,48 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             WS_CHILD | WS_VISIBLE, 20, 60, 340, 20, window, nullptr, nullptr, nullptr);
         g_number = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL, 20, 86, 340, 30,
-            window, reinterpret_cast<HMENU>(kNumberEdit), nullptr, nullptr);
+            window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kNumberEdit)), nullptr, nullptr);
         CreateWindowW(L"BUTTON", L"Chamar",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 20, 130, 110, 35,
-            window, reinterpret_cast<HMENU>(kCallButton), nullptr, nullptr);
+            window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCallButton)), nullptr, nullptr);
         g_status = CreateWindowW(L"STATIC", L"Motor SIP não conectado",
             WS_CHILD | WS_VISIBLE, 20, 188, 340, 28, window, nullptr, nullptr, nullptr);
         CreateWindowW(L"STATIC", L"Servidor SIP", WS_CHILD | WS_VISIBLE,
             20, 235, 340, 20, window, nullptr, nullptr, nullptr);
         g_server = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
-            20, 257, 340, 27, window, reinterpret_cast<HMENU>(kServerEdit), nullptr, nullptr);
+            20, 257, 340, 27, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kServerEdit)), nullptr, nullptr);
         CreateWindowW(L"STATIC", L"Usuário SIP", WS_CHILD | WS_VISIBLE,
             20, 292, 165, 20, window, nullptr, nullptr, nullptr);
         g_user = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
-            20, 313, 165, 27, window, reinterpret_cast<HMENU>(kUserEdit), nullptr, nullptr);
+            20, 313, 165, 27, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kUserEdit)), nullptr, nullptr);
         CreateWindowW(L"STATIC", L"Porta", WS_CHILD | WS_VISIBLE,
             195, 292, 165, 20, window, nullptr, nullptr, nullptr);
         g_port = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"5060",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_NUMBER,
-            195, 313, 165, 27, window, reinterpret_cast<HMENU>(kPortEdit), nullptr, nullptr);
+            195, 313, 165, 27, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kPortEdit)), nullptr, nullptr);
         g_tls = CreateWindowW(L"BUTTON", L"Usar TLS (quando suportado)",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-            20, 348, 340, 28, window, reinterpret_cast<HMENU>(kTlsCheckbox), nullptr, nullptr);
+            20, 348, 340, 28, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTlsCheckbox)), nullptr, nullptr);
         CreateWindowW(L"BUTTON", L"Validar conta (sem registrar)",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-            20, 388, 340, 36, window, reinterpret_cast<HMENU>(kValidateAccount), nullptr, nullptr);
+            20, 388, 340, 36, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kValidateAccount)), nullptr, nullptr);
         CreateWindowW(L"BUTTON", L"Verificar Baresip local",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-            20, 432, 340, 32, window, reinterpret_cast<HMENU>(kProbeButton), nullptr, nullptr);
+            20, 432, 340, 32, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kProbeButton)), nullptr, nullptr);
         CreateWindowW(L"BUTTON", L"Verificar microfone e saída de áudio",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-            20, 474, 340, 32, window, reinterpret_cast<HMENU>(kAudioDevicesButton), nullptr, nullptr);
+            20, 474, 340, 32, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kAudioDevicesButton)), nullptr, nullptr);
         g_audio_status = CreateWindowW(L"STATIC", L"Áudio ainda não inspecionado.",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
             20, 514, 350, 55, window, nullptr, nullptr, nullptr);
         CreateWindowW(L"BUTTON", L"Iniciar Baresip (lab)",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-            20, 575, 163, 34, window, reinterpret_cast<HMENU>(kStartBaresipButton), nullptr, nullptr);
+            20, 575, 163, 34, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kStartBaresipButton)), nullptr, nullptr);
         CreateWindowW(L"BUTTON", L"Parar motor",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-            197, 575, 163, 34, window, reinterpret_cast<HMENU>(kStopBaresipButton), nullptr, nullptr);
+            197, 575, 163, 34, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kStopBaresipButton)), nullptr, nullptr);
         g_process_status = CreateWindowW(L"STATIC", L"Processo Baresip parado. Registro SIP indisponível.",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
             20, 617, 350, 56, window, nullptr, nullptr, nullptr);
@@ -286,11 +286,11 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 g_last_process_state = state;
                 if (state == axv::ProcessStatus::Exited) {
                     const auto code = g_baresip_process.exit_code();
-                    const std::wstring message = code
+                    const std::wstring status_message = code
                         ? L"Baresip encerrou (codigo " + std::to_wstring(*code) +
                           L"). Registro SIP nao confirmado."
                         : L"Baresip encerrou; codigo indisponivel. Registro nao confirmado.";
-                    SetWindowTextW(g_process_status, message.c_str());
+                    SetWindowTextW(g_process_status, status_message.c_str());
                 } else if (state == axv::ProcessStatus::Failed) {
                     SetWindowTextW(g_process_status, L"Falha ao consultar processo Baresip.");
                 }
