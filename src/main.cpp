@@ -1048,6 +1048,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         const bool valid_feedback_ok = !g_destination_invalid &&
             std::wstring_view(feedback_message).find(L"Ramal valido") != std::wstring_view::npos &&
             !IsWindowEnabled(GetDlgItem(window, kCallButton));
+        // Direct WM_COMMAND must fail closed even if the visual button is
+        // disabled or a caller bypasses the normal user interaction path.
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(kCallButton, BN_CLICKED),
+                     reinterpret_cast<LPARAM>(GetDlgItem(window, kCallButton)));
+        wchar_t denied_message[160]{};
+        GetWindowTextW(g_status, denied_message, 160);
+        const bool direct_command_denied =
+            std::wstring_view(denied_message).find(L"AXV-SIP-003") != std::wstring_view::npos &&
+            !IsWindowEnabled(GetDlgItem(window, kCallButton));
         SetWindowTextW(g_number, L"1234");
         SendMessageW(g_number, EM_SETSEL, 2, 2);
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(kDigitStart + 4, BN_CLICKED),
@@ -1065,7 +1074,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         GetWindowTextW(g_status, feedback_message, 160);
         const bool empty_feedback_ok = !g_destination_invalid &&
             std::wstring_view(feedback_message).find(L"Digite") != std::wstring_view::npos;
-        ok = ok && invalid_feedback_ok && valid_feedback_ok && empty_feedback_ok;
+        ok = ok && invalid_feedback_ok && valid_feedback_ok && empty_feedback_ok && direct_command_denied;
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(kCompact, BN_CLICKED),
                      reinterpret_cast<LPARAM>(GetDlgItem(window, kCompact)));
         RECT bounds = {};
