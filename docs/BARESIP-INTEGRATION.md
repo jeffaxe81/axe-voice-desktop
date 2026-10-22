@@ -41,3 +41,10 @@ Gates restantes: fixar/auditar a versão e licenças de Baresip/re; implementar 
 O novo `src/sip_event_projection.h` conserva o estado SIP confirmado entre ticks da interface e invalida a sessão após perda de evidência, overflow, erro de ordem ou encerramento do processo. O bloqueio é persistente até a criação de uma nova geração.
 
 **O produto ainda não dispõe de produtor nativo Baresip:** a UI passa exclusivamente `SipEvidence::None`, portanto as chamadas permanecem desativadas. Os testes com `VerifiedNativeApi` são sintéticos e validam a política, não uma conta SIP real. Nunca conceder essa evidência a partir de stdout, logs ou simples inicialização do processo.
+
+
+## v0.33 — identidade de conta e chamada
+
+`BoundBaresipState` exige `account_token` fixado por sessão e `call_token` monotônico, descartando eventos de conta errada, chamadas encerradas ou concorrentes. A projeção do estado na UI exige conta selecionada e rejeita a geração inteira quando a conta é trocada sem reiniciar o motor. Ainda não há fonte nativa: a UI envia `SipEvidence::None` e token 0.
+
+A identidade deve ser emitida exclusivamente por um futuro adaptador Baresip/re versionado. Nunca deve derivar diretamente de texto de stdout, número, URI, cabeçalhos de SIP ou ponteiro após destruição da chamada. **Nenhuma chamada real está habilitada**; CTest verifica apenas regras sintéticas.

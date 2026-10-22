@@ -1,4 +1,4 @@
-# AXE Voice — Frontend Windows v0.27 (prototipagem)
+# AXE Voice — Frontend Windows v0.33 (prototipagem)
 
 ## Telas
 
@@ -81,3 +81,8 @@ A interface passa a drenar uma caixa de eventos thread-safe do futuro adaptador 
 ## v0.32 — Banner de estado orientado a sessão
 
 O banner agora consome uma projeção de eventos persistente entre ciclos do timer. Quando não há adaptador nativo validado (situação atual), continua a indicar registro SIP não confirmado. Em um backend futuro, overflow e perda de procedência derrubarão o estado para indisponível até uma nova sessão.
+
+
+## v0.33 — verificação de identidade SIP
+
+Eventos nativos futuros só serão aceitos quando associados a uma conta e chamada válidas na mesma sessão. O status visual segue indicando registro não confirmado até integrar bibliotecas auditadas do Baresip.
