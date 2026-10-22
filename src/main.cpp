@@ -9,6 +9,7 @@
 #include "sip_status.h"
 #include "sip_runtime_observation.h"
 #include "baresip_event_mailbox.h"
+#include "sip_event_projection.h"
 #include "call_policy.h"
 #include "sip_diagnostics.h"
 #include "sip_registration_policy.h"
@@ -99,6 +100,7 @@ constexpr std::uint64_t kGracePeriodMs = 1500;
 axv::EngineSelection g_sip_selection = axv::create_sip_engine();
 // Prepared for future native callbacks; current laboratory build has no producer.
 axv::BaresipEventMailbox g_native_event_mailbox;
+axv::SipEventProjection g_sip_projection;
 
 
 bool g_dark = true;
@@ -465,18 +467,9 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     if (!g_runtime_banner) return;
     // Thread-safe receive boundary is active, but not connected to Baresip C API.
     const auto pending = g_native_event_mailbox.drain();
-    axv::SipRuntimeObservation observed{
-        observed_process(state, g_shutdown.pending()),
-        g_sip_selection.engine->status(), axv::SipEvidence::None, 0
-    };
-    if (pending.overflow) {
-        // Never apply incomplete event histories after a mailbox overflow.
-        observed.sip = axv::SipStatus::Unavailable;
-        observed.evidence = axv::SipEvidence::None;
-    } else {
-        for (std::size_t i = 0; i < pending.size; ++i)
-            (void)axv::apply_baresip_event(observed, pending.session, pending.events[i]);
-    }
+    // No audited native producer is linked; process state never implies SIP proof.
+    const auto& observed = g_sip_projection.observe(
+        observed_process(state, g_shutdown.pending()), axv::SipEvidence::None, pending);
     // Without a native verified producer the UI cannot claim SIP registration.
     const wchar_t* banner = axv::runtime_status_banner(observed, pending.session);
     wchar_t previous[160]{};
@@ -991,7 +984,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && std::wcscmp(command_line, L"--ui-smoke") == 0;
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.31",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.32",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         kWindowWidth, kFullHeight,
         nullptr, nullptr, instance, nullptr);

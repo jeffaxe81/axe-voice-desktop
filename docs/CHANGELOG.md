@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.32.0 — projeção SIP persistente (protótipo)
+- Estado SIP é mantido entre ciclos de atualização, condicionado a eventos nativos validados de uma única geração.
+- Falha fechada após desordem de eventos, overflow de fila, perda de prova, término do motor; exige nova geração para recuperação.
+- Front-end continua sem adaptador Baresip real, usando `SipEvidence::None`; sem registro ou chamadas reais.
+- Novo teste determinístico de projeção.
+
+
 ## v0.28.0 — feedback de discagem em tempo real (protótipo)
 - Campo de destino com validação na digitação, colagem e teclado numérico via EN_CHANGE.
 - Feedback semântico de erros e aviso de bloqueio SIP; destaque suave para destino inválido.

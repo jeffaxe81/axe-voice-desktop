@@ -77,3 +77,7 @@ A interface passa a drenar uma caixa de eventos thread-safe do futuro adaptador 
 - Campos mostram dicas visuais de preenchimento sem gravar conta nem dispositivo. O botão de ajuda permanece disponível em MINI.
 - `ui_smoke` confirma a ação de ajuda sem abrir janelas modais, e `ui_help` verifica texto e avisos importantes.
 - Pendente homologação manual com acessibilidade, DPI, dispositivos reais e Baresip; não há chamadas reais.
+
+## v0.32 — Banner de estado orientado a sessão
+
+O banner agora consome uma projeção de eventos persistente entre ciclos do timer. Quando não há adaptador nativo validado (situação atual), continua a indicar registro SIP não confirmado. Em um backend futuro, overflow e perda de procedência derrubarão o estado para indisponível até uma nova sessão.

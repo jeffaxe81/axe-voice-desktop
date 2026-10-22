@@ -35,3 +35,9 @@ Os tipos de evento de src/baresip_event_reducer.h correspondem conceitualmente a
 O novo src/baresip_event_mailbox.h aceita um máximo de 32 eventos sem dados pessoais, log textual, URIs ou segredos, protege acesso concorrente worker/UI com mutex, invalida sessões antigas e descarta a sequência inteira após overflow. O frontend Win32 drena periodicamente o mailbox e invalida a sessão no encerramento. **Nesta compilação não há produtor nativo: o mailbox permanece sem sessão e o redutor não recebe evidência VerifiedNativeApi.** Não existe integração, registro ou mídia real.
 
 Gates restantes: fixar/auditar a versão e licenças de Baresip/re; implementar e registrar callback bevent_h nativo, vinculado às identidades de conta/chamada e geração de sessão; tratar falhas, reconexão e ciclo de vida do callback; implementar credenciais protegidas, TLS/SRTP e testes com PABX e headset. A autorização de chamada e de atendimento só poderá ser habilitada após essas validações.
+
+## v0.32 — Projeção persistente e política de recuperação (não operacional)
+
+O novo `src/sip_event_projection.h` conserva o estado SIP confirmado entre ticks da interface e invalida a sessão após perda de evidência, overflow, erro de ordem ou encerramento do processo. O bloqueio é persistente até a criação de uma nova geração.
+
+**O produto ainda não dispõe de produtor nativo Baresip:** a UI passa exclusivamente `SipEvidence::None`, portanto as chamadas permanecem desativadas. Os testes com `VerifiedNativeApi` são sintéticos e validam a política, não uma conta SIP real. Nunca conceder essa evidência a partir de stdout, logs ou simples inicialização do processo.
