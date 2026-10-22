@@ -75,14 +75,25 @@ private:
 
     void on_event(enum bevent_ev type, struct bevent* event) {
         if (!active()) return;
-        // App-level shutdown events need not be associated with the selected UA.
-        if (type == BEVENT_SHUTDOWN || type == BEVENT_EXIT) {
-            if (!ingress_.registration(session_, BaresipEventKind::TransportLost))
-                fail_closed();
+        // BEVENT_EXIT is global. BEVENT_SHUTDOWN is emitted for a specific
+        // UA (including from ua_destroy), and MUST pass the ownership check.
+        // Both terminal events revoke proof and queued calls immediately.
+        if (type == BEVENT_EXIT) {
+            fail_closed();
             return;
         }
         if (!event || bevent_get_ua(event) != owner_) return;
+        if (type == BEVENT_SHUTDOWN) {
+            fail_closed();
+            return;
+        }
         switch (type) {
+        case BEVENT_SIPSESS_FAILED:
+        case BEVENT_AUDIO_ERROR:
+            // Signaling/media failures must not leave a usable call state.
+            // Only errors from the selected UA are allowed to revoke it.
+            fail_closed();
+            return;
         case BEVENT_REGISTERING:
             if (!ingress_.registration(session_, BaresipEventKind::Registering))
                 fail_closed();
