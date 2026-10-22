@@ -41,3 +41,12 @@ Gates restantes: fixar/auditar a versão e licenças de Baresip/re; implementar 
 O novo `src/sip_event_projection.h` conserva o estado SIP confirmado entre ticks da interface e invalida a sessão após perda de evidência, overflow, erro de ordem ou encerramento do processo. O bloqueio é persistente até a criação de uma nova geração.
 
 **O produto ainda não dispõe de produtor nativo Baresip:** a UI passa exclusivamente `SipEvidence::None`, portanto as chamadas permanecem desativadas. Os testes com `VerifiedNativeApi` são sintéticos e validam a política, não uma conta SIP real. Nunca conceder essa evidência a partir de stdout, logs ou simples inicialização do processo.
+
+
+## v0.37 — Ingresso condicionado de callbacks nativos (não operacional)
+
+O novo `src/baresip_native_ingress.h` acrescenta uma camada portável de **pré-admissão** de eventos para um futuro adaptador `bevent_h` auditado. Ela exige uma identidade opaca de conta, geração monotônica do mailbox e identidade estável por chamada; rejeita eventos de sessões, contas ou chamadas diferentes. Quando detecta uma divergência ou overflow, **descarta a fila inteira e bloqueia a sessão** até desmontagem explícita.
+
+A API é sincronizada para callbacks de workers e teardown, mas **não autentica os eventos por si mesma**. A operação `bind_validated_account` pressupõe validação nativa da UA e do ciclo de vida por componente ainda inexistente. Eventos alheios ao subconjunto reconhecido não podem criar evidência de registro; não há inclusão de SDK, chamada de rede, armazenamento de dados SIP nem habilitação de `SipEvidence::VerifiedNativeApi`.
+
+O CTest `baresip_native_ingress` usa identidades e eventos *sintéticos* (inclusive replay, mismatch e overflow). O executável Windows ainda utiliza `UnavailableSipEngine`; a camada não é instanciada pela UI. Para ativá-la, são necessários SDK/re versionados e auditados, callback real `bevent_h`, teardown sem corridas, vinculação a UA/call concretos e homologação com PABX/headset. Referência de API para revisão (não é pin de dependência): https://github.com/baresip/baresip/blob/main/include/baresip.h .
