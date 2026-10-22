@@ -7,6 +7,7 @@
 #include "sip_account.h"
 #include "sip_status.h"
 #include "sip_runtime_observation.h"
+#include "baresip_event_mailbox.h"
 #include "call_policy.h"
 #include "sip_diagnostics.h"
 #include "sip_registration_policy.h"
@@ -91,6 +92,8 @@ axv::ShutdownDeadline g_shutdown;
 bool g_close_requested = false;
 constexpr std::uint64_t kGracePeriodMs = 1500;
 axv::EngineSelection g_sip_selection = axv::create_sip_engine();
+// Prepared for future native callbacks; current laboratory build has no producer.
+axv::BaresipEventMailbox g_native_event_mailbox;
 
 
 bool g_dark = true;
@@ -401,16 +404,33 @@ axv::RuntimeProcess observed_process(axv::ProcessStatus status, bool stopping) {
 }
 void refresh_runtime_banner(axv::ProcessStatus state) {
     if (!g_runtime_banner) return;
-    // Current build has no native SIP adapter and is always unverified.
-    const axv::SipRuntimeObservation observed{
+    // Thread-safe receive boundary is active, but not connected to Baresip C API.
+    const auto pending = g_native_event_mailbox.drain();
+    axv::SipRuntimeObservation observed{
         observed_process(state, g_shutdown.pending()),
         g_sip_selection.engine->status(), axv::SipEvidence::None, 0
     };
-    SetWindowTextW(g_runtime_banner, axv::runtime_status_banner(observed, 0));
-    const bool dial = axv::may_use_call_control(observed, 0, axv::CallAction::Dial);
-    EnableWindow(GetDlgItem(GetParent(g_runtime_banner), kCallButton), dial ? TRUE : FALSE);
+    if (pending.overflow) {
+        // Never apply incomplete event histories after a mailbox overflow.
+        observed.sip = axv::SipStatus::Unavailable;
+        observed.evidence = axv::SipEvidence::None;
+    } else {
+        for (std::size_t i = 0; i < pending.size; ++i)
+            (void)axv::apply_baresip_event(observed, pending.session, pending.events[i]);
+    }
+    // Without a native verified producer the UI cannot claim SIP registration.
+    const wchar_t* banner = axv::runtime_status_banner(observed, pending.session);
+    wchar_t previous[160]{};
+    GetWindowTextW(g_runtime_banner, previous, 160);
+    if (std::wstring_view(previous) != std::wstring_view(banner))
+        SetWindowTextW(g_runtime_banner, banner);
+    const bool dial = axv::may_use_call_control(observed, pending.session, axv::CallAction::Dial);
+    const HWND button = GetDlgItem(GetParent(g_runtime_banner), kCallButton);
+    if (IsWindowEnabled(button) != (dial ? TRUE : FALSE))
+        EnableWindow(button, dial ? TRUE : FALSE);
 }
 void begin_shutdown(HWND window) {
+    g_native_event_mailbox.invalidate_session();
     const bool queued = g_baresip_process.request_quit_async();
     g_shutdown.begin(GetTickCount64());
     EnableWindow(GetDlgItem(window, kStartBaresipButton), FALSE);
@@ -875,6 +895,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         DestroyWindow(window);
         return 0;
     case WM_DESTROY:
+        g_native_event_mailbox.invalidate_session();
         KillTimer(window, kProcessTimer);
         remove_tray(window);
         if (g_font_regular) DeleteObject(g_font_regular);
@@ -902,7 +923,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && std::wcscmp(command_line, L"--ui-smoke") == 0;
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.26",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.27",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         kWindowWidth, kFullHeight,
         nullptr, nullptr, instance, nullptr);

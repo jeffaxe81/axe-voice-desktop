@@ -1,4 +1,4 @@
-# AXE Voice — Frontend Windows v0.26 (prototipagem)
+# AXE Voice — Frontend Windows v0.27 (prototipagem)
 
 ## Telas
 
@@ -38,3 +38,8 @@ A janela compacta exige revisão manual de escala DPI, leitores de tela e contra
 ## Faixa de estado do motor (v0.26)
 
 A faixa superior mostra o estado real do processo Windows (parado, ativo, encerrando ou falha). O estado do processo **não comprova** registro SIP. A UI mantém `UnavailableSipEngine`, e as chamadas não são habilitadas. O CTest `sip_runtime_observation` verifica política de eventos não comprovados e sessões antigas.
+
+
+## v0.27 — Preparação de eventos nativos
+
+A interface passa a drenar uma caixa de eventos thread-safe do futuro adaptador Baresip a cada ciclo de atualização, mas não tem produtor nem sessão verificada. O banner não interpreta o processo ativo como registro SIP e não habilita chamadas. O modelo inclui Ringing para distinguir chamadas recebidas e autorizar Answer somente nessa condição em testes de política.

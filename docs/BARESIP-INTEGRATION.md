@@ -26,3 +26,12 @@ O aplicativo audita localmente um conjunto fixo de nomes de DLL em modules/ ao l
 Baresip upstream define `BEVENT_REGISTERING`, `BEVENT_REGISTER_OK`, `BEVENT_REGISTER_FAIL`, `BEVENT_CALL_ESTABLISHED` e `BEVENT_CALL_CLOSED`: https://github.com/baresip/baresip/blob/main/include/baresip.h . Nenhum desses eventos está conectado ao aplicativo ainda. Não habilitar `ctrl_tcp`, `ctrl_http` ou `ctrl_ws` no perfil de laboratório.
 
 Novo CTest valida falha fechada, eventos de sessões antigas, encerramento e controle de chamadas apenas em estados sintéticos com prova nativa. **Testes de política não significam registro SIP real.**
+
+
+## v0.27 — Contrato de eventos e mailbox worker/UI (não operacional)
+
+Os tipos de evento de src/baresip_event_reducer.h correspondem conceitualmente aos eventos de registro e chamada da API Baresip. O redutor aceita somente eventos de uma fonte previamente marcada como nativa verificada, com sessão atual, processo em execução e sequência válida. Exige Registering antes de RegisterOk, e diferencia Ringing (recebendo), Calling (originando) e InCall (estabelecida). Answer só é permitido enquanto Ringing.
+
+O novo src/baresip_event_mailbox.h aceita um máximo de 32 eventos sem dados pessoais, log textual, URIs ou segredos, protege acesso concorrente worker/UI com mutex, invalida sessões antigas e descarta a sequência inteira após overflow. O frontend Win32 drena periodicamente o mailbox e invalida a sessão no encerramento. **Nesta compilação não há produtor nativo: o mailbox permanece sem sessão e o redutor não recebe evidência VerifiedNativeApi.** Não existe integração, registro ou mídia real.
+
+Gates restantes: fixar/auditar a versão e licenças de Baresip/re; implementar e registrar callback bevent_h nativo, vinculado às identidades de conta/chamada e geração de sessão; tratar falhas, reconexão e ciclo de vida do callback; implementar credenciais protegidas, TLS/SRTP e testes com PABX e headset. A autorização de chamada e de atendimento só poderá ser habilitada após essas validações.
