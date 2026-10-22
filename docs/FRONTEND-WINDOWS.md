@@ -1,4 +1,4 @@
-# AXE Voice — Frontend Windows v0.25 (prototipagem)
+# AXE Voice — Frontend Windows v0.26 (prototipagem)
 
 ## Telas
 
@@ -33,3 +33,8 @@ O tema e a opção sempre-no-topo são persistidos exclusivamente no registro HK
 ## Limitações da v0.24
 
 A janela compacta exige revisão manual de escala DPI, leitores de tela e contraste no Windows 10/11. Não indica chamadas ativas: registro SIP e áudio reais continuam fora desta entrega; nenhuma discagem é iniciada ou armazenada.
+
+
+## Faixa de estado do motor (v0.26)
+
+A faixa superior mostra o estado real do processo Windows (parado, ativo, encerrando ou falha). O estado do processo **não comprova** registro SIP. A UI mantém `UnavailableSipEngine`, e as chamadas não são habilitadas. O CTest `sip_runtime_observation` verifica política de eventos não comprovados e sessões antigas.

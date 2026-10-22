@@ -6,6 +6,7 @@
 #include "sip_engine.h"
 #include "sip_account.h"
 #include "sip_status.h"
+#include "sip_runtime_observation.h"
 #include "call_policy.h"
 #include "sip_diagnostics.h"
 #include "sip_registration_policy.h"
@@ -17,6 +18,7 @@
 #include "windows_process.h"
 #include "shutdown_policy.h"
 #include <string>
+#include <string_view>
 #include <cstdio>
 
 #include "dialpad_model.h"
@@ -75,6 +77,7 @@ HWND g_port = nullptr;
 HWND g_tls = nullptr;
 HWND g_audio_status = nullptr;
 HWND g_process_status = nullptr;
+HWND g_runtime_banner = nullptr;
 HWND g_input_audio_combo = nullptr;
 HWND g_output_audio_combo = nullptr;
 HWND g_headset_status = nullptr;
@@ -386,6 +389,27 @@ void refresh_audio_panel() {
         L"Preferencia local somente. Baresip e chamadas ainda nao conectados.");
 }
 
+axv::RuntimeProcess observed_process(axv::ProcessStatus status, bool stopping) {
+    if (stopping) return axv::RuntimeProcess::Stopping;
+    switch (status) {
+    case axv::ProcessStatus::Running: return axv::RuntimeProcess::Running;
+    case axv::ProcessStatus::Failed: return axv::RuntimeProcess::Failed;
+    case axv::ProcessStatus::Stopped:
+    case axv::ProcessStatus::Exited: return axv::RuntimeProcess::Stopped;
+    }
+    return axv::RuntimeProcess::Failed;
+}
+void refresh_runtime_banner(axv::ProcessStatus state) {
+    if (!g_runtime_banner) return;
+    // Current build has no native SIP adapter and is always unverified.
+    const axv::SipRuntimeObservation observed{
+        observed_process(state, g_shutdown.pending()),
+        g_sip_selection.engine->status(), axv::SipEvidence::None, 0
+    };
+    SetWindowTextW(g_runtime_banner, axv::runtime_status_banner(observed, 0));
+    const bool dial = axv::may_use_call_control(observed, 0, axv::CallAction::Dial);
+    EnableWindow(GetDlgItem(GetParent(g_runtime_banner), kCallButton), dial ? TRUE : FALSE);
+}
 void begin_shutdown(HWND window) {
     const bool queued = g_baresip_process.request_quit_async();
     g_shutdown.begin(GetTickCount64());
@@ -415,7 +439,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_button(window, L"TECLADO", kShowDial, 24, 103, 122, 42);
         make_button(window, L"AJUSTES", kShowSettings, 153, 103, 123, 42);
         make_button(window, L"AUDIO", kShowAudio, 283, 103, 131, 42);
-        make_label(window, L"●  CONTA SIP NÃO REGISTRADA", 42, 164, 347, 25, -1, g_font_regular);
+        g_runtime_banner = make_label(window, L"MOTOR PARADO  |  SIP NAO REGISTRADO",
+                                     42, 164, 347, 25, -1, g_font_regular);
 
         make_label(window, L"DISCAGEM", 39, 220, 290, 23, 0, g_font_small);
         g_number_label = make_label(window, L"Número ou endereço SIP", 39, 246, 320, 20, 0, g_font_regular);
@@ -492,6 +517,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         }
         show_page(window, 0);
         apply_compact_layout(window);
+        refresh_runtime_banner(g_baresip_process.poll());
         SetTimer(window, kProcessTimer, 100, nullptr);
         return 0;
     }
@@ -791,6 +817,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
     }
     case WM_TIMER:
         if (wparam == kProcessTimer) {
+            refresh_runtime_banner(g_baresip_process.poll());
             if (g_shutdown.pending()) {
                 const auto state = g_baresip_process.poll();
                 if (state == axv::ProcessStatus::Exited) {
@@ -875,7 +902,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && std::wcscmp(command_line, L"--ui-smoke") == 0;
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.25",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.26",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         kWindowWidth, kFullHeight,
         nullptr, nullptr, instance, nullptr);
@@ -899,6 +926,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                      reinterpret_cast<LPARAM>(GetDlgItem(window, kShowDial)));
         ok = ok && (GetWindowLongW(g_number, GWL_STYLE) & WS_VISIBLE) &&
              !(GetWindowLongW(g_server, GWL_STYLE) & WS_VISIBLE);
+        wchar_t engine_banner[160] = {};
+        GetWindowTextW(g_runtime_banner, engine_banner, 160);
+        ok = ok && std::wstring_view(engine_banner).find(L"NAO REGISTRADO") != std::wstring_view::npos;
         const bool baseline_ok = ok;
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(kCompact, BN_CLICKED),
                      reinterpret_cast<LPARAM>(GetDlgItem(window, kCompact)));
