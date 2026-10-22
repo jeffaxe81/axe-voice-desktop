@@ -359,18 +359,18 @@ void update_child_dpi_layout() {
 void update_fonts_for_dpi() {
     HFONT regular = create_font(17, FW_MEDIUM);
     HFONT title = create_font(27, FW_BOLD);
-    HFONT small = create_font(13, FW_NORMAL);
+    HFONT small_font = create_font(13, FW_NORMAL);
     HFONT digit = create_font(25, FW_SEMIBOLD);
-    if (!regular || !title || !small || !digit) {
+    if (!regular || !title || !small_font || !digit) {
         if (regular) DeleteObject(regular);
         if (title) DeleteObject(title);
-        if (small) DeleteObject(small);
+        if (small_font) DeleteObject(small_font);
         if (digit) DeleteObject(digit);
         return;
     }
     const HFONT old_regular = std::exchange(g_font_regular, regular);
     const HFONT old_title = std::exchange(g_font_title, title);
-    const HFONT old_small = std::exchange(g_font_small, small);
+    const HFONT old_small = std::exchange(g_font_small, small_font);
     const HFONT old_digit = std::exchange(g_font_digit, digit);
     for (const auto& child : g_dpi_children) {
         const HFONT selected = child.role == FontRole::Title ? g_font_title
