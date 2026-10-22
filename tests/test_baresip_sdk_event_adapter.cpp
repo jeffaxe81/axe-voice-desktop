@@ -81,6 +81,9 @@ int main() {
     // Wrong old call closure must revoke the whole session, not the new call.
     emit(BEVENT_CALL_CLOSED, &one);
     if (adapter.active() || mailbox.drain().session || mailbox.drain().size) return 10;
+    // Even after a fail-closed callback the SDK registration still exists
+    // until stop() unregisters it; another owner must remain excluded.
+    if (competing.start(&other)) return 35;
     adapter.stop();
     if (g_callback || adapter.active()) return 11;
     if (!adapter.start(&account) || adapter.session() <= a) return 12;
