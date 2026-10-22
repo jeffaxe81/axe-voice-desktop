@@ -11,6 +11,7 @@
 #include "baresip_event_mailbox.h"
 #include "sip_event_projection.h"
 #include "sip_runtime_session_guard.h"
+#include "dial_authorization.h"
 #include "call_policy.h"
 #include "sip_diagnostics.h"
 #include "sip_registration_policy.h"
@@ -484,11 +485,10 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
         SetWindowTextW(g_runtime_banner, banner);
     wchar_t destination[129]{};
     GetWindowTextW(g_number, destination, 129);
-    // Defense in depth: native proof alone cannot activate the current
-    // UnavailableSipEngine, nor can an invalid destination.
-    const bool dial = axv::may_use_call_control(observed, current_session, axv::CallAction::Dial) &&
-        g_sip_selection.engine->status() == axv::SipStatus::Registered &&
-        axv::evaluate_destination(destination).valid();
+    // The click handler uses the same gate, with a fresh process observation.
+    // Current UnavailableSipEngine is always denied, even for valid destinations.
+    const bool dial = axv::authorize_dial(
+        observed, current_session, g_sip_selection, destination).allowed();
     const HWND button = GetDlgItem(GetParent(g_runtime_banner), kCallButton);
     if (IsWindowEnabled(button) != (dial ? TRUE : FALSE))
         EnableWindow(button, dial ? TRUE : FALSE);
@@ -800,18 +800,19 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             return 0;
         }
         if (LOWORD(wparam) == kCallButton && HIWORD(wparam) == BN_CLICKED) {
+            // Never trust a previously enabled button. Re-poll process and
+            // provenance on every user action, including synthetic WM_COMMAND.
             wchar_t number[256] = {};
             GetWindowTextW(g_number, number, 256);
-            if (number[0] == L'\0') {
-                SetWindowTextW(g_status, L"Informe um número ou SIP URI.");
-            } else if (!axv::validate_address(number)) {
-                SetWindowTextW(g_status, L"Destino SIP inválido.");
-            } else {
-                if (!axv::can_apply_call_action(g_sip_selection.engine->status(), axv::CallAction::Dial)) {
-                    SetWindowTextW(g_status, axv::diagnostic_text(axv::DiagnosticCode::RegistrationPending));
-                } else if (!g_sip_selection.engine->start_call(axv::validate_address(number).normalized)) {
-                    SetWindowTextW(g_status, g_sip_selection.engine->diagnostic().c_str());
-                }
+            const auto& observed = g_sip_session_guard.observe(
+                observed_process(g_baresip_process.poll(), g_shutdown.pending()),
+                axv::SipEvidence::None, g_native_event_mailbox, g_sip_projection);
+            const auto permission = axv::authorize_dial(
+                observed, observed.session, g_sip_selection, number);
+            if (!permission.allowed()) {
+                SetWindowTextW(g_status, axv::dial_denial_text(permission.reason));
+            } else if (!g_sip_selection.engine->start_call(permission.normalized_destination)) {
+                SetWindowTextW(g_status, g_sip_selection.engine->diagnostic().c_str());
             }
             return 0;
         }
