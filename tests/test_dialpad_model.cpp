@@ -35,4 +35,4 @@ int main() {
     plan = axv::plan_dial_edit(L"123", 50, 60, L'0');
     if (!plan.accepted || plan.start != 3 || plan.end != 3) return 16;
     return 0;
-
+}
