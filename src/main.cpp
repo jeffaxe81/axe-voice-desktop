@@ -21,6 +21,8 @@
 #include "baresip_modules.h"
 #include "audio_devices.h"
 #include "audio_selection_feedback.h"
+#include "audio_preference_state.h"
+#include "audio_hotplug_refresh.h"
 #include "windows_process.h"
 #include "shutdown_policy.h"
 #include <string>
@@ -55,6 +57,8 @@ constexpr int kRefreshHeadsetsButton = 1013;
 constexpr int kStartBaresipButton = 1010;
 constexpr int kStopBaresipButton = 1011;
 constexpr UINT_PTR kProcessTimer = 1012;
+constexpr UINT_PTR kAudioInventoryTimer = 1014;
+constexpr UINT kAudioInventoryIntervalMs = 3000;
 constexpr int kShowDial = 2001;
 constexpr int kShowSettings = 2002;
 constexpr int kTheme = 2003;
@@ -95,8 +99,10 @@ HWND g_output_audio_combo = nullptr;
 HWND g_headset_status = nullptr;
 std::vector<axv::AudioEndpoint> g_audio_inputs;
 std::vector<axv::AudioEndpoint> g_audio_outputs;
-std::wstring g_selected_input_id;
-std::wstring g_selected_output_id;
+axv::AudioInventory g_previous_audio_inventory;
+bool g_audio_seen = false;
+axv::AudioDeviceChoice g_input_choice;
+axv::AudioDeviceChoice g_output_choice;
 axv::WindowsProcess g_baresip_process;
 axv::ProcessStatus g_last_process_state = axv::ProcessStatus::Stopped;
 axv::ShutdownDeadline g_shutdown;
@@ -295,6 +301,11 @@ void refresh_account_feedback() {
 }
 void show_page(HWND root, int page) {
     g_page = page;
+    // Poll Core Audio only while the Audio tab is visible.
+    if (page == 2 && !g_smoke_mode)
+        SetTimer(root, kAudioInventoryTimer, kAudioInventoryIntervalMs, nullptr);
+    else
+        KillTimer(root, kAudioInventoryTimer);
     for (auto child : g_dial_controls) {
         const bool visible = page == 0 &&
             (!g_compact || child == g_number || child == g_number_label);
@@ -425,40 +436,50 @@ void edit_number(HWND root, wchar_t action) {
 }
 
 // Audio preferences are previews only: they never configure or contact Baresip.
-axv::AudioSelectionRefresh fill_audio_combo(
+axv::AudioChoiceResolution fill_audio_combo(
     HWND combo, const std::vector<axv::AudioEndpoint>& devices,
-    std::wstring& selected_id) {
-    const auto selection = axv::refresh_audio_selection(devices, selected_id);
+    axv::AudioDeviceChoice& choice) {
+    const auto selection = choice.reconcile(devices);
     SendMessageW(combo, CB_RESETCONTENT, 0, 0);
     for (const auto& device : devices) {
         const std::wstring title = (device.default_communications ? L"[PADRAO] " : L"") +
                                    device.name;
         SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(title.c_str()));
     }
-    EnableWindow(combo, selection.index >= 0);
-    if (selection.index >= 0) {
+    EnableWindow(combo, selection.available());
+    if (selection.available()) {
         SendMessageW(combo, CB_SETCURSEL, static_cast<WPARAM>(selection.index), 0);
     }
-    selected_id = selection.selected_id;
     return selection;
 }
 
-void refresh_audio_panel() {
+void refresh_audio_panel(bool only_if_changed = false) {
     const auto inventory = axv::inspect_windows_audio_devices();
+    // A periodic check must not reset a user's combo selection or focus.
+    if (only_if_changed && g_audio_seen &&
+        !axv::audio_inventory_changed(g_previous_audio_inventory, inventory)) return;
+    g_previous_audio_inventory = inventory;
+    g_audio_seen = true;
     if (inventory.error != axv::AudioInventoryError::None) {
+        // Untrusted inventory must not be displayed as available. Keep the
+        // in-memory preference/last selection for the next successful scan.
         g_audio_inputs.clear(); g_audio_outputs.clear();
-        fill_audio_combo(g_input_audio_combo, g_audio_inputs, g_selected_input_id);
-        fill_audio_combo(g_output_audio_combo, g_audio_outputs, g_selected_output_id);
-        SetWindowTextW(g_headset_status, L"Falha ao consultar os dispositivos do Windows.");
+        SendMessageW(g_input_audio_combo, CB_RESETCONTENT, 0, 0);
+        SendMessageW(g_output_audio_combo, CB_RESETCONTENT, 0, 0);
+        EnableWindow(g_input_audio_combo, FALSE);
+        EnableWindow(g_output_audio_combo, FALSE);
+        SetWindowTextW(g_headset_status,
+            L"Falha ao consultar audio. Selecao preservada para nova tentativa; sem audio SIP.");
         return;
     }
     g_audio_inputs = inventory.input_devices;
     g_audio_outputs = inventory.output_devices;
     const auto microphone = fill_audio_combo(
-        g_input_audio_combo, g_audio_inputs, g_selected_input_id);
+        g_input_audio_combo, g_audio_inputs, g_input_choice);
     const auto speaker = fill_audio_combo(
-        g_output_audio_combo, g_audio_outputs, g_selected_output_id);
-    SetWindowTextW(g_headset_status, axv::audio_selection_feedback(microphone, speaker));
+        g_output_audio_combo, g_audio_outputs, g_output_choice);
+    const auto message = axv::audio_choice_feedback(microphone, speaker);
+    SetWindowTextW(g_headset_status, message);
 }
 
 axv::RuntimeProcess observed_process(axv::ProcessStatus status, bool stopping) {
@@ -610,7 +631,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             39, 391, 350, 230, kOutputAudioCombo, 2);
         make_button(window, L"ATUALIZAR DISPOSITIVOS", kRefreshHeadsetsButton,
                     39, 460, 350, 43, 2);
-        make_label(window, L"A selecao nao e aplicada ao motor Baresip.",
+        make_label(window, L"Atualizacao automatica nesta aba. Sem audio SIP.",
                    39, 537, 350, 46, 2, g_font_small);
         g_headset_status = make_label(window, L"Abra AUDIO para consultar o Windows.",
                                      39, 594, 350, 64, 2, g_font_small);
@@ -804,8 +825,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 const auto& devices = id == kInputAudioCombo ? g_audio_inputs : g_audio_outputs;
                 const LRESULT index = SendMessageW(combo, CB_GETCURSEL, 0, 0);
                 if (index >= 0 && static_cast<std::size_t>(index) < devices.size()) {
-                    (id == kInputAudioCombo ? g_selected_input_id : g_selected_output_id) =
-                        devices[static_cast<std::size_t>(index)].id;
+                    (id == kInputAudioCombo ? g_input_choice : g_output_choice)
+                        .choose(devices, static_cast<std::size_t>(index));
                     SetWindowTextW(g_headset_status,
                         L"Preferencia alterada nesta sessao; nao aplicada ao Baresip.");
                 }
@@ -944,6 +965,15 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         return 0;
     }
     case WM_TIMER:
+        if (wparam == kAudioInventoryTimer) {
+            // Do not replace an open drop-down while the user is choosing.
+            if (g_page == 2 && !g_smoke_mode && IsWindowVisible(window) &&
+                !SendMessageW(g_input_audio_combo, CB_GETDROPPEDSTATE, 0, 0) &&
+                !SendMessageW(g_output_audio_combo, CB_GETDROPPEDSTATE, 0, 0)) {
+                refresh_audio_panel(true);
+            }
+            return 0;
+        }
         if (wparam == kProcessTimer) {
             refresh_runtime_banner(g_baresip_process.poll());
             if (g_shutdown.pending()) {
@@ -1005,6 +1035,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
     case WM_DESTROY:
         g_sip_session_guard.revoke(axv::RuntimeProcess::Stopped, g_native_event_mailbox, g_sip_projection);
         KillTimer(window, kProcessTimer);
+        KillTimer(window, kAudioInventoryTimer);
         remove_tray(window);
         if (g_font_regular) DeleteObject(g_font_regular);
         if (g_font_title) DeleteObject(g_font_title);
@@ -1032,7 +1063,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && std::wcscmp(command_line, L"--ui-smoke") == 0;
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.37",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.39",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         kWindowWidth, kFullHeight,
         nullptr, nullptr, instance, nullptr);

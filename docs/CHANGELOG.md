@@ -1,3 +1,14 @@
+## 0.39.0 — 2026-10-22 (laboratório)
+
+- Retorna à preferência explícita de headset quando o dispositivo reaparece, sem persistir IDs.
+- Preserva seleção em memória em erros temporários do Core Audio e impede que a UI exiba inventário inválido como ativo.
+- Novo teste determinístico de preferências de áudio; registro/chamadas SIP permanecem desabilitados.
+
+## 0.38.0 — 2026-10-22 (laboratório)
+
+- Atualização automática do catálogo Core Audio a cada 3 segundos na aba Áudio, sem redefinir seleções quando nada mudou.
+- Teste de regressão para hotplug e padrões de comunicação; integração SIP e áudio real continuam pendentes.
+
 # Changelog
 
 ## v0.37.0 — prontidão de chamada offline

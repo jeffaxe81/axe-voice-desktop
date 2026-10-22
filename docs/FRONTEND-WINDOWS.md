@@ -107,3 +107,22 @@ A regra do botão habilitado e a execução de `WM_COMMAND` usam agora a mesma f
 - Inventário de microfones **não** significa mídia RTP/SRTP funcional. No laboratório atual, a verificação de mídia permanece bloqueada.
 - Smoke test cobre o comando e a impossibilidade de habilitar Chamadas. O novo CTest valida todos os gates isoladamente.
 - O relatório não altera a política de chamada nem substitui testes em PBX real.
+
+## v0.38 — Atualização automática do inventário de áudio
+
+- Enquanto a aba Áudio está visível, o Windows Core Audio é consultado a cada **3 segundos**.
+- A UI só atualiza o inventário quando IDs, nomes, padrão de comunicação, quantidades ou erro de leitura mudarem. Listas suspensas abertas não são interrompidas.
+- Na desconexão de headset, o fallback v0.34 é reaplicado automaticamente, mantendo uma preferência que ainda exista. A verificação para quando sai da aba.
+- Um refresh manual continua disponível. O smoke test não usa hardware nem inicia o timer em modo de teste.
+- `audio_hotplug_refresh` cobre catálogo inalterado, alteração de padrão, nome, entrada/saída, remoção e erro de enumeração.
+- **Limite:** polling é diagnóstico de dispositivos; não prova permissão de microfone, fluxo de áudio SIP/RTP ou compatibilidade com Baresip. Ainda exige teste manual de plug/unplug em Windows 10/11.
+
+## v0.39 — Preferência de headset restaurada após reconexão
+
+- A escolha explícita de entrada/saída permanece **somente em memória** durante a sessão.
+- Se o headset escolhido sumir, a interface usa o padrão do Windows temporariamente, sem apagar a preferência original; quando ele reaparecer, retorna automaticamente ao dispositivo escolhido.
+- Uma escolha manual durante o fallback substitui a preferência anterior. Não há persistência de IDs ou credenciais.
+- Falhas transitórias de consulta Core Audio deixam as listas indisponíveis, mas preservam os identificadores em memória para o próximo refresh bem-sucedido.
+- O status diferencia alternativa temporária e reconexão; nunca indica áudio SIP funcional.
+- Teste `audio_preference_state` cobre fallback, reconexão, substituição manual, ausência total e privacidade do aviso.
+- **Limite:** esses dispositivos continuam não configurados no Baresip; sem chamadas reais ou mídia RTP/SRTP. Revisão manual no Windows 10/11 permanece necessária.
