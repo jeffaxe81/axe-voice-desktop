@@ -1054,7 +1054,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         if (!g_controls_ready) return 0;
         RECT client{};
         GetClientRect(window, &client);
-        const int page = std::max(1, client.bottom-client.top);
+        const int page = std::max(1, static_cast<int>(client.bottom-client.top));
         int desired = g_scroll_offset;
         switch (LOWORD(wparam)) {
         case SB_TOP: desired = 0; break;
