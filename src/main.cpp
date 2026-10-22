@@ -41,8 +41,19 @@ HWND g_process_status = nullptr;
 axv::WindowsProcess g_baresip_process;
 axv::ProcessStatus g_last_process_state = axv::ProcessStatus::Stopped;
 axv::ShutdownDeadline g_shutdown;
+bool g_close_requested = false;
 constexpr std::uint64_t kGracePeriodMs = 1500;
 axv::EngineSelection g_sip_selection = axv::create_sip_engine();
+
+void begin_shutdown(HWND window) {
+    const bool queued = g_baresip_process.request_quit_async();
+    g_shutdown.begin(GetTickCount64());
+    EnableWindow(GetDlgItem(window, kStartBaresipButton), FALSE);
+    EnableWindow(GetDlgItem(window, kStopBaresipButton), FALSE);
+    SetWindowTextW(g_process_status, queued
+        ? L"Pedido de /quit agendado; aguardando a saída do processo."
+        : L"Não foi possível agendar /quit; encerramento forçado ao atingir o prazo.");
+}
 
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
@@ -169,13 +180,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 SetWindowTextW(g_process_status, L"Motor ja estava parado.");
                 return 0;
             }
-            const bool sent = g_baresip_process.request_quit();
-            g_shutdown.begin(GetTickCount64());
-            EnableWindow(GetDlgItem(window, kStartBaresipButton), FALSE);
-            EnableWindow(GetDlgItem(window, kStopBaresipButton), FALSE);
-            SetWindowTextW(g_process_status, sent
-                ? L"Parada solicitada via /quit; aguardando saida (sem bloquear a interface)."
-                : L"Falha ao enviar /quit; monitorando para encerramento forcado.");
+            begin_shutdown(window);
             return 0;
         }
         if (LOWORD(wparam) == kAudioDevicesButton && HIWORD(wparam) == BN_CLICKED) {
@@ -268,6 +273,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 } else {
                     return 0;
                 }
+                if (g_close_requested) {
+                    DestroyWindow(window); // Graceful exit or forced fallback completed.
+                    return 0;
+                }
                 EnableWindow(GetDlgItem(window, kStartBaresipButton), TRUE);
                 EnableWindow(GetDlgItem(window, kStopBaresipButton), TRUE);
                 return 0;
@@ -289,9 +298,22 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             return 0;
         }
         break;
+    case WM_CLOSE:
+        if (g_shutdown.pending()) {
+            g_close_requested = true;
+            return 0;
+        }
+        if (g_baresip_process.poll() == axv::ProcessStatus::Running) {
+            g_close_requested = true;
+            begin_shutdown(window);
+            return 0;
+        }
+        DestroyWindow(window);
+        return 0;
     case WM_DESTROY:
         KillTimer(window, kProcessTimer);
-        g_baresip_process.stop_gracefully(750);
+        // Normally stopped through WM_CLOSE. Forced fallback on external destruction.
+        g_baresip_process.stop();
         PostQuitMessage(0);
         return 0;
     }
