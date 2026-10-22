@@ -69,3 +69,11 @@ A interface passa a drenar uma caixa de eventos thread-safe do futuro adaptador 
 - O botão **Validar dados** usa o mesmo modelo puro da validação instantânea, sem configurar conta, enviar credenciais ou registrar no servidor.
 - Smoke testa porta inválida/válida, mensagens e bloqueio de chamada. CTest `account_form_feedback` cobre casos extremos.
 - O feedback retorna para o destino ao mudar para **Teclado** e indica somente inventário local em **Áudio**.
+
+## v0.31 — Navegação rápida e ajuda offline
+
+- Atalhos adicionais: **Ctrl+1/2/3** alternam entre Teclado/Ajustes/Áudio, **Esc** volta ao Teclado, **F1** mostra ajuda offline, **Ctrl+R** atualiza o inventário somente na aba Áudio.
+- Botão **?** abre a mesma ajuda, com instruções que diferenciam validação de sintaxe, processo Baresip e registro SIP real.
+- Campos mostram dicas visuais de preenchimento sem gravar conta nem dispositivo. O botão de ajuda permanece disponível em MINI.
+- `ui_smoke` confirma a ação de ajuda sem abrir janelas modais, e `ui_help` verifica texto e avisos importantes.
+- Pendente homologação manual com acessibilidade, DPI, dispositivos reais e Baresip; não há chamadas reais.

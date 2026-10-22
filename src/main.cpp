@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <shlobj.h>
 #include <shellapi.h>
+#include <commctrl.h>
 #include "baresip_profile.h"
 #include "sip_address.h"
 #include "sip_engine.h"
@@ -25,6 +26,7 @@
 #include "dialpad_model.h"
 #include "destination_feedback.h"
 #include "account_form_feedback.h"
+#include "ui_help.h"
 #include <vector>
 #include <array>
 #include <algorithm>
@@ -54,6 +56,7 @@ constexpr int kTheme = 2003;
 constexpr int kPin = 2004;
 constexpr int kCompact = 2005;
 constexpr int kShowAudio = 2006;
+constexpr int kHelpButton = 2007;
 constexpr int kInputAudioCombo = 2401;
 constexpr int kOutputAudioCombo = 2402;
 constexpr int kWindowWidth = 438;
@@ -102,6 +105,7 @@ bool g_dark = true;
 bool g_pinned = false;
 bool g_compact = false;
 bool g_smoke_mode = false;
+bool g_help_requested_smoke = false;
 bool g_destination_invalid = false;
 bool g_account_invalid_server = false;
 bool g_account_invalid_user = false;
@@ -246,7 +250,19 @@ HWND make_edit(HWND root, LPCWSTR initial, int id, int x, int y, int w, int h,
                int page) {
     HWND edit = make_control(root, L"EDIT", initial,
         WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, x, y, w, h, id, page);
-    SendMessageW(edit, EM_LIMITTEXT, 128, 0);
+    if (edit) {
+        SendMessageW(edit, EM_LIMITTEXT, 128, 0);
+        const wchar_t* hint = nullptr;
+        switch (id) {
+        case kNumberEdit: hint = L"Ex.: 1001 ou sip:usuario@dominio"; break;
+        case kServerEdit: hint = L"pbx.exemplo.com"; break;
+        case kUserEdit: hint = L"Ex.: 1001"; break;
+        case kPortEdit: hint = L"5060"; break;
+        default: break;
+        }
+        if (hint) SendMessageW(edit, EM_SETCUEBANNER, TRUE,
+                               reinterpret_cast<LPARAM>(hint));
+    }
     return edit;
 }
 void refresh_destination_feedback();
@@ -501,6 +517,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_label(window, L"AXE  VOICE", 24, 16, 240, 37, -1, g_font_title);
         make_label(window, L"SOFTPHONE DESKTOP  /  LAB", 25, 57, 270, 22, -1, g_font_small);
         make_button(window, g_compact ? L"MAX" : L"MINI", kCompact, 344, 65, 70, 29);
+        make_button(window, L"?", kHelpButton, 301, 65, 34, 29);
         make_button(window, g_pinned ? L"SOLTAR" : L"FIXAR", kPin, 265, 18, 70, 36);
         make_button(window, g_dark ? L"CLARO" : L"ESCURO", kTheme, 344, 18, 70, 36);
         if (g_pinned) SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0,
@@ -606,6 +623,16 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         if (HIWORD(wparam) == BN_CLICKED || (HIWORD(wparam) == 1 && lparam == 0)) {
             const int control = LOWORD(wparam);
             if (control == kShowDial || control == kFocusNumber) { show_page(window, 0); return 0; }
+            if (control == kHelpButton) {
+                if (g_smoke_mode) g_help_requested_smoke = true;
+                else MessageBoxW(window, axv::frontend_help_text(),
+                                 L"Ajuda - AXE Voice (LAB)", MB_OK | MB_ICONINFORMATION);
+                return 0;
+            }
+            if (control == kRefreshHeadsetsButton && g_page == 2) {
+                if (!g_smoke_mode) refresh_audio_panel();
+                return 0;
+            }
             if (control == kShowAudio) {
                 if (g_compact) {
                     g_compact = false;
@@ -964,7 +991,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && std::wcscmp(command_line, L"--ui-smoke") == 0;
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.30",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.31",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         kWindowWidth, kFullHeight,
         nullptr, nullptr, instance, nullptr);
@@ -1005,6 +1032,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         GetWindowTextW(g_runtime_banner, engine_banner, 160);
         ok = ok && std::wstring_view(engine_banner).find(L"NAO REGISTRADO") != std::wstring_view::npos;
         const bool baseline_ok = ok;
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(kHelpButton, 1), 0);
+        const bool help_ok = g_help_requested_smoke &&
+                             GetDlgItem(window, kHelpButton) != nullptr;
+        ok = ok && help_ok;
         // EN_CHANGE must validate keyboard/paste input, without enabling SIP calls.
         wchar_t feedback_message[160]{};
         SetWindowTextW(g_number, L"ana@bad host");
@@ -1078,7 +1109,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         {FVIRTKEY | FCONTROL, VK_OEM_COMMA, kShowSettings},
         {FVIRTKEY | FCONTROL, L'T', kTheme},
         {FVIRTKEY | FCONTROL, L'P', kPin},
-        {FVIRTKEY | FCONTROL, L'M', kCompact}
+        {FVIRTKEY | FCONTROL, L'M', kCompact},
+        {FVIRTKEY | FCONTROL, L'1', kShowDial},
+        {FVIRTKEY | FCONTROL, L'2', kShowSettings},
+        {FVIRTKEY | FCONTROL, L'3', kShowAudio},
+        {FVIRTKEY | FCONTROL, L'R', kRefreshHeadsetsButton},
+        {FVIRTKEY, VK_ESCAPE, kShowDial},
+        {FVIRTKEY, VK_F1, kHelpButton}
     };
     HACCEL accelerator = CreateAcceleratorTableW(
         const_cast<ACCEL*>(shortcuts), static_cast<int>(sizeof(shortcuts)/sizeof(shortcuts[0])));
