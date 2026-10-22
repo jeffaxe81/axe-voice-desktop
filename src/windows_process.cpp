@@ -18,6 +18,7 @@ bool WindowsProcess::start(const std::filesystem::path& executable,
         return false;
     }
     stop();
+    exit_code_.reset();
     last_error_ = ERROR_SUCCESS;
 
     std::error_code error;
@@ -112,6 +113,13 @@ ProcessStatus WindowsProcess::poll() {
     const DWORD result = WaitForSingleObject(process_, 0);
     if (result == WAIT_TIMEOUT) return state_ = ProcessStatus::Running;
     if (result == WAIT_OBJECT_0) {
+        DWORD code = 0;
+        if (GetExitCodeProcess(process_, &code)) {
+            exit_code_ = code;
+        } else {
+            last_error_ = GetLastError();
+            exit_code_.reset();
+        }
         release_handles();
         return state_ = ProcessStatus::Exited;
     }
@@ -120,6 +128,7 @@ ProcessStatus WindowsProcess::poll() {
 }
 
 bool WindowsProcess::stop() {
+    exit_code_.reset(); // Intentional stops are not natural process exit codes.
     if (!process_) {
         release_handles();
         state_ = ProcessStatus::Stopped;

@@ -4,6 +4,7 @@
 #endif
 #include <windows.h>
 #include <filesystem>
+#include <optional>
 
 namespace axv {
 enum class ProcessStatus { Stopped, Running, Exited, Failed };
@@ -23,6 +24,7 @@ public:
     bool stop();
     DWORD last_error() const { return last_error_; }
     DWORD process_id() const { return process_id_; }
+    std::optional<DWORD> exit_code() const { return exit_code_; }
 
 private:
     void release_handles();
@@ -30,6 +32,7 @@ private:
     HANDLE process_ = nullptr;
     DWORD process_id_ = 0;
     DWORD last_error_ = ERROR_SUCCESS;
+    std::optional<DWORD> exit_code_;
     ProcessStatus state_ = ProcessStatus::Stopped;
 };
 }

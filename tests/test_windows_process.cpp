@@ -1,11 +1,12 @@
 #include "../src/windows_process.h"
 #include <filesystem>
 #include <iostream>
+#include <optional>
 #include <string>
 
 int wmain(int argc, wchar_t** argv) {
     using namespace axv;
-    if (argc != 2) return 1;
+    if (argc != 3) return 1;
     WindowsProcess process;
     if (process.start(L"__axe_voice_nonexistent_process__.exe")) return 2;
     if (process.last_error() == ERROR_SUCCESS) return 3;
@@ -39,5 +40,15 @@ int wmain(int argc, wchar_t** argv) {
     if (!seen) { process.stop(); return 15; }
     if (!process.stop()) return 16;
     std::filesystem::remove_all(profile, ec);
+    if (ec) return 17;
+
+    if (!process.start(std::filesystem::path(argv[2]))) return 18;
+    bool exited = false;
+    for (int i = 0; i != 100; ++i) {
+        if (process.poll() == ProcessStatus::Exited) { exited = true; break; }
+        Sleep(20);
+    }
+    if (!exited || !process.exit_code() || *process.exit_code() != 7) return 19;
+    if (!process.stop() || process.exit_code().has_value()) return 20;
     return 0;
 }

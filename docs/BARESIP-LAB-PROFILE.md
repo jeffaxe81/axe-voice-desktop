@@ -19,3 +19,7 @@ CTest `baresip_profile` checks empty profile creation, comments, configured acco
 ## Limits
 
 This change **does not implement a SIP engine, trusted-binary verification, registration, incoming/outgoing calls, DTMF, secure credentials, media, TLS, SRTP, codecs, or authenticated IPC**. App-control modules are deliberately not activated. The UI continues to report that SIP registration is unconfirmed. The process is still forcibly stopped; use only in a laboratory until graceful call-aware shutdown exists. Directory permissions inherit the current user's profile ACLs and should be audited before credentials are stored there.
+
+## Complemento v0.17.0
+
+Antes de iniciar, o Windows verifica se baresip.exe e a pasta modules adjacente não são symlinks/junctions/reparse points. Bibliotecas de áudio são apenas inventariadas, sem carregamento. Diretório modules ausente não bloqueia a execução, pois o projeto pode ser estático ou ter layout diferente. O processo reporta o código de saída natural quando encerra, sem interpretar isso como registro SIP. Detalhes em [BARESIP-MODULE-AUDIT.md](BARESIP-MODULE-AUDIT.md).

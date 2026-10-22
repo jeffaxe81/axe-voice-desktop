@@ -13,3 +13,7 @@ This is deliberate: neither the Baresip SDK nor a native backend is currently li
 7. Keep the fallback behavior until Windows CI and real calls pass.
 
 There must be no successful-registration or connected-call claim when using the fallback.
+
+## Preflight v0.17.0
+
+O aplicativo audita localmente um conjunto fixo de nomes de DLL em modules/ ao lado de baresip.exe, e mostra códigos de saída de processo. Isso prepara o diagnóstico de empacotamento, mas **não** implementa o motor SIP, o carregamento real das DLLs nem canal de controle. As chamadas permanecem bloqueadas até o backend ser integrado e validado.

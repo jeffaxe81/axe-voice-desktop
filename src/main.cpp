@@ -11,6 +11,7 @@
 #include "sip_security_policy.h"
 #include "sip_engine_factory.h"
 #include "baresip_probe.h"
+#include "baresip_modules.h"
 #include "audio_devices.h"
 #include "windows_process.h"
 #include <string>
@@ -112,6 +113,13 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 SetWindowTextW(g_process_status, probe.message.c_str());
                 return 0;
             }
+            const auto modules = axv::inspect_baresip_module_files(candidate);
+            if (modules.status == axv::BaresipModuleScanStatus::UnsafeBinary ||
+                modules.status == axv::BaresipModuleScanStatus::UnsafeModuleDirectory) {
+                const auto diagnostic = axv::baresip_module_inventory_summary(modules);
+                SetWindowTextW(g_process_status, diagnostic.c_str());
+                return 0;
+            }
             if (g_baresip_process.poll() == axv::ProcessStatus::Running) {
                 SetWindowTextW(g_process_status, L"O processo Baresip já está em execução.");
                 return 0;
@@ -173,6 +181,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             candidate = candidate.parent_path() / L"baresip.exe";
             const auto probe = axv::probe_baresip_executable(candidate);
             SetWindowTextW(g_status, probe.message.c_str());
+            const auto inventory = axv::inspect_baresip_module_files(candidate);
+            const auto summary = axv::baresip_module_inventory_summary(inventory);
+            MessageBoxW(window, summary.c_str(), L"Auditoria de modulos Baresip", MB_OK | MB_ICONINFORMATION);
             return 0;
         }
         if (LOWORD(wparam) == kValidateAccount && HIWORD(wparam) == BN_CLICKED) {
@@ -228,8 +239,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             if (state != g_last_process_state) {
                 g_last_process_state = state;
                 if (state == axv::ProcessStatus::Exited) {
-                    SetWindowTextW(g_process_status,
-                        L"Baresip encerrou. Consulte a configuração e dependências do motor.");
+                    const auto code = g_baresip_process.exit_code();
+                    const std::wstring message = code
+                        ? L"Baresip encerrou (codigo " + std::to_wstring(*code) +
+                          L"). Registro SIP nao confirmado."
+                        : L"Baresip encerrou; codigo indisponivel. Registro nao confirmado.";
+                    SetWindowTextW(g_process_status, message.c_str());
                 } else if (state == axv::ProcessStatus::Failed) {
                     SetWindowTextW(g_process_status, L"Falha ao consultar processo Baresip.");
                 }
