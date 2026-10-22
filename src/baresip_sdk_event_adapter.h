@@ -27,7 +27,7 @@ public:
     // Caller MUST await all in-flight callbacks before stop() and destruction.
     bool start(struct ua* owned_ua) {
         if (registered_ || !owned_ua || ingress_.session() != 0) return false;
-        const auto session = ingress_.begin_session();
+        const auto session = ingress_.begin_session(reinterpret_cast<std::uintptr_t>(owned_ua));
         if (session == 0) return false;
         owner_ = owned_ua;
         session_ = session;
@@ -77,26 +77,26 @@ private:
         if (!active()) return;
         // App-level shutdown events need not be associated with the selected UA.
         if (type == BEVENT_SHUTDOWN || type == BEVENT_EXIT) {
-            if (!ingress_.registration(session_, BaresipEventKind::TransportLost))
+            if (!ingress_.registration(session_, reinterpret_cast<std::uintptr_t>(owner_), BaresipEventKind::TransportLost))
                 fail_closed();
             return;
         }
         if (!event || bevent_get_ua(event) != owner_) return;
         switch (type) {
         case BEVENT_REGISTERING:
-            if (!ingress_.registration(session_, BaresipEventKind::Registering))
+            if (!ingress_.registration(session_, reinterpret_cast<std::uintptr_t>(owner_), BaresipEventKind::Registering))
                 fail_closed();
             return;
         case BEVENT_REGISTER_OK:
-            if (!ingress_.registration(session_, BaresipEventKind::RegisterOk))
+            if (!ingress_.registration(session_, reinterpret_cast<std::uintptr_t>(owner_), BaresipEventKind::RegisterOk))
                 fail_closed();
             return;
         case BEVENT_REGISTER_FAIL:
-            if (!ingress_.registration(session_, BaresipEventKind::RegisterFail))
+            if (!ingress_.registration(session_, reinterpret_cast<std::uintptr_t>(owner_), BaresipEventKind::RegisterFail))
                 fail_closed();
             return;
         case BEVENT_UNREGISTERING:
-            if (!ingress_.registration(session_, BaresipEventKind::Unregistering))
+            if (!ingress_.registration(session_, reinterpret_cast<std::uintptr_t>(owner_), BaresipEventKind::Unregistering))
                 fail_closed();
             return;
         case BEVENT_CALL_INCOMING:
@@ -113,7 +113,7 @@ private:
             const std::uint64_t new_key = native_key_ + 1;
             const auto kind = type == BEVENT_CALL_INCOMING
                 ? BaresipEventKind::CallIncoming : BaresipEventKind::CallOutgoing;
-            if (!ingress_.call_started(session_, new_key, kind)) {
+            if (!ingress_.call_started(session_, reinterpret_cast<std::uintptr_t>(owner_), new_key, kind)) {
                 fail_closed();
                 return;
             }
@@ -131,7 +131,7 @@ private:
             }
             const auto kind = type == BEVENT_CALL_ESTABLISHED
                 ? BaresipEventKind::CallEstablished : BaresipEventKind::CallClosed;
-            if (!ingress_.call_changed(session_, native_key_, kind)) {
+            if (!ingress_.call_changed(session_, reinterpret_cast<std::uintptr_t>(owner_), native_key_, kind)) {
                 fail_closed();
                 return;
             }
