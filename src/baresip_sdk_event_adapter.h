@@ -3,10 +3,12 @@
 // Production requires the audited Baresip and libre SDKs and an event-loop
 // owner that serializes callbacks with stop() / unregister completion.
 #include <baresip.h>
-#include "baresip_callback_ingress.h"
+#include "baresip_callback_lifecycle.h"
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
+#include <vector>
 #include <unordered_set>
 
 namespace axv {
@@ -17,8 +19,8 @@ namespace axv {
 // This does not issue VerifiedNativeApi and does not implement SipEngine.
 class BaresipSdkEventAdapter {
 public:
-    explicit BaresipSdkEventAdapter(BaresipCallbackIngress& ingress)
-        : ingress_(ingress) {}
+    explicit BaresipSdkEventAdapter(BaresipCallbackLifecycle& lifecycle)
+        : lifecycle_(lifecycle) {}
     BaresipSdkEventAdapter(const BaresipSdkEventAdapter&) = delete;
     BaresipSdkEventAdapter& operator=(const BaresipSdkEventAdapter&) = delete;
     ~BaresipSdkEventAdapter() { stop(); }
@@ -26,21 +28,25 @@ public:
     // Must be called from the Baresip event-loop owner thread.
     // Caller MUST await all in-flight callbacks before stop() and destruction.
     bool start(struct ua* owned_ua) {
-        if (registered_ || !owned_ua || ingress_.session() != 0) return false;
-        const auto session = ingress_.begin_session();
-        if (session == 0) return false;
+        // Each SDK registration receives a unique immutable callback epoch.
+        // Retired contexts remain valid until a native event-loop barrier.
+        if (registered_ || !owned_ua || contexts_.size() >= kMaxEpochs) return false;
+        const auto epoch = lifecycle_.begin();
+        if (!epoch) return false;
         owner_ = owned_ua;
-        session_ = session;
+        captured_ = epoch;
         native_key_ = 0;
         active_call_ = nullptr;
         seen_calls_.clear();
+        contexts_.emplace_back(new CallbackContext{this, epoch});
         registered_ = true;
-        const int error = bevent_register(&BaresipSdkEventAdapter::callback, this);
+        const int error = bevent_register(&BaresipSdkEventAdapter::callback,
+                                          contexts_.back().get());
         if (error) {
             registered_ = false;
-            ingress_.revoke();
+            lifecycle_.revoke_and_wait();
             owner_ = nullptr;
-            session_ = 0;
+            captured_ = {};
             return false;
         }
         return true;
@@ -50,31 +56,45 @@ public:
         // Event-loop contract: no concurrent/in-flight SDK callbacks here.
         if (registered_) bevent_unregister(&BaresipSdkEventAdapter::callback);
         registered_ = false;
-        ingress_.revoke();
+        lifecycle_.revoke_and_wait();
         owner_ = nullptr;
-        session_ = 0;
+        captured_ = {};
         native_key_ = 0;
         active_call_ = nullptr;
         seen_calls_.clear();
     }
     bool active() const {
-        return registered_ && session_ != 0 && ingress_.session() == session_;
+        return registered_ && captured_ && lifecycle_.is_live(captured_);
     }
-    std::uint64_t session() const { return active() ? session_ : 0; }
+    std::uint64_t session() const {
+        return active() ? captured_.mailbox_session : 0;
+    }
 
 private:
+    struct CallbackContext {
+        BaresipSdkEventAdapter* owner;
+        BaresipCallbackLifecycle::CapturedSession epoch;
+    };
+    static constexpr std::size_t kMaxEpochs = 512;
+
     static void callback(enum bevent_ev type, struct bevent* event, void* arg) {
-        if (arg) static_cast<BaresipSdkEventAdapter*>(arg)->on_event(type, event);
+        auto* context = static_cast<CallbackContext*>(arg);
+        if (context && context->owner)
+            context->owner->on_event(context->epoch, type, event);
     }
 
     void fail_closed() {
-        ingress_.revoke();
-        session_ = 0; // cannot recover until explicit stop and start
+        // Called within an SDK callback: must not wait on a callback lease.
+        lifecycle_.reject_current();
+        captured_ = {};
         active_call_ = nullptr;
     }
 
-    void on_event(enum bevent_ev type, struct bevent* event) {
-        if (!active()) return;
+    void on_event(BaresipCallbackLifecycle::CapturedSession epoch,
+                  enum bevent_ev type, struct bevent* event) {
+        if (epoch.fence_generation != captured_.fence_generation ||
+            epoch.mailbox_session != captured_.mailbox_session || !active())
+            return;
         // BEVENT_EXIT is global. BEVENT_SHUTDOWN is emitted for a specific
         // UA (including from ua_destroy), and MUST pass the ownership check.
         // Both terminal events revoke proof and queued calls immediately.
@@ -95,19 +115,19 @@ private:
             fail_closed();
             return;
         case BEVENT_REGISTERING:
-            if (!ingress_.registration(session_, BaresipEventKind::Registering))
+            if (!lifecycle_.registration(epoch, BaresipEventKind::Registering))
                 fail_closed();
             return;
         case BEVENT_REGISTER_OK:
-            if (!ingress_.registration(session_, BaresipEventKind::RegisterOk))
+            if (!lifecycle_.registration(epoch, BaresipEventKind::RegisterOk))
                 fail_closed();
             return;
         case BEVENT_REGISTER_FAIL:
-            if (!ingress_.registration(session_, BaresipEventKind::RegisterFail))
+            if (!lifecycle_.registration(epoch, BaresipEventKind::RegisterFail))
                 fail_closed();
             return;
         case BEVENT_UNREGISTERING:
-            if (!ingress_.registration(session_, BaresipEventKind::Unregistering))
+            if (!lifecycle_.registration(epoch, BaresipEventKind::Unregistering))
                 fail_closed();
             return;
         case BEVENT_CALL_INCOMING:
@@ -124,7 +144,7 @@ private:
             const std::uint64_t new_key = native_key_ + 1;
             const auto kind = type == BEVENT_CALL_INCOMING
                 ? BaresipEventKind::CallIncoming : BaresipEventKind::CallOutgoing;
-            if (!ingress_.call_started(session_, new_key, kind)) {
+            if (!lifecycle_.call_started(epoch, new_key, kind)) {
                 fail_closed();
                 return;
             }
@@ -142,7 +162,7 @@ private:
             }
             const auto kind = type == BEVENT_CALL_ESTABLISHED
                 ? BaresipEventKind::CallEstablished : BaresipEventKind::CallClosed;
-            if (!ingress_.call_changed(session_, native_key_, kind)) {
+            if (!lifecycle_.call_changed(epoch, native_key_, kind)) {
                 fail_closed();
                 return;
             }
@@ -156,11 +176,12 @@ private:
         }
     }
 
-    BaresipCallbackIngress& ingress_;
+    BaresipCallbackLifecycle& lifecycle_;
     struct ua* owner_ = nullptr;
     const struct call* active_call_ = nullptr;
     std::unordered_set<const struct call*> seen_calls_;
-    std::uint64_t session_ = 0;
+    std::vector<std::unique_ptr<CallbackContext>> contexts_;
+    BaresipCallbackLifecycle::CapturedSession captured_{};
     std::uint64_t native_key_ = 0;
     bool registered_ = false;
 };

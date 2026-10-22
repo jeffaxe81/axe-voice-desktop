@@ -102,6 +102,13 @@ if(BUILD_TESTING)
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/fakes")
   target_compile_features(test_baresip_sdk_event_adapter PRIVATE cxx_std_17)
   add_test(NAME baresip_sdk_event_adapter COMMAND test_baresip_sdk_event_adapter)
+  add_executable(test_baresip_sdk_callback_epochs
+    tests/test_baresip_sdk_callback_epochs.cpp
+    src/baresip_sdk_event_adapter.cpp)
+  target_include_directories(test_baresip_sdk_callback_epochs PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fakes")
+  target_compile_features(test_baresip_sdk_callback_epochs PRIVATE cxx_std_17)
+  add_test(NAME baresip_sdk_callback_epochs COMMAND test_baresip_sdk_callback_epochs)
   add_executable(test_sip_engine tests/test_sip_engine.cpp)
   target_compile_features(test_sip_engine PRIVATE cxx_std_17)
   add_test(NAME sip_engine COMMAND test_sip_engine)
