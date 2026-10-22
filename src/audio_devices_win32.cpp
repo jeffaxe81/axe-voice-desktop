@@ -3,41 +3,90 @@
 #include <windows.h>
 #include <objbase.h>
 #include <mmdeviceapi.h>
+#include <propsys.h>
+#include <propvarutil.h>
+#include <functiondiscoverykeys_devpkey.h>
 #include "audio_devices.h"
+#include <string>
+#include <utility>
 
 namespace axv {
 namespace {
+std::wstring default_communications_id(IMMDeviceEnumerator* enumerator, EDataFlow flow) {
+    IMMDevice* device = nullptr;
+    if (FAILED(enumerator->GetDefaultAudioEndpoint(flow, eCommunications, &device)) || !device)
+        return {};
+    LPWSTR id = nullptr;
+    const HRESULT hr = device->GetId(&id);
+    const std::wstring result = SUCCEEDED(hr) && id ? std::wstring(id) : std::wstring();
+    if (id) CoTaskMemFree(id);
+    device->Release();
+    return result;
+}
 
-bool count_active(IMMDeviceEnumerator* enumerator, EDataFlow flow, unsigned int& count) {
+std::wstring friendly_name(IMMDevice* device) {
+    IPropertyStore* props = nullptr;
+    if (FAILED(device->OpenPropertyStore(STGM_READ, &props)) || !props)
+        return L"Dispositivo sem nome";
+    PROPVARIANT prop;
+    PropVariantInit(&prop);
+    std::wstring result = L"Dispositivo sem nome";
+    if (SUCCEEDED(props->GetValue(PKEY_Device_FriendlyName, &prop)) &&
+        prop.vt == VT_LPWSTR && prop.pwszVal && prop.pwszVal[0]) {
+        result = std::wstring(prop.pwszVal).substr(0, 96);
+    }
+    PropVariantClear(&prop);
+    props->Release();
+    return result;
+}
+
+bool collect(IMMDeviceEnumerator* enumerator, EDataFlow flow,
+             std::vector<AudioEndpoint>& devices, unsigned int& count, bool& has_default) {
     IMMDeviceCollection* collection = nullptr;
-    const HRESULT hr = enumerator->EnumAudioEndpoints(flow, DEVICE_STATE_ACTIVE, &collection);
-    if (FAILED(hr) || !collection) return false;
-    UINT amount = 0;
-    const HRESULT count_result = collection->GetCount(&amount);
+    if (FAILED(enumerator->EnumAudioEndpoints(flow, DEVICE_STATE_ACTIVE, &collection)) ||
+        !collection) return false;
+    UINT total = 0;
+    if (FAILED(collection->GetCount(&total)) || total > 128) {
+        collection->Release();
+        return false;
+    }
+    const std::wstring default_id = default_communications_id(enumerator, flow);
+    devices.clear();
+    devices.reserve(total);
+    bool ok = true;
+    for (UINT i = 0; i < total; ++i) {
+        IMMDevice* device = nullptr;
+        if (FAILED(collection->Item(i, &device)) || !device) { ok = false; break; }
+        LPWSTR id = nullptr;
+        if (FAILED(device->GetId(&id)) || !id) {
+            if (id) CoTaskMemFree(id);
+            device->Release();
+            ok = false;
+            break;
+        }
+        AudioEndpoint item;
+        item.id = id;
+        CoTaskMemFree(id);
+        item.name = friendly_name(device);
+        item.default_communications = !default_id.empty() && item.id == default_id;
+        devices.push_back(std::move(item));
+        device->Release();
+    }
     collection->Release();
-    if (FAILED(count_result)) return false;
-    count = amount;
+    if (!ok) { devices.clear(); return false; }
+    count = static_cast<unsigned int>(devices.size());
+    has_default = !default_id.empty();
     return true;
 }
-
-bool has_default(IMMDeviceEnumerator* enumerator, EDataFlow flow) {
-    IMMDevice* device = nullptr;
-    const HRESULT hr = enumerator->GetDefaultAudioEndpoint(flow, eCommunications, &device);
-    if (device) device->Release();
-    return SUCCEEDED(hr);
-}
-
 } // namespace
 
 AudioInventory inspect_windows_audio_devices() {
     AudioInventory result;
-    const HRESULT initialization = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-    // CoInitializeEx must be balanced for S_OK and S_FALSE alike.
-    if (FAILED(initialization)) {
+    const HRESULT init = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    if (FAILED(init)) {
         result.error = AudioInventoryError::ComInitializationFailed;
         return result;
     }
-
     IMMDeviceEnumerator* enumerator = nullptr;
     const HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr,
         CLSCTX_INPROC_SERVER, __uuidof(IMMDeviceEnumerator),
@@ -45,17 +94,19 @@ AudioInventory inspect_windows_audio_devices() {
     if (FAILED(hr) || !enumerator) {
         result.error = AudioInventoryError::EnumeratorUnavailable;
     } else {
-        if (!count_active(enumerator, eCapture, result.input_count) ||
-            !count_active(enumerator, eRender, result.output_count)) {
+        if (!collect(enumerator, eCapture, result.input_devices,
+                     result.input_count, result.has_default_communications_input) ||
+            !collect(enumerator, eRender, result.output_devices,
+                     result.output_count, result.has_default_communications_output)) {
             result.error = AudioInventoryError::EndpointQueryFailed;
-        } else {
-            result.has_default_communications_input = has_default(enumerator, eCapture);
-            result.has_default_communications_output = has_default(enumerator, eRender);
+            result.input_devices.clear(); result.output_devices.clear();
+            result.input_count = result.output_count = 0;
+            result.has_default_communications_input = false;
+            result.has_default_communications_output = false;
         }
         enumerator->Release();
     }
     CoUninitialize();
     return result;
 }
-
 } // namespace axv

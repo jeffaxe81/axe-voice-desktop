@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <vector>
 
 namespace axv {
 
@@ -10,15 +11,37 @@ enum class AudioInventoryError {
     EndpointQueryFailed
 };
 
+struct AudioEndpoint {
+    std::wstring id;     // Ephemeral Core Audio identifier.
+    std::wstring name;   // Windows-provided label.
+    bool default_communications = false;
+};
+
+// Deterministic hotplug fallback: keep a valid selection, else use default.
+inline int preferred_audio_endpoint_index(const std::vector<AudioEndpoint>& devices,
+                                           const std::wstring& previous_id) {
+    if (devices.empty()) return -1;
+    if (!previous_id.empty()) {
+        for (std::size_t i = 0; i < devices.size(); ++i)
+            if (devices[i].id == previous_id) return static_cast<int>(i);
+    }
+    for (std::size_t i = 0; i < devices.size(); ++i)
+        if (devices[i].default_communications) return static_cast<int>(i);
+    return 0;
+}
+
 struct AudioInventory {
     unsigned int input_count = 0;
     unsigned int output_count = 0;
     bool has_default_communications_input = false;
     bool has_default_communications_output = false;
+    std::vector<AudioEndpoint> input_devices;
+    std::vector<AudioEndpoint> output_devices;
     AudioInventoryError error = AudioInventoryError::None;
 };
 
-// Inventory only. It does NOT confirm microphone permissions, audio I/O or SIP/RTP.
+// Endpoint names and IDs are in memory only. This does not route Baresip audio.
+// Inventory does NOT confirm microphone permissions, audio I/O or SIP/RTP.
 AudioInventory inspect_windows_audio_devices();
 
 inline std::wstring audio_inventory_summary(const AudioInventory& inventory) {
