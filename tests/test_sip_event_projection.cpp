@@ -29,7 +29,7 @@ int main() {
     mailbox.enqueue({BaresipEventKind::RegisterOk, second});
     state = projection.observe(RuntimeProcess::Running, SipEvidence::VerifiedNativeApi, mailbox.drain());
     if (!may_use_call_control(state, second, CallAction::Dial)) return 8;
-    mailbox.enqueue({BaresipEventKind::CallOutgoing, second});
+    mailbox.enqueue({BaresipEventKind::CallOutgoing, second, 1});
     state = projection.observe(RuntimeProcess::Running, SipEvidence::VerifiedNativeApi, mailbox.drain());
     if (state.sip != SipStatus::Calling) return 9;
     mailbox.enqueue({BaresipEventKind::RegisterOk, second}); // invalid while Calling
