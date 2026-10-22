@@ -20,7 +20,8 @@ public:
             state_ = {process, SipStatus::Unavailable, SipEvidence::None, 0};
             return state_;
         }
-        if (batch.overflow) {
+        // Batch is publicly constructible: reject forged or corrupted sizes before indexing.
+        if (batch.overflow || batch.size > batch.events.size()) {
             reject(batch.session, process);
             return state_;
         }
