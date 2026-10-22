@@ -32,6 +32,7 @@
 #include "account_form_feedback.h"
 #include "ui_help.h"
 #include "call_readiness.h"
+#include "ui_contrast_policy.h"
 #include <vector>
 #include <array>
 #include <algorithm>
@@ -110,6 +111,8 @@ axv::SipRuntimeSessionGuard g_sip_session_guard;
 
 
 bool g_dark = true;
+bool g_high_contrast = false;
+axv::UiSystemColors g_system_colors{};
 bool g_pinned = false;
 bool g_compact = false;
 bool g_smoke_mode = false;
@@ -206,14 +209,34 @@ BOOL CALLBACK repaint_child(HWND child, LPARAM) {
     InvalidateRect(child, nullptr, TRUE);
     return TRUE;
 }
-COLORREF background_color() { return g_dark ? RGB(14, 22, 38) : RGB(245, 248, 252); }
-COLORREF panel_color() { return g_dark ? RGB(25, 38, 58) : RGB(255, 255, 255); }
-COLORREF field_color() { return g_dark ? RGB(31, 48, 73) : RGB(238, 244, 249); }
-COLORREF invalid_field_color() { return g_dark ? RGB(79, 39, 53) : RGB(255, 231, 235); }
-COLORREF text_color() { return g_dark ? RGB(236, 244, 255) : RGB(20, 38, 62); }
-COLORREF muted_color() { return g_dark ? RGB(157, 176, 200) : RGB(91, 108, 128); }
-COLORREF accent_color() { return RGB(38, 178, 198); }
-COLORREF line_color() { return g_dark ? RGB(57, 74, 97) : RGB(207, 218, 230); }
+void read_windows_contrast() {
+    HIGHCONTRASTW info{};
+    info.cbSize = sizeof(info);
+    const bool available = SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(info),
+                                                  &info, 0) != FALSE;
+    g_high_contrast = available && (info.dwFlags & HCF_HIGHCONTRASTON) != 0;
+    g_system_colors = axv::UiSystemColors{
+        static_cast<axv::UiColor>(GetSysColor(COLOR_WINDOW)),
+        static_cast<axv::UiColor>(GetSysColor(COLOR_WINDOWTEXT)),
+        static_cast<axv::UiColor>(GetSysColor(COLOR_BTNFACE)),
+        static_cast<axv::UiColor>(GetSysColor(COLOR_BTNTEXT)),
+        static_cast<axv::UiColor>(GetSysColor(COLOR_HIGHLIGHT)),
+        static_cast<axv::UiColor>(GetSysColor(COLOR_HIGHLIGHTTEXT)),
+        static_cast<axv::UiColor>(GetSysColor(COLOR_GRAYTEXT))
+    };
+}
+COLORREF ui_color(axv::UiRole role) {
+    return static_cast<COLORREF>(axv::theme_color(role, g_dark,
+                                                  g_high_contrast, g_system_colors));
+}
+COLORREF background_color() { return ui_color(axv::UiRole::Background); }
+COLORREF panel_color() { return ui_color(axv::UiRole::Panel); }
+COLORREF field_color() { return ui_color(axv::UiRole::Field); }
+COLORREF invalid_field_color() { return ui_color(axv::UiRole::InvalidField); }
+COLORREF text_color() { return ui_color(axv::UiRole::Text); }
+COLORREF muted_color() { return ui_color(axv::UiRole::Muted); }
+COLORREF accent_color() { return ui_color(axv::UiRole::Accent); }
+COLORREF line_color() { return ui_color(axv::UiRole::Border); }
 
 void refresh_brushes() {
     if (g_background_brush) DeleteObject(g_background_brush);
@@ -341,11 +364,11 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     const bool selected_tab = (id == kShowDial && g_page == 0) ||
                               (id == kShowSettings && g_page == 1) ||
                               (id == kShowAudio && g_page == 2);
-    COLORREF color = panel_color();
+    COLORREF color = ui_color(axv::UiRole::Button);
     if (selected_tab || id == kCallButton) color = accent_color();
     if (id >= kDigitStart && id < kDigitStart + 12) color = field_color();
-    if (pressed) color = g_dark ? RGB(44, 91, 111) : RGB(206, 227, 239);
-    if (disabled) color = g_dark ? RGB(42, 53, 70) : RGB(222, 228, 235);
+    if (pressed) color = ui_color(axv::UiRole::Pressed);
+    if (disabled) color = ui_color(axv::UiRole::DisabledButton);
 
     RECT rect = item.rcItem;
     HBRUSH fill = CreateSolidBrush(color);
@@ -359,8 +382,9 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     DeleteObject(outline);
     DeleteObject(fill);
 
-    const COLORREF foreground = disabled ? muted_color()
-        : (selected_tab || id == kCallButton ? RGB(5, 25, 38) : text_color());
+    const COLORREF foreground = disabled ? ui_color(axv::UiRole::DisabledText)
+        : (selected_tab || id == kCallButton
+           ? ui_color(axv::UiRole::SelectedText) : ui_color(axv::UiRole::ButtonText));
     SetBkMode(item.hDC, TRANSPARENT);
     SetTextColor(item.hDC, foreground);
     wchar_t title[96] = {};
@@ -532,6 +556,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
     switch (message) {
     case WM_CREATE: {
         load_ui_preferences();
+        read_windows_contrast();
         g_font_regular = create_font(17, FW_MEDIUM);
         g_font_title = create_font(27, FW_BOLD);
         g_font_small = create_font(13, FW_NORMAL);
@@ -888,6 +913,16 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             return 0;
         }
         break;
+    case WM_SYSCOLORCHANGE:
+    case WM_THEMECHANGED:
+    case WM_SETTINGCHANGE:
+        // Windows Accessibility/High Contrast overrides the stored visual theme.
+        // Neither SIP state nor preferences change on accessibility events.
+        read_windows_contrast();
+        refresh_brushes();
+        InvalidateRect(window, nullptr, TRUE);
+        EnumChildWindows(window, repaint_child, 0);
+        return 0;
     case WM_ERASEBKGND: {
         RECT rect = {};
         GetClientRect(window, &rect);
@@ -1144,7 +1179,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             GetDlgItem(window, kReadinessButton) &&
             (GetWindowLongW(GetDlgItem(window, kReadinessButton), GWL_STYLE) & WS_VISIBLE) &&
             !IsWindowEnabled(GetDlgItem(window, kCallButton));
-        ok = ok && audio_ok && readiness_ok;
+        // Test the palette integration without modifying the host's accessibility settings.
+        const bool original_contrast = g_high_contrast;
+        g_high_contrast = true;
+        const bool contrast_ok = background_color() == GetSysColor(COLOR_WINDOW) &&
+            text_color() == GetSysColor(COLOR_WINDOWTEXT) &&
+            accent_color() == GetSysColor(COLOR_HIGHLIGHT) &&
+            ui_color(axv::UiRole::SelectedText) == GetSysColor(COLOR_HIGHLIGHTTEXT) &&
+            !IsWindowEnabled(GetDlgItem(window, kCallButton));
+        g_high_contrast = original_contrast;
+        ok = ok && audio_ok && readiness_ok && contrast_ok;
         if (!ok) {
             std::fprintf(stderr, "UI_SMOKE_FAIL baseline=%d compact=%d restored=%d audio=%d feedback=%d/%d/%d mode=%d page=%d height=%ld\n",
                          baseline_ok ? 1 : 0, compact_ok ? 1 : 0, restored_ok ? 1 : 0,
