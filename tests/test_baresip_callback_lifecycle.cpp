@@ -6,6 +6,7 @@
 
 int main() {
     using namespace axv;
+    constexpr std::uintptr_t account = 0xA1;
 
     // Fence: closing rejects new work while a previously admitted callback
     // still owns a lease. Waiting allows a new generation only after release.
@@ -29,8 +30,8 @@ int main() {
 
     BaresipEventMailbox mailbox;
     BaresipCallbackLifecycle lifecycle(mailbox);
-    const auto first = lifecycle.begin();
-    if (!first || lifecycle.begin()) return 6;
+    const auto first = lifecycle.begin(account);
+    if (!first || lifecycle.begin(account)) return 6;
     if (!lifecycle.registration(first, BaresipEventKind::Registering) ||
         !lifecycle.registration(first, BaresipEventKind::RegisterOk) ||
         !lifecycle.call_started(first, 200, BaresipEventKind::CallIncoming) ||
@@ -49,7 +50,7 @@ int main() {
     if (lifecycle.registration(first, BaresipEventKind::Registering) ||
         lifecycle.call_started(first, 201, BaresipEventKind::CallOutgoing) ||
         mailbox.drain().session) return 10;
-    const auto second = lifecycle.begin();
+    const auto second = lifecycle.begin(account);
     if (!second || second.fence_generation <= first.fence_generation ||
         second.mailbox_session <= first.mailbox_session) return 11;
 
@@ -74,12 +75,17 @@ int main() {
     // lifecycle boundary to silently reopen a new generation.
     if (!lifecycle.call_started(second, 5, BaresipEventKind::CallOutgoing)) return 15;
     if (lifecycle.call_changed(second, 6, BaresipEventKind::CallClosed)) return 16;
-    if (lifecycle.begin() || mailbox.drain().session) return 17;
+    if (lifecycle.begin(account) || mailbox.drain().session) return 17;
     lifecycle.revoke_and_wait();
-    const auto third = lifecycle.begin();
+    const auto third = lifecycle.begin(account);
     if (!third || third.fence_generation <= second.fence_generation) return 18;
     if (lifecycle.registration(second, BaresipEventKind::Registering)) return 19;
     if (!lifecycle.registration(third, BaresipEventKind::Registering)) return 20;
+    // A forged account on a current generation clears its mailbox evidence.
+    auto wrong = third;
+    wrong.account_identity = account + 1;
+    if (lifecycle.registration(wrong, BaresipEventKind::RegisterOk) ||
+        mailbox.drain().session != 0) return 21;
     lifecycle.revoke_and_wait();
     return 0;
 }

@@ -97,40 +97,41 @@ public:
     struct CapturedSession {
         std::uint64_t fence_generation = 0;
         std::uint64_t mailbox_session = 0;
+        std::uintptr_t account_identity = 0;
         explicit operator bool() const {
-            return fence_generation != 0 && mailbox_session != 0;
+            return fence_generation != 0 && mailbox_session != 0 && account_identity != 0;
         }
     };
     explicit BaresipCallbackLifecycle(BaresipEventMailbox& mailbox)
         : ingress_(mailbox) {}
 
-    CapturedSession begin() {
+    CapturedSession begin(std::uintptr_t validated_account) {
         std::lock_guard<std::mutex> lock(lifecycle_);
-        if (current_) return {};
+        if (!validated_account || current_) return {};
         const auto generation = fence_.begin();
         if (!generation) return {};
-        const auto session = ingress_.begin_session();
+        const auto session = ingress_.begin_session(validated_account);
         if (!session) {
             fence_.close_and_wait();
             return {};
         }
-        current_ = {generation, session};
+        current_ = {generation, session, validated_account};
         return current_;
     }
 
     bool registration(CapturedSession captured, BaresipEventKind event) {
         auto lease = fence_.admit(captured.fence_generation);
-        return lease && ingress_.registration(captured.mailbox_session, event);
+        return lease && ingress_.registration(captured.mailbox_session, captured.account_identity, event);
     }
     bool call_started(CapturedSession captured, std::uint64_t native_key,
                       BaresipEventKind event) {
         auto lease = fence_.admit(captured.fence_generation);
-        return lease && ingress_.call_started(captured.mailbox_session, native_key, event);
+        return lease && ingress_.call_started(captured.mailbox_session, captured.account_identity, native_key, event);
     }
     bool call_changed(CapturedSession captured, std::uint64_t native_key,
                       BaresipEventKind event) {
         auto lease = fence_.admit(captured.fence_generation);
-        return lease && ingress_.call_changed(captured.mailbox_session, native_key, event);
+        return lease && ingress_.call_changed(captured.mailbox_session, captured.account_identity, native_key, event);
     }
 
     // Unregister the native callback FIRST to prevent new native C API entries;
