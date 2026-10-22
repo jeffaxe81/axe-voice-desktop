@@ -733,11 +733,11 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                         report.find(L"Somente estados") != std::wstring::npos;
                 } else {
                     const bool copied = copy_diagnostic_to_clipboard(window, report);
-                    const wchar_t* message = copied
+                    const wchar_t* feedback_text = copied
                         ? L"Status copiado sem dados de conta, destino ou dispositivos."
                         : L"Falha ao copiar. Area de transferencia pode estar ocupada.";
-                    if (g_page == 2) SetWindowTextW(g_headset_status, message);
-                    else SetWindowTextW(g_status, message);
+                    if (g_page == 2) SetWindowTextW(g_headset_status, feedback_text);
+                    else SetWindowTextW(g_status, feedback_text);
                 }
                 return 0;
             }
