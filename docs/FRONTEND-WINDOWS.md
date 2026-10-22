@@ -107,3 +107,13 @@ A regra do botão habilitado e a execução de `WM_COMMAND` usam agora a mesma f
 - Inventário de microfones **não** significa mídia RTP/SRTP funcional. No laboratório atual, a verificação de mídia permanece bloqueada.
 - Smoke test cobre o comando e a impossibilidade de habilitar Chamadas. O novo CTest valida todos os gates isoladamente.
 - O relatório não altera a política de chamada nem substitui testes em PBX real.
+
+## v0.40 — Acessibilidade: alto contraste nativo do Windows
+
+- A UI consulta o modo **Alto Contraste** do Windows ao iniciar e nos eventos de mudança de configuração, cores do sistema ou tema.
+- Quando ativo, fundos, textos, bordas, campos e botões usam `GetSysColor` em vez das cores da identidade visual. A preferência claro/escuro permanece salva, mas **não se sobrepõe** ao modo de acessibilidade.
+- Controles desabilitados seguem usando a cor de texto desabilitado do Windows; abas selecionadas utilizam Highlight/HighlightText. Alertas de campo inválido continuam descritos em texto, sem depender exclusivamente de cor.
+- Um teste puro de política verifica cada papel de cor e sua independência de claro/escuro no modo de alto contraste. O teste Win32 `ui_smoke` verifica o mapeamento e mantém o bloqueio de chamadas.
+- Não altera credenciais, registros, telefonia ou preferências HKCU ao receber uma mudança de acessibilidade.
+
+A validação de contraste percebido, leitores de tela e escala DPI **ainda exige testes manuais em Windows 10/11**. 
