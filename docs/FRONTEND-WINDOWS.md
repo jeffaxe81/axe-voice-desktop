@@ -107,3 +107,11 @@ A regra do botão habilitado e a execução de `WM_COMMAND` usam agora a mesma f
 - Inventário de microfones **não** significa mídia RTP/SRTP funcional. No laboratório atual, a verificação de mídia permanece bloqueada.
 - Smoke test cobre o comando e a impossibilidade de habilitar Chamadas. O novo CTest valida todos os gates isoladamente.
 - O relatório não altera a política de chamada nem substitui testes em PBX real.
+
+
+## v0.39 — Copiar relatório de prontidão sem identificadores
+
+- A aba Áudio divide a faixa de diagnóstico em **Prontidão (F2)** e **Copiar relatório**; o atalho `Ctrl+Shift+C` aciona a cópia como texto Unicode para o clipboard do Windows.
+- A exportação aceita apenas seis valores booleanos; não recebe números, endereços, usuários, senhas, caminhos nem dispositivos. O relatório avisa que não comprova registro SIP nem RTP/SRTP reais.
+- Falha de clipboard produz mensagem de erro e não habilita Chamar. No modo `--ui-smoke` não modifica o clipboard e verifica o comando com dados locais fictícios sensíveis.
+- CTest `readiness_export` cobre 64 combinações dos seis gates. Testes manuais de clipboard, DPI e leitores de tela no Windows 10/11 continuam necessários.

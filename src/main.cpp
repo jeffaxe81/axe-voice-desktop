@@ -21,6 +21,8 @@
 #include "baresip_modules.h"
 #include "audio_devices.h"
 #include "audio_selection_feedback.h"
+#include "readiness_export.h"
+#include "win32_clipboard.h"
 #include "windows_process.h"
 #include "shutdown_policy.h"
 #include <string>
@@ -63,6 +65,7 @@ constexpr int kCompact = 2005;
 constexpr int kShowAudio = 2006;
 constexpr int kHelpButton = 2007;
 constexpr int kReadinessButton = 2008;
+constexpr int kCopyReadinessButton = 2009;
 constexpr int kInputAudioCombo = 2401;
 constexpr int kOutputAudioCombo = 2402;
 constexpr int kWindowWidth = 438;
@@ -115,6 +118,7 @@ bool g_compact = false;
 bool g_smoke_mode = false;
 bool g_help_requested_smoke = false;
 bool g_readiness_requested_smoke = false;
+bool g_copy_readiness_requested_smoke = false;
 bool g_destination_invalid = false;
 bool g_account_invalid_server = false;
 bool g_account_invalid_user = false;
@@ -496,7 +500,7 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     if (IsWindowEnabled(button) != (dial ? TRUE : FALSE))
         EnableWindow(button, dial ? TRUE : FALSE);
 }
-std::wstring make_readiness_report() {
+std::wstring make_readiness_report(bool for_export = false) {
     wchar_t number[129]{}, server[129]{}, user[129]{}, port[129]{};
     GetWindowTextW(g_number, number, 129);
     GetWindowTextW(g_server, server, 129);
@@ -515,7 +519,8 @@ std::wstring make_readiness_report() {
         snapshot.sip == axv::SipStatus::Registered;
     // A device inventory is not an RTP/SRTP or headset media test.
     result.verified_media = false;
-    return axv::format_call_readiness(result);
+    return for_export ? axv::format_readiness_export(result)
+                      : axv::format_call_readiness(result);
 }
 void begin_shutdown(HWND window) {
     g_sip_session_guard.revoke(axv::RuntimeProcess::Stopping, g_native_event_mailbox, g_sip_projection);
@@ -614,8 +619,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                    39, 537, 350, 46, 2, g_font_small);
         g_headset_status = make_label(window, L"Abra AUDIO para consultar o Windows.",
                                      39, 594, 350, 64, 2, g_font_small);
-        make_button(window, L"PRONTIDAO DE CHAMADAS (F2)",
-                    kReadinessButton, 39, 674, 350, 42, 2);
+        make_button(window, L"PRONTIDAO (F2)", kReadinessButton, 39, 674, 170, 42, 2);
+        make_button(window, L"COPIAR RELATORIO", kCopyReadinessButton, 218, 674, 171, 42, 2);
         g_status = make_label(window, L"Digite um ramal ou endereço SIP.",
                               24, 762, 390, 30, -1, g_font_small);
         refresh_destination_feedback();
@@ -648,6 +653,22 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         if (HIWORD(wparam) == BN_CLICKED || (HIWORD(wparam) == 1 && lparam == 0)) {
             const int control = LOWORD(wparam);
             if (control == kShowDial || control == kFocusNumber) { show_page(window, 0); return 0; }
+            if (control == kCopyReadinessButton) {
+                refresh_runtime_banner(g_baresip_process.poll());
+                const std::wstring report = make_readiness_report(true);
+                if (g_smoke_mode) {
+                    g_copy_readiness_requested_smoke =
+                        report.find(L"CHAMADAS BLOQUEADAS") != std::wstring::npos &&
+                        report.find(L"accountsecret") == std::wstring::npos &&
+                        report.find(L"private123") == std::wstring::npos &&
+                        report.find(L"confidential.example.invalid") == std::wstring::npos;
+                } else {
+                    SetWindowTextW(g_status, axv::copy_unicode_clipboard(window, report)
+                        ? L"Relatorio sem identificadores copiado para area de transferencia."
+                        : L"Falha ao copiar: area de transferencia indisponivel.");
+                }
+                return 0;
+            }
             if (control == kReadinessButton) {
                 refresh_runtime_banner(g_baresip_process.poll());
                 const std::wstring report = make_readiness_report();
@@ -1032,7 +1053,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && std::wcscmp(command_line, L"--ui-smoke") == 0;
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.37",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.39",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         kWindowWidth, kFullHeight,
         nullptr, nullptr, instance, nullptr);
@@ -1144,7 +1165,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             GetDlgItem(window, kReadinessButton) &&
             (GetWindowLongW(GetDlgItem(window, kReadinessButton), GWL_STYLE) & WS_VISIBLE) &&
             !IsWindowEnabled(GetDlgItem(window, kCallButton));
-        ok = ok && audio_ok && readiness_ok;
+        SetWindowTextW(g_number, L"sip:private123@example.invalid");
+        SetWindowTextW(g_server, L"confidential.example.invalid");
+        SetWindowTextW(g_user, L"accountsecret");
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(kCopyReadinessButton, BN_CLICKED),
+                     reinterpret_cast<LPARAM>(GetDlgItem(window, kCopyReadinessButton)));
+        const bool copy_ok = g_copy_readiness_requested_smoke &&
+            GetDlgItem(window, kCopyReadinessButton) &&
+            (GetWindowLongW(GetDlgItem(window, kCopyReadinessButton), GWL_STYLE) & WS_VISIBLE) &&
+            !IsWindowEnabled(GetDlgItem(window, kCallButton));
+        ok = ok && audio_ok && readiness_ok && copy_ok;
         if (!ok) {
             std::fprintf(stderr, "UI_SMOKE_FAIL baseline=%d compact=%d restored=%d audio=%d feedback=%d/%d/%d mode=%d page=%d height=%ld\n",
                          baseline_ok ? 1 : 0, compact_ok ? 1 : 0, restored_ok ? 1 : 0,
@@ -1171,7 +1201,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         {FVIRTKEY | FCONTROL, L'R', kRefreshHeadsetsButton},
         {FVIRTKEY, VK_ESCAPE, kShowDial},
         {FVIRTKEY, VK_F1, kHelpButton},
-        {FVIRTKEY, VK_F2, kReadinessButton}
+        {FVIRTKEY, VK_F2, kReadinessButton},
+        {FVIRTKEY | FCONTROL | FSHIFT, L'C', kCopyReadinessButton}
     };
     HACCEL accelerator = CreateAcceleratorTableW(
         const_cast<ACCEL*>(shortcuts), static_cast<int>(sizeof(shortcuts)/sizeof(shortcuts[0])));
