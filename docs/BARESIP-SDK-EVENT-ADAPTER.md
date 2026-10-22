@@ -63,3 +63,21 @@ and licenses; implement an owned native event-loop with callback quiescence;
 secure account credential handling; trust issuance; call controls; device
 routing; TLS/SRTP verification; call/SIP integration tests and manual Windows
 audio/headset QA.
+
+
+## Chamada vinculada ao UA correto — proteção adicional
+
+O adaptador exige duas verificações independentes em eventos de chamadas:
+`bevent_get_ua(event) == selected_ua` **e**
+`call_get_ua(bevent_get_call(event)) == selected_ua`.
+Isso evita que um envelope de evento associado à conta selecionada aceite
+uma chamada cujo objeto nativo pertença a outra conta. A inconsistência
+revoga a sessão e descarta os eventos pendentes; o processo não volta a
+receber estados SIP confiáveis sem uma nova inicialização controlada.
+A regra também é aplicada a estabelecimento e encerramento de chamadas.
+
+A suíte fake-SDK inclui cenários de propriedade divergente no início e
+na continuação da chamada, mais regressão de uma chamada válida após
+reiniciar. A verificação usa a API pública `call_get_ua()` do Baresip.
+**Não significa que a GUI esteja vinculada ao SDK real**, nem habilita
+registro SIP, chamadas ou RTP/SRTP.

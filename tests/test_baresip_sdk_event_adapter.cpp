@@ -23,6 +23,9 @@ extern "C" struct ua* bevent_get_ua(const struct bevent* event) {
 extern "C" struct call* bevent_get_call(const struct bevent* event) {
     return event ? event->active_call : nullptr;
 }
+extern "C" struct ua* call_get_ua(const struct call* active_call) {
+    return active_call ? active_call->owner : nullptr;
+}
 static void emit(bevent_ev kind, bevent* event) {
     if (g_callback) g_callback(kind, event, g_context);
 }
@@ -116,5 +119,42 @@ int main() {
     if (adapter.active() || ingress.session() || mailbox.drain().session) return 25;
     adapter.stop();
     if (g_callback != nullptr || g_registered != g_unregistered) return 26;
+
+    // Event envelope says selected UA, but underlying call belongs to
+    // another account. A mismatched call object must invalidate the session.
+    bevent forged{&account, &alien};
+    if (!adapter.start(&account)) return 27;
+    emit(BEVENT_REGISTERING, &ua_event);
+    emit(BEVENT_REGISTER_OK, &ua_event);
+    emit(BEVENT_CALL_INCOMING, &forged);
+    if (adapter.active() || ingress.session() != 0 ||
+        mailbox.drain().session != 0) return 28;
+    adapter.stop();
+
+    // Ownership must also be checked on continuation/close, not only start.
+    if (!adapter.start(&account)) return 29;
+    emit(BEVENT_REGISTERING, &ua_event);
+    emit(BEVENT_REGISTER_OK, &ua_event);
+    emit(BEVENT_CALL_OUTGOING, &one);
+    if (!adapter.active()) return 30;
+    c1.owner = &other; // Test-only forged inconsistency while pointer stays equal.
+    emit(BEVENT_CALL_ESTABLISHED, &one);
+    if (adapter.active() || ingress.session() != 0) return 31;
+    c1.owner = &account;
+    adapter.stop();
+
+    // Normal selected-account call path is still accepted after a new generation.
+    if (!adapter.start(&account)) return 32;
+    emit(BEVENT_REGISTERING, &ua_event);
+    emit(BEVENT_REGISTER_OK, &ua_event);
+    emit(BEVENT_CALL_INCOMING, &one);
+    emit(BEVENT_CALL_ESTABLISHED, &one);
+    emit(BEVENT_CALL_CLOSED, &one);
+    auto valid = mailbox.drain();
+    if (!adapter.active() || valid.size != 5 ||
+        valid.events[2].kind != BaresipEventKind::CallIncoming ||
+        valid.events[4].kind != BaresipEventKind::CallClosed) return 33;
+    adapter.stop();
+    if (g_callback || g_registered != g_unregistered) return 34;
     return 0;
 }
