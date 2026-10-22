@@ -25,6 +25,9 @@ public:
     // Sends only /quit to the child's private stdin and returns without waiting for exit.
     // One request per process instance. Caller must poll and apply a shutdown deadline.
     bool request_quit();
+    // Returns when the fixed /quit request has been QUEUED (not delivered).
+    // Never invokes a potentially blocking pipe WriteFile on the UI thread.
+    bool request_quit_async();
     GracefulStopResult stop_gracefully(DWORD timeout_ms = 1500);
     bool stop();
     DWORD last_error() const { return last_error_; }
