@@ -1,3 +1,8 @@
+## v0.36.0 — controle único de autorização de discagem (protótipo)
+- Botão Chamar e comando Win32 direto passam pela mesma verificação: destino válido, geração SIP atual, prova nativa auditada, backend Baresip e status registrado.
+- Clique consulta novamente o estado real do processo; evento SIP antigo e botão ativado indevidamente não autorizam chamada.
+- Testes sintéticos exercitam tentativas negadas, chamada autorizada somente no mock e normalização de destino. O aplicativo real continua com UnavailableSipEngine; sem chamada RTP/SRTP ou registro SIP real.
+
 # Changelog
 
 ## v0.35.0 — isolamento de sessões SIP em reinício (protótipo)
