@@ -85,3 +85,17 @@ functionality or VerifiedNativeApi token is implemented in this workstream.
 `baresip_sdk_callback_epochs` (mock SDK) checks stale callback dispatch
 after stop/start and 100 consecutive restarts. This workstream deliberately
 does not bump the application's version until integration into the main lab PR.
+
+## Exclusividade por processo do callback C
+
+O bevent_unregister recebe um ponteiro de funcao, sem contexto. Dois
+adaptadores poderiam cancelar reciprocamente o registro. Uma reserva
+global atomica garante somente um adaptador ativo com esse callback.
+start() recusa competidores; uma falha de lifecycle.begin ou de
+bevent_register libera a reserva. stop() so libera depois de
+bevent_unregister e quiescencia. A reserva permanece ativa apos
+falhas internas ate que stop() descarte o registro nativo.
+
+Teste: duas instancias independentes, disputa, falha de registro e
+reutilizacao segura apos stop(). A reserva nao substitui o loop nativo
+serializado, nao garante SIP real nem autoriza a interface para chamadas.

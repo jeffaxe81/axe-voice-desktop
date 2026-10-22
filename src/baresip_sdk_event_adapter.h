@@ -3,6 +3,7 @@
 // Production requires the audited Baresip and libre SDKs and an event-loop
 // owner that serializes callbacks with stop() / unregister completion.
 #include <baresip.h>
+#include <atomic>
 #include "baresip_callback_lifecycle.h"
 #include <cstddef>
 #include <cstdint>
@@ -31,8 +32,15 @@ public:
         // Each SDK registration receives a unique immutable callback epoch.
         // Retired contexts remain valid until a native event-loop barrier.
         if (registered_ || !owned_ua || contexts_.size() >= kMaxEpochs) return false;
+        // bevent_unregister() unregisters by callback FUNCTION address, not
+        // by context arg. Enforce one adapter owning this callback per process.
+        BaresipSdkEventAdapter* vacant = nullptr;
+        if (!registry_owner_.compare_exchange_strong(vacant, this)) return false;
         const auto epoch = lifecycle_.begin();
-        if (!epoch) return false;
+        if (!epoch) {
+            release_registry_owner();
+            return false;
+        }
         owner_ = owned_ua;
         captured_ = epoch;
         native_key_ = 0;
@@ -47,6 +55,7 @@ public:
             lifecycle_.revoke_and_wait();
             owner_ = nullptr;
             captured_ = {};
+            release_registry_owner();
             return false;
         }
         return true;
@@ -62,6 +71,7 @@ public:
         native_key_ = 0;
         active_call_ = nullptr;
         seen_calls_.clear();
+        release_registry_owner();
     }
     bool active() const {
         return registered_ && captured_ && lifecycle_.is_live(captured_);
@@ -71,6 +81,13 @@ public:
     }
 
 private:
+    // C++17 inline static: one lease across all translation units.
+    // External event-loop serialization and callback quiescence remain required.
+    inline static std::atomic<BaresipSdkEventAdapter*> registry_owner_{nullptr};
+    void release_registry_owner() {
+        BaresipSdkEventAdapter* self = this;
+        (void)registry_owner_.compare_exchange_strong(self, nullptr);
+    }
     struct CallbackContext {
         BaresipSdkEventAdapter* owner;
         BaresipCallbackLifecycle::CapturedSession epoch;
