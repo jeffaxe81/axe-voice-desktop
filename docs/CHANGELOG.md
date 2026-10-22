@@ -1,3 +1,9 @@
+## v0.42.0 — 2026-10-22 (laboratório)
+
+- Alto contraste v0.40 combinado com hotplug, preferências restauráveis e consulta assíncrona de headsets.
+- Três testes adicionais, preservando políticas de autorização SIP fail-closed.
+- Sem chamadas, registro SIP ou mídia RTP/SRTP reais.
+
 ## v0.41.0 — isolamento de eventos de terminal e falhas SIP (laboratório)
 - Corrigido `BEVENT_SHUTDOWN`: somente eventos da UA selecionada encerram a sessão; `BEVENT_EXIT` permanece global.
 - `BEVENT_AUDIO_ERROR` e `BEVENT_SIPSESS_FAILED` da UA selecionada invalidam evidências pendentes e a sessão do bridge.
