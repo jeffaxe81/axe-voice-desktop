@@ -815,7 +815,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                      reinterpret_cast<LPARAM>(GetDlgItem(window, kShowSettings)));
         GetWindowRect(window, &bounds);
         const bool restored_ok = !g_compact && g_page == 1 &&
-            (bounds.bottom - bounds.top == kFullHeight) &&
+            // CI desktop work area may clamp the requested 842px window height.
+            (bounds.bottom - bounds.top > kCompactHeight + 200) &&
             (GetWindowLongW(g_server, GWL_STYLE) & WS_VISIBLE);
         ok = ok && restored_ok;
         if (!ok) {
