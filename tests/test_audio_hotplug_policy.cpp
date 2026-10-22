@@ -1,4 +1,5 @@
 #include "../src/audio_hotplug_policy.h"
+#include <windows.h>
 #include <dbt.h>
 #include <cstdint>
 #include <limits>
