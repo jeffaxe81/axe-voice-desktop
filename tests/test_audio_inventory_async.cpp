@@ -67,5 +67,34 @@ int main() {
         }
     }
     slow_release.set_value();
+
+    // A completed but unconsumed result must not leak into the next scan.
+    std::promise<void> rescan_started, rescan_release;
+    const auto rescan_started_future = rescan_started.get_future();
+    auto rescan_gate = rescan_release.get_future().share();
+    std::atomic<int> sequence{0};
+    axv::AudioInventoryAsync rescans([&]() {
+        const int n = ++sequence;
+        if (n == 2) {
+            rescan_started.set_value();
+            rescan_gate.wait();
+        }
+        axv::AudioInventory x;
+        x.input_count = static_cast<unsigned int>(n);
+        return x;
+    });
+    if (!rescans.request() || !finish_within(rescans)) return 13;
+    if (!rescans.request()) return 14;
+    if (rescan_started_future.wait_for(2s) != std::future_status::ready) {
+        rescan_release.set_value(); return 15;
+    }
+    if (rescans.take().has_value()) {
+        rescan_release.set_value(); return 16;
+    }
+    rescan_release.set_value();
+    if (!finish_within(rescans)) return 17;
+    const auto latest = rescans.take();
+    if (!latest || latest->input_count != 2 || rescans.take().has_value())
+        return 18;
     return 0;
 }

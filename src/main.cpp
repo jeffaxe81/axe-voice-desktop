@@ -107,6 +107,9 @@ axv::AudioInventory g_previous_audio_inventory;
 bool g_audio_seen = false;
 bool g_audio_force_update = false;
 axv::AudioInventoryAsync g_audio_worker(axv::inspect_windows_audio_devices);
+axv::AudioInventoryAsync g_settings_audio_worker(axv::inspect_windows_audio_devices);
+// Dedicated workers keep Settings requests independent from the Audio-tab poll.
+bool g_settings_audio_smoke_requested = false;
 axv::AudioDeviceChoice g_input_choice;
 axv::AudioDeviceChoice g_output_choice;
 axv::WindowsProcess g_baresip_process;
@@ -371,6 +374,8 @@ void refresh_account_feedback() {
 }
 void show_page(HWND root, int page) {
     g_page = page;
+    // A Settings diagnostic may complete after the user navigates away.
+    if (page != 1) g_settings_audio_worker.invalidate();
     // Poll Core Audio only while the Audio tab is visible.
     if (page == 2 && !g_smoke_mode)
         SetTimer(root, kAudioInventoryTimer, kAudioInventoryIntervalMs, nullptr);
@@ -921,9 +926,17 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             }
         }
         if (LOWORD(wparam) == kAudioDevicesButton && HIWORD(wparam) == BN_CLICKED) {
-            const axv::AudioInventory inventory = axv::inspect_windows_audio_devices();
-            const std::wstring summary = axv::audio_inventory_summary(inventory);
-            SetWindowTextW(g_audio_status, summary.c_str());
+            if (g_page != 1) return 0;
+            // The smoke test must never enumerate actual host devices.
+            if (g_smoke_mode) {
+                g_settings_audio_smoke_requested = !g_settings_audio_worker.busy();
+                return 0;
+            }
+            // Do not block Win32 on a slow/disconnected Core Audio driver.
+            const bool queued = g_settings_audio_worker.request();
+            SetWindowTextW(g_audio_status, queued || g_settings_audio_worker.busy()
+                ? L"Consultando dispositivos do Windows..."
+                : L"Nao foi possivel iniciar o diagnostico de audio.");
             return 0;
         }
         if (LOWORD(wparam) == kProbeButton && HIWORD(wparam) == BN_CLICKED) {
@@ -1092,6 +1105,14 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             return 0;
         }
         if (wparam == kProcessTimer) {
+            // Settings diagnostics use a separate worker and UI-only summary.
+            if (g_page == 1 && !g_smoke_mode && IsWindowVisible(window)) {
+                const auto diagnostic = g_settings_audio_worker.take();
+                if (diagnostic) {
+                    const std::wstring summary = axv::audio_inventory_summary(*diagnostic);
+                    SetWindowTextW(g_audio_status, summary.c_str());
+                }
+            }
             // Consume a completed worker snapshot without blocking Win32.
             if (g_page == 2 && !g_smoke_mode && IsWindowVisible(window) &&
                 !SendMessageW(g_input_audio_combo, CB_GETDROPPEDSTATE, 0, 0) &&
@@ -1164,6 +1185,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         KillTimer(window, kProcessTimer);
         KillTimer(window, kAudioInventoryTimer);
         g_audio_worker.invalidate();
+        g_settings_audio_worker.invalidate();
         remove_tray(window);
         g_layout.clear();
         if (g_font_regular) DeleteObject(g_font_regular);
@@ -1194,7 +1216,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && std::wcscmp(command_line, L"--ui-smoke") == 0;
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.42",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.43",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
@@ -1226,7 +1248,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         const bool account_valid_ok = !g_account_invalid_port &&
             std::wstring_view(account_message).find(L"Registro SIP nao realizado") != std::wstring_view::npos &&
             !IsWindowEnabled(GetDlgItem(window, kCallButton));
-        ok = ok && account_invalid_ok && account_valid_ok;
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(kAudioDevicesButton, BN_CLICKED),
+                     reinterpret_cast<LPARAM>(GetDlgItem(window, kAudioDevicesButton)));
+        const bool settings_audio_smoke_ok = g_settings_audio_smoke_requested &&
+            !g_settings_audio_worker.busy();
+        ok = ok && account_invalid_ok && account_valid_ok && settings_audio_smoke_ok;
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(kShowDial, BN_CLICKED),
                      reinterpret_cast<LPARAM>(GetDlgItem(window, kShowDial)));
         ok = ok && (GetWindowLongW(g_number, GWL_STYLE) & WS_VISIBLE) &&

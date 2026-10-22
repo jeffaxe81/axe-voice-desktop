@@ -136,3 +136,12 @@ A validação de contraste percebido, leitores de tela e escala DPI **ainda exig
 - Atualização manual encerra o estado "Consultando..." mesmo se o catálogo estiver inalterado.
 - Novos testes: `audio_hotplug_refresh`, `audio_preference_state` e `audio_inventory_async`. `ui_smoke` não acessa hardware e mantém o botão Chamar bloqueado.
 - **Limitações:** botão de diagnóstico em Ajustes ainda consulta Core Audio de forma síncrona; áudio Baresip, RTP/SRTP e SIP reais não são implementados. Exige validação em Windows 10/11 com headset/driver e leitores de tela.
+
+## v0.43 — Diagnóstico de áudio não bloqueante na aba Ajustes
+
+- O botão **DISPOSITIVOS DE ÁUDIO**, em Ajustes, deixa de executar Core Audio na thread da janela.
+- Um worker dedicado apresenta "Consultando..." e entrega apenas o resumo local de microfones/saídas quando a enumeração conclui. A aba Áudio continua com seu próprio worker e hotplug.
+- Pedidos repetidos são coalescidos; sair de Ajustes descarta o resultado pendente, inclusive se o driver responder após a navegação.
+- Uma nova consulta invalida resultados anteriores não consumidos, evitando exibir um diagnóstico obsoleto.
+- O teste `ui_smoke` exercita o botão sem enumerar hardware. O CTest `audio_inventory_async` cobre resultado antigo descartado, reconsulta e falhas.
+- O relatório continua sem credenciais, números SIP ou IDs de headset, e **não confirma áudio RTP/SRTP real**. Testes manuais Windows/driver permanecem necessários.

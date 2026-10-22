@@ -29,6 +29,8 @@ public:
         {
             std::lock_guard<std::mutex> lock(state->mutex);
             if (state->busy) return false;
+            // Never expose a previous scan after accepting a newer request.
+            state->ready.reset();
             state->busy = true;
             generation = state->generation;
         }
