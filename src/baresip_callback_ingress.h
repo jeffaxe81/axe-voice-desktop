@@ -18,10 +18,13 @@ public:
     explicit BaresipCallbackIngress(BaresipEventMailbox& mailbox)
         : mailbox_(mailbox) {}
 
-    std::uint64_t begin_session() {
+    // Identity must come from a future audited native UA callback adapter.
+    // An arbitrary caller supplying a value does NOT establish provenance.
+    std::uint64_t begin_session(std::uintptr_t validated_account) {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (session_ != 0) return 0; // explicit revoke required before restart
+        if (!validated_account || session_ != 0) return 0;
         session_ = mailbox_.begin_session();
+        account_ = session_ ? validated_account : 0;
         last_native_key_ = 0;
         last_token_ = 0;
         active_native_key_ = 0;
@@ -34,9 +37,10 @@ public:
         revoke_locked();
     }
 
-    bool registration(std::uint64_t callback_session, BaresipEventKind kind) {
+    bool registration(std::uint64_t callback_session, std::uintptr_t callback_account,
+                      BaresipEventKind kind) {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (!is_current_locked(callback_session)) return false;
+        if (!admit_locked(callback_session, callback_account)) return false;
         switch (kind) {
         case BaresipEventKind::Registering:
         case BaresipEventKind::RegisterOk:
@@ -53,10 +57,10 @@ public:
         return enqueue_locked(kind, 0);
     }
 
-    bool call_started(std::uint64_t callback_session,
+    bool call_started(std::uint64_t callback_session, std::uintptr_t callback_account,
                       std::uint64_t native_call_key, BaresipEventKind kind) {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (!is_current_locked(callback_session)) return false;
+        if (!admit_locked(callback_session, callback_account)) return false;
         if ((kind != BaresipEventKind::CallIncoming &&
              kind != BaresipEventKind::CallOutgoing) ||
             native_call_key == 0 || native_call_key <= last_native_key_ ||
@@ -74,10 +78,10 @@ public:
         return true;
     }
 
-    bool call_changed(std::uint64_t callback_session,
+    bool call_changed(std::uint64_t callback_session, std::uintptr_t callback_account,
                       std::uint64_t native_call_key, BaresipEventKind kind) {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (!is_current_locked(callback_session)) return false;
+        if (!admit_locked(callback_session, callback_account)) return false;
         if ((kind != BaresipEventKind::CallEstablished &&
              kind != BaresipEventKind::CallClosed) ||
             native_call_key == 0 || native_call_key != active_native_key_ ||
@@ -102,6 +106,16 @@ private:
     bool is_current_locked(std::uint64_t callback_session) const {
         return session_ != 0 && callback_session == session_;
     }
+    bool admit_locked(std::uint64_t callback_session,
+                      std::uintptr_t callback_account) {
+        // Late callbacks from a different generation cannot poison the new one.
+        if (!is_current_locked(callback_session)) return false;
+        if (!callback_account || callback_account != account_) {
+            revoke_locked(); // mismatch invalidates the whole queued history
+            return false;
+        }
+        return true;
+    }
     bool enqueue_locked(BaresipEventKind kind, std::uint64_t call_token) {
         if (mailbox_.enqueue({kind, session_, call_token})) return true;
         // Includes overflow or external invalidation. Never use partial history.
@@ -111,6 +125,7 @@ private:
     void revoke_locked() {
         mailbox_.invalidate_session();
         session_ = 0;
+        account_ = 0;
         active_native_key_ = active_token_ = 0;
         last_native_key_ = last_token_ = 0;
     }
@@ -118,6 +133,7 @@ private:
     BaresipEventMailbox& mailbox_;
     mutable std::mutex mutex_;
     std::uint64_t session_ = 0;
+    std::uintptr_t account_ = 0;
     std::uint64_t active_native_key_ = 0;
     std::uint64_t active_token_ = 0;
     std::uint64_t last_native_key_ = 0;
