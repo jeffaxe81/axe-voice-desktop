@@ -95,3 +95,7 @@ O banner agora consome uma projeção de eventos persistente entre ciclos do tim
 ## v0.35 — isolamento de sessão em reinício
 
 O processo Baresip não mantém registro SIP presumido após falha, parada ou reinicialização. O novo `SipRuntimeSessionGuard` invalida a fila e a sessão anterior, inclusive ao iniciar um novo processo. Há teste CTest de recuperação. A interface continua sem registro e chamada reais.
+
+## v0.36 — autorização unificada de Chamar
+
+A regra do botão habilitado e a execução de `WM_COMMAND` usam agora a mesma função `authorize_dial`. Ela exige destino válido, sessão SIP atual e autenticada por adaptador nativo, tipo de backend e estado de registro do motor. No clique, a aplicação consulta novamente o processo e a caixa de eventos, evitando confiar apenas na aparência do botão. Testes de política usam apenas um motor simulado; no executável distribuído o `UnavailableSipEngine` continua bloqueando todas as chamadas. Registro, RTP/SRTP e áudio bidirecional reais permanecem pendentes.
