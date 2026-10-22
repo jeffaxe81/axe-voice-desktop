@@ -32,6 +32,9 @@ int main() {
     BaresipEventMailbox mailbox;
     BaresipCallbackLifecycle lifecycle(mailbox);
     BaresipSdkEventAdapter adapter(lifecycle);
+    BaresipEventMailbox competing_mailbox;
+    BaresipCallbackLifecycle competing_lifecycle(competing_mailbox);
+    BaresipSdkEventAdapter competing(competing_lifecycle);
     ua account{1}, other{2};
     call c1{&account, 1}, c2{&account, 2}, alien{&other, 3};
     bevent ua_event{&account, nullptr};
@@ -42,7 +45,13 @@ int main() {
     g_fail_registration = true;
     if (adapter.start(&account) || mailbox.drain().session != 0) return 2;
     g_fail_registration = false;
+    // After failed registration, a different adapter must acquire the lease.
+    if (!competing.start(&other) || !competing.active()) return 27;
+    if (adapter.start(&account) || !competing.active()) return 28;
+    competing.stop();
+    if (competing.active() || g_callback) return 29;
     if (!adapter.start(&account) || !adapter.active() || adapter.start(&other)) return 3;
+    if (competing.start(&other) || competing_mailbox.drain().session) return 30;
     const auto a = adapter.session();
     if (a == 0) return 4;
     emit(BEVENT_REGISTERING, &other_event);
@@ -116,5 +125,14 @@ int main() {
     if (adapter.active() || mailbox.drain().session || mailbox.drain().session) return 25;
     adapter.stop();
     if (g_callback != nullptr || g_registered != g_unregistered) return 26;
+    // A second adapter is permitted after the original calls stop().
+    if (!competing.start(&other) || !competing.active()) return 31;
+    if (adapter.start(&account)) return 32;
+    emit(BEVENT_REGISTERING, &other_event);
+    emit(BEVENT_REGISTER_OK, &other_event);
+    auto second_batch = competing_mailbox.drain();
+    if (second_batch.size != 2 || second_batch.session == 0) return 33;
+    competing.stop();
+    if (g_callback || g_registered != g_unregistered) return 34;
     return 0;
 }
