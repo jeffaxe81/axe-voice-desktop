@@ -11,6 +11,11 @@ ou mesclar os protótipos sobrepostos.
 
 ## Mudanças
 
+- `BaresipCallbackIngress` passa a exigir identidade opaca de conta
+  validada **externamente** em `begin_session` e a mesma conta em todo
+  callback de registro/chamada. Divergência revoga a sessão, enquanto
+  callbacks de geração antiga são descartados sem afetar a geração nova.
+  Esta verificação NÃO autentica o chamador por conta própria.
 - `SipEventProjection::observe` rejeita `Batch.size` superior ao tamanho
   físico da fila, antes de iterar os eventos. O bloqueio da geração é definitivo.
 - Novo CTest `baresip_pipeline_hardening` exercita
@@ -34,5 +39,6 @@ ou mesclar os protótipos sobrepostos.
 6. Exigir CI Windows/CTest do novo PR antes de qualquer merge.
 
 **Não afirmar registro SIP nem liberar chamadas reais com testes sintéticos.**
-Os PRs #15 e #17 exigem reconciliação/supersessão formal e permanecem
-independentes desta branch.
+As regras de isolamento por conta do PR #15 foram incorporadas ao adaptador
+já existente da base. Os PRs #15 e #17 continuam abertos em Draft até revisão
+formal das diferenças, sem merge automático nem force-push.
