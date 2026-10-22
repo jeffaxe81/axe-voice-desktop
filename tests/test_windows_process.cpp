@@ -19,5 +19,24 @@ int wmain(int argc, wchar_t** argv) {
     if (process.poll() != ProcessStatus::Stopped) return 9;
     if (!process.start(std::filesystem::path(argv[1]))) return 10;
     if (!process.stop()) return 11;
+
+    // The profile name intentionally contains spaces to validate quoted -f arguments.
+    const auto profile = std::filesystem::temp_directory_path() /
+        (L"AXE Voice lab CI " + std::to_wstring(GetCurrentProcessId()));
+    std::error_code ec;
+    std::filesystem::create_directories(profile, ec);
+    if (ec) return 12;
+    if (process.start(std::filesystem::path(argv[1]), profile / L"missing")) return 13;
+    if (!process.start(std::filesystem::path(argv[1]), profile)) return 14;
+    const auto marker = profile / L"axe-voice-test-child-started";
+    bool seen = false;
+    for (int i = 0; i != 50; ++i) {
+        if (std::filesystem::exists(marker)) { seen = true; break; }
+        if (process.poll() != ProcessStatus::Running) break;
+        Sleep(100);
+    }
+    if (!seen) { process.stop(); return 15; }
+    if (!process.stop()) return 16;
+    std::filesystem::remove_all(profile, ec);
     return 0;
 }

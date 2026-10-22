@@ -15,3 +15,7 @@ A UI button may launch only the `baresip.exe` next to the AXE Voice executable, 
 - GUI launch tests and PABX registration are separate acceptance criteria.
 
 For actual Baresip config files, the upstream supports the `-f` configuration-directory option; this bootstrap does not yet pass it. See official upstream documentation: https://github.com/baresip/baresip/wiki/Configuration
+
+## Laboratory profile (0.16.3)
+
+The GUI now runs Baresip with a dedicated -f directory under the current user's LocalAppData/AXEVoice/baresip-lab, rather than consuming the default Baresip account profile. Before each start, it rejects configured SIP accounts, certain unauthenticated control modules, symlinks and Windows reparse points for the profile files. See [BARESIP-LAB-PROFILE.md](BARESIP-LAB-PROFILE.md). This is not a comprehensive trust, ACL or configuration audit.

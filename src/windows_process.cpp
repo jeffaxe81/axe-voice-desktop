@@ -11,7 +11,8 @@ void WindowsProcess::release_handles() {
     process_id_ = 0;
 }
 
-bool WindowsProcess::start(const std::filesystem::path& executable) {
+bool WindowsProcess::start(const std::filesystem::path& executable,
+                           const std::filesystem::path& config_directory) {
     if (poll() == ProcessStatus::Running) {
         last_error_ = ERROR_ALREADY_EXISTS;
         return false;
@@ -25,6 +26,24 @@ bool WindowsProcess::start(const std::filesystem::path& executable) {
         last_error_ = ERROR_FILE_NOT_FOUND;
         state_ = ProcessStatus::Failed;
         return false;
+    }
+
+    std::filesystem::path profile;
+    if (!config_directory.empty()) {
+        error.clear();
+        profile = std::filesystem::absolute(config_directory, error).lexically_normal();
+        if (error || !std::filesystem::is_directory(profile, error) || error ||
+            std::filesystem::is_symlink(std::filesystem::symlink_status(profile, error)) || error) {
+            last_error_ = ERROR_INVALID_PARAMETER;
+            state_ = ProcessStatus::Failed;
+            return false;
+        }
+        const DWORD attrs = GetFileAttributesW(profile.c_str());
+        if (attrs == INVALID_FILE_ATTRIBUTES || (attrs & FILE_ATTRIBUTE_REPARSE_POINT)) {
+            last_error_ = ERROR_INVALID_PARAMETER;
+            state_ = ProcessStatus::Failed;
+            return false;
+        }
     }
 
     job_ = CreateJobObjectW(nullptr, nullptr);
@@ -42,8 +61,10 @@ bool WindowsProcess::start(const std::filesystem::path& executable) {
         return false;
     }
 
-    // Explicit lpApplicationName prevents searching PATH or invoking cmd.exe.
+    // Explicit lpApplicationName avoids PATH lookup. Quoted paths permit spaces and Unicode.
+    // Config-directory is an actual directory and Windows path components cannot contain quotes.
     std::wstring command = L"\"" + absolute.wstring() + L"\"";
+    if (!profile.empty()) command += L" -f \"" + profile.wstring() + L"\"";
     std::vector<wchar_t> command_buffer(command.begin(), command.end());
     command_buffer.push_back(L'\0');
     const auto working_directory = absolute.parent_path().wstring();

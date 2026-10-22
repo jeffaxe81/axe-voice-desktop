@@ -1,4 +1,6 @@
 #include <windows.h>
+#include <shlobj.h>
+#include "baresip_profile.h"
 #include "sip_address.h"
 #include "sip_engine.h"
 #include "sip_account.h"
@@ -83,7 +85,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_audio_status = CreateWindowW(L"STATIC", L"Áudio ainda não inspecionado.",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
             20, 514, 350, 55, window, nullptr, nullptr, nullptr);
-        CreateWindowW(L"BUTTON", L"Iniciar Baresip",
+        CreateWindowW(L"BUTTON", L"Iniciar Baresip (laboratório)",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
             20, 575, 163, 34, window, reinterpret_cast<HMENU>(kStartBaresipButton), nullptr, nullptr);
         CreateWindowW(L"BUTTON", L"Parar motor",
@@ -119,7 +121,23 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 L"A aplicação não confirma identidade, registro SIP ou chamadas.",
                 L"Confirmar inicialização do Baresip",
                 MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES) return 0;
-            if (g_baresip_process.start(candidate)) {
+            PWSTR local_app_data = nullptr;
+            const HRESULT location_result =
+                SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_CREATE, nullptr, &local_app_data);
+            if (FAILED(location_result) || !local_app_data) {
+                if (local_app_data) CoTaskMemFree(local_app_data);
+                SetWindowTextW(g_process_status, L"Não foi possível encontrar o perfil local do Windows.");
+                return 0;
+            }
+            const std::filesystem::path profile =
+                std::filesystem::path(local_app_data) / L"AXEVoice" / L"baresip-lab";
+            CoTaskMemFree(local_app_data);
+            const auto profile_status = axv::prepare_baresip_lab_profile(profile);
+            if (profile_status != axv::BaresipProfileStatus::Ready) {
+                SetWindowTextW(g_process_status, axv::baresip_profile_diagnostic(profile_status));
+                return 0;
+            }
+            if (g_baresip_process.start(candidate, profile)) {
                 g_last_process_state = axv::ProcessStatus::Running;
                 SetWindowTextW(g_process_status, L"Processo Baresip iniciado. Registro SIP NÃO confirmado.");
             } else {

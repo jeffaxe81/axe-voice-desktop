@@ -14,8 +14,10 @@ public:
     WindowsProcess& operator=(const WindowsProcess&) = delete;
     ~WindowsProcess();
 
-    // Starts one explicit executable path. No shell and no user-provided arguments.
-    bool start(const std::filesystem::path& executable);
+    // Starts a fixed executable (no shell). If supplied, profile is passed as -f <directory>.
+    // No SIP password, account information or arbitrary caller arguments cross the command line.
+    bool start(const std::filesystem::path& executable,
+               const std::filesystem::path& config_directory = {});
     ProcessStatus poll();
     // Forced termination. A later Baresip control channel must provide graceful exit.
     bool stop();
