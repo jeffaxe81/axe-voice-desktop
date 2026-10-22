@@ -1,0 +1,50 @@
+# AXE Voice — experimental Baresip SDK event adapter (v0.39)
+
+The optional bridge in `src/baresip_sdk_event_adapter.h` compiles against
+Baresip's **public C API**:
+`bevent_register`, `bevent_unregister`, `bevent_get_ua` and
+`bevent_get_call`. The upstream callback signature uses
+`bevent_h(enum bevent_ev, struct bevent*, void*)`.
+
+Upstream declarations: https://github.com/baresip/baresip/blob/main/include/baresip.h
+
+## Deliberate limitations
+
+- **Not linked into the AXEVoice GUI.** Its default engine remains
+  `UnavailableSipEngine` and `SipEvidence::None`; no SIP registration,
+  signaling, calls, RTP or SRTP is implemented in the application.
+- The bridge translates only registration, unregistration, call start, call
+  establishment, call closure and app shutdown. Other native events are ignored.
+  Media security is never inferred from an established-call event.
+- It binds to one explicit `struct ua*`, ignores callbacks from other UAs,
+  supports one active call, and maps call-object identities to monotonic
+  numeric tokens. No raw pointer, URI or credential enters the mailbox.
+- Native call pointers are retained **in memory within the adapter only**.
+  Pointer reuse within the same generation fails closed, as does a late event
+  for a previous call during a new call.
+- `bevent_register` is a global callback registry per handler. Only **one
+  instance** of this bridge may run per embedded Baresip event loop.
+- `start()`, callback dispatch and `stop()` require the SAME serialized
+  event-loop owner. **Before `stop()` or destruction, the owner must establish
+  a callback quiescence barrier.** The class alone cannot prevent an in-flight
+  raw C callback from accessing freed resources.
+- This class **does not attest callback provenance** and cannot issue
+  `VerifiedNativeApi`. That must be provided by a separately audited
+  lifecycle/ownership integration, after real SDK linkage and tests.
+
+## Build
+
+Windows CI builds `test_baresip_sdk_event_adapter` with the local fake
+header in `tests/fakes/baresip.h`; it validates event translation and does
+not run Baresip or access a SIP account.
+
+To compile a separate experimental library against an audited real SDK, set
+`AXV_BUILD_NATIVE_BARESIP_ADAPTER=ON`, and supply
+`AXV_BARESIP_INCLUDE_DIR` and `AXV_BARESIP_LIBRARY`. No automatic SDK
+download, network listener, credentials or GUI integration is enabled.
+
+Before enabling production: pin and audit Baresip and libre versions, hashes
+and licenses; implement an owned native event-loop with callback quiescence;
+secure account credential handling; trust issuance; call controls; device
+routing; TLS/SRTP verification; call/SIP integration tests and manual Windows
+audio/headset QA.
