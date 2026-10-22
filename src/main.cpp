@@ -1431,6 +1431,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(96,96),0);
         ok=ok && dpi_150_ok && compact_150_ok && compact_200_ok &&
            full_200_ok && g_dpi==96 && !IsWindowEnabled(GetDlgItem(window,kCallButton));
+        const bool pre_scroll_ok = ok;
         // Verify scrolling on an artificially short viewport without
         // changing the machine's display settings or making SIP calls.
         RECT original_window{};
@@ -1451,6 +1452,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                      SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
         ok = ok && scroll_available && scroll_moved && scroll_returned;
         if (!ok) {
+            std::fprintf(stderr, "UI_VIEWPORT_SMOKE pre=%d scroll=%d moved=%d top=%d max=%d off=%d dpi150=%d mini150=%d mini200=%d full200=%d\n",
+                         pre_scroll_ok ? 1 : 0, scroll_available ? 1 : 0,
+                         scroll_moved ? 1 : 0, scroll_returned ? 1 : 0,
+                         g_scroll_max, g_scroll_offset,
+                         dpi_150_ok ? 1 : 0, compact_150_ok ? 1 : 0,
+                         compact_200_ok ? 1 : 0, full_200_ok ? 1 : 0);
             std::fprintf(stderr, "UI_SMOKE_FAIL baseline=%d compact=%d restored=%d audio=%d feedback=%d/%d/%d mode=%d page=%d height=%ld\n",
                          baseline_ok ? 1 : 0, compact_ok ? 1 : 0, restored_ok ? 1 : 0,
                          audio_ok ? 1 : 0, invalid_feedback_ok ? 1 : 0,
