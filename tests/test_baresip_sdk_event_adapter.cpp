@@ -84,10 +84,37 @@ int main() {
     if (adapter.active() || ingress.session()) return 13;
     adapter.stop();
     if (!adapter.start(&account)) return 14;
-    emit(BEVENT_SHUTDOWN, nullptr);
-    auto lost = mailbox.drain();
-    if (lost.size != 1 || lost.events[0].kind != BaresipEventKind::TransportLost) return 15;
+
+    // Baresip shutdown is scoped to a UA (ua_destroy emits it).
+    // A different account shutting down must not affect our session.
+    emit(BEVENT_SHUTDOWN, &other_event);
+    if (!adapter.active()) return 15;
+    emit(BEVENT_REGISTERING, &ua_event);
+    if (mailbox.drain().size != 1) return 16;
+    emit(BEVENT_SHUTDOWN, &ua_event);
+    if (adapter.active() || ingress.session() || mailbox.drain().session) return 17;
     adapter.stop();
-    if (g_callback != nullptr || g_registered != g_unregistered) return 16;
+
+    // A failure on another UA is also ignored.
+    if (!adapter.start(&account)) return 18;
+    emit(BEVENT_AUDIO_ERROR, &other_event);
+    if (!adapter.active()) return 19;
+    emit(BEVENT_AUDIO_ERROR, &ua_event);
+    if (adapter.active() || mailbox.drain().session) return 20;
+    adapter.stop();
+
+    if (!adapter.start(&account)) return 21;
+    emit(BEVENT_SIPSESS_FAILED, &other_event);
+    if (!adapter.active()) return 22;
+    emit(BEVENT_SIPSESS_FAILED, &ua_event);
+    if (adapter.active()) return 23;
+    adapter.stop();
+
+    // BEVENT_EXIT is a global event and requires no associated UA.
+    if (!adapter.start(&account)) return 24;
+    emit(BEVENT_EXIT, nullptr);
+    if (adapter.active() || ingress.session() || mailbox.drain().session) return 25;
+    adapter.stop();
+    if (g_callback != nullptr || g_registered != g_unregistered) return 26;
     return 0;
 }
