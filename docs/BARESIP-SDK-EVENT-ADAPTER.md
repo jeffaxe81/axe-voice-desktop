@@ -8,6 +8,21 @@ Baresip's **public C API**:
 
 Upstream declarations: https://github.com/baresip/baresip/blob/main/include/baresip.h
 
+## v0.41 — isolating terminal events and failures
+
+- `BEVENT_SHUTDOWN` is emitted for a **specific UA**. It only revokes the
+  session when `bevent_get_ua(event)` matches the UA explicitly selected by
+  AXE Voice. A shutdown from a different UA is ignored.
+- `BEVENT_EXIT` represents global termination and revokes the selected
+  session even without an associated UA event.
+- `BEVENT_AUDIO_ERROR` and `BEVENT_SIPSESS_FAILED` from the selected UA
+  conservatively revoke queued events and its unverified call state.
+  Failures from other UAs are ignored. No information from these callbacks
+  is interpreted as proof of a secure media stream or successful call.
+- These changes are covered by the fake-SDK adapter regression test. The
+  production GUI remains disconnected from the native adapter; no SIP login,
+  registration, calls or audio media are implemented here.
+
 ## Deliberate limitations
 
 - **Not linked into the AXEVoice GUI.** Its default engine remains
