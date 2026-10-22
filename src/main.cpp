@@ -1137,13 +1137,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
-    g_smoke_mode = command_line && std::wcscmp(command_line, L"--ui-smoke") == 0;
+    g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
+                                      std::wcscmp(command_line, L"--ui-blackbox") == 0);
     HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.42",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
     if (!window) return 2;
-    if (g_smoke_mode) {
+    if (g_smoke_mode && command_line &&
+        std::wcscmp(command_line, L"--ui-smoke") == 0) {
         // Force a consistent baseline without changing saved HKCU settings.
         if (g_compact) { g_compact = false; apply_compact_layout(window); }
         // Headless GUI startup check for Windows CI: verify the real controls
