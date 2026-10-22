@@ -102,6 +102,7 @@ std::vector<axv::AudioEndpoint> g_audio_inputs;
 std::vector<axv::AudioEndpoint> g_audio_outputs;
 axv::AudioInventory g_previous_audio_inventory;
 bool g_audio_seen = false;
+bool g_audio_force_update = false;
 axv::AudioInventoryAsync g_audio_worker(axv::inspect_windows_audio_devices);
 axv::AudioDeviceChoice g_input_choice;
 axv::AudioDeviceChoice g_output_choice;
@@ -309,6 +310,7 @@ void show_page(HWND root, int page) {
     else {
         KillTimer(root, kAudioInventoryTimer);
         g_audio_worker.invalidate();
+        g_audio_force_update = false;
     }
     for (auto child : g_dial_controls) {
         const bool visible = page == 0 &&
@@ -487,9 +489,11 @@ void apply_audio_inventory(const axv::AudioInventory& inventory,
 }
 void request_audio_refresh(bool show_waiting = false) {
     if (g_smoke_mode) return;
-    if (g_audio_worker.request() && show_waiting)
+    if (g_audio_worker.request() && show_waiting) {
+        g_audio_force_update = true;
         SetWindowTextW(g_headset_status,
             L"Consultando dispositivos do Windows sem bloquear a interface...");
+    }
 }
 
 axv::RuntimeProcess observed_process(axv::ProcessStatus status, bool stopping) {
@@ -990,7 +994,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 !SendMessageW(g_input_audio_combo, CB_GETDROPPEDSTATE, 0, 0) &&
                 !SendMessageW(g_output_audio_combo, CB_GETDROPPEDSTATE, 0, 0)) {
                 const auto result = g_audio_worker.take();
-                if (result) apply_audio_inventory(*result, true);
+                if (result) {
+                    apply_audio_inventory(*result, !g_audio_force_update);
+                    g_audio_force_update = false;
+                }
             }
             refresh_runtime_banner(g_baresip_process.poll());
             if (g_shutdown.pending()) {
