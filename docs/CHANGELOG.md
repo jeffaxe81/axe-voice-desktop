@@ -1,3 +1,11 @@
+# Changelog
+
+## v0.35.0 — isolamento de sessões SIP em reinício (protótipo)
+- Guarda de ciclo de vida descarta eventos e prova SIP de processos anteriores ao iniciar, parar, falhar ou reiniciar.
+- Estado de sessão persiste apenas em memória entre ticks do mesmo processo; nunca é restaurado do disco.
+- Aplicação continua usando `SipEvidence::None`, sem adaptador Baresip ou chamadas habilitadas.
+- Teste de recuperação, queda, parada voluntária e callbacks obsoletos.
+
 ## 0.34.0 — 2026-10-22 (laboratório)
 
 - Aba Áudio informa desconexão e fallback de microfone/saída sem registrar dados do dispositivo.

@@ -10,6 +10,7 @@
 #include "sip_runtime_observation.h"
 #include "baresip_event_mailbox.h"
 #include "sip_event_projection.h"
+#include "sip_runtime_session_guard.h"
 #include "call_policy.h"
 #include "sip_diagnostics.h"
 #include "sip_registration_policy.h"
@@ -102,6 +103,7 @@ axv::EngineSelection g_sip_selection = axv::create_sip_engine();
 // Prepared for future native callbacks; current laboratory build has no producer.
 axv::BaresipEventMailbox g_native_event_mailbox;
 axv::SipEventProjection g_sip_projection;
+axv::SipRuntimeSessionGuard g_sip_session_guard;
 
 
 bool g_dark = true;
@@ -468,12 +470,14 @@ axv::RuntimeProcess observed_process(axv::ProcessStatus status, bool stopping) {
 void refresh_runtime_banner(axv::ProcessStatus state) {
     if (!g_runtime_banner) return;
     // Thread-safe receive boundary is active, but not connected to Baresip C API.
-    const auto pending = g_native_event_mailbox.drain();
+    // Bind native event lifetime to actual process lifetime, not to a timer tick.
+    const auto& observed = g_sip_session_guard.observe(
+        observed_process(state, g_shutdown.pending()), axv::SipEvidence::None,
+        g_native_event_mailbox, g_sip_projection);
+    const auto current_session = observed.session;
     // No audited native producer is linked; process state never implies SIP proof.
-    const auto& observed = g_sip_projection.observe(
-        observed_process(state, g_shutdown.pending()), axv::SipEvidence::None, pending);
     // Without a native verified producer the UI cannot claim SIP registration.
-    const wchar_t* banner = axv::runtime_status_banner(observed, pending.session);
+    const wchar_t* banner = axv::runtime_status_banner(observed, current_session);
     wchar_t previous[160]{};
     GetWindowTextW(g_runtime_banner, previous, 160);
     if (std::wstring_view(previous) != std::wstring_view(banner))
@@ -482,7 +486,7 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     GetWindowTextW(g_number, destination, 129);
     // Defense in depth: native proof alone cannot activate the current
     // UnavailableSipEngine, nor can an invalid destination.
-    const bool dial = axv::may_use_call_control(observed, pending.session, axv::CallAction::Dial) &&
+    const bool dial = axv::may_use_call_control(observed, current_session, axv::CallAction::Dial) &&
         g_sip_selection.engine->status() == axv::SipStatus::Registered &&
         axv::evaluate_destination(destination).valid();
     const HWND button = GetDlgItem(GetParent(g_runtime_banner), kCallButton);
@@ -490,7 +494,7 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
         EnableWindow(button, dial ? TRUE : FALSE);
 }
 void begin_shutdown(HWND window) {
-    g_native_event_mailbox.invalidate_session();
+    g_sip_session_guard.revoke(axv::RuntimeProcess::Stopping, g_native_event_mailbox, g_sip_projection);
     const bool queued = g_baresip_process.request_quit_async();
     g_shutdown.begin(GetTickCount64());
     EnableWindow(GetDlgItem(window, kStartBaresipButton), FALSE);
@@ -728,6 +732,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 SetWindowTextW(g_process_status, axv::baresip_profile_diagnostic(profile_status));
                 return 0;
             }
+            g_sip_session_guard.revoke(axv::RuntimeProcess::Stopped, g_native_event_mailbox, g_sip_projection);
             if (g_baresip_process.start(candidate, profile)) {
                 g_last_process_state = axv::ProcessStatus::Running;
                 SetWindowTextW(g_process_status, L"Processo Baresip iniciado. Registro SIP NÃO confirmado.");
@@ -957,7 +962,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         DestroyWindow(window);
         return 0;
     case WM_DESTROY:
-        g_native_event_mailbox.invalidate_session();
+        g_sip_session_guard.revoke(axv::RuntimeProcess::Stopped, g_native_event_mailbox, g_sip_projection);
         KillTimer(window, kProcessTimer);
         remove_tray(window);
         if (g_font_regular) DeleteObject(g_font_regular);

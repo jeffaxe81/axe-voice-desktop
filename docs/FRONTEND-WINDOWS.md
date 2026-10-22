@@ -90,3 +90,8 @@ O banner agora consome uma projeção de eventos persistente entre ciclos do tim
 - IDs de endpoints são efêmeros e nunca são gravados em HKCU ou exibidos em logs/diagnósticos; mensagem inicial não confunde a primeira escolha com desconexão.
 - Novo teste determinístico `audio_selection_feedback` cobre inicialização, retenção, desconexão, falta de dispositivos e não exposição de IDs.
 - Nenhuma seleção configura o Baresip; registro SIP, RTP/SRTP, áudio real e chamadas permanecem indisponíveis. Revisão manual de hotplug e headset Windows segue pendente.
+
+
+## v0.35 — isolamento de sessão em reinício
+
+O processo Baresip não mantém registro SIP presumido após falha, parada ou reinicialização. O novo `SipRuntimeSessionGuard` invalida a fila e a sessão anterior, inclusive ao iniciar um novo processo. Há teste CTest de recuperação. A interface continua sem registro e chamada reais.
