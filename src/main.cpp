@@ -2,6 +2,7 @@
 #include <shlobj.h>
 #include <shellapi.h>
 #include <commctrl.h>
+#include <dbt.h>
 #include "baresip_profile.h"
 #include "sip_address.h"
 #include "sip_engine.h"
@@ -21,6 +22,7 @@
 #include "baresip_modules.h"
 #include "audio_devices.h"
 #include "audio_selection_feedback.h"
+#include "audio_hotplug_policy.h"
 #include "windows_process.h"
 #include "shutdown_policy.h"
 #include <string>
@@ -98,6 +100,7 @@ std::vector<axv::AudioEndpoint> g_audio_inputs;
 std::vector<axv::AudioEndpoint> g_audio_outputs;
 std::wstring g_selected_input_id;
 std::wstring g_selected_output_id;
+axv::AudioHotplugPolicy g_audio_hotplug;
 axv::WindowsProcess g_baresip_process;
 axv::ProcessStatus g_last_process_state = axv::ProcessStatus::Stopped;
 axv::ShutdownDeadline g_shutdown;
@@ -118,6 +121,7 @@ bool g_compact = false;
 bool g_smoke_mode = false;
 bool g_help_requested_smoke = false;
 bool g_readiness_requested_smoke = false;
+bool g_audio_hotplug_smoke = false;
 bool g_destination_invalid = false;
 bool g_account_invalid_server = false;
 bool g_account_invalid_user = false;
@@ -468,6 +472,8 @@ axv::AudioSelectionRefresh fill_audio_combo(
 }
 
 void refresh_audio_panel() {
+    // A manual tab/refresh visit replaces a pending coalesced notification.
+    g_audio_hotplug.acknowledge_manual_refresh();
     const auto inventory = axv::inspect_windows_audio_devices();
     if (inventory.error != axv::AudioInventoryError::None) {
         g_audio_inputs.clear(); g_audio_outputs.clear();
@@ -658,6 +664,16 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         SetTimer(window, kProcessTimer, 100, nullptr);
         return 0;
     }
+    case WM_DEVICECHANGE:
+        if (g_audio_hotplug.notify(static_cast<unsigned>(wparam), GetTickCount64())) {
+            // This notification is not audio-specific; only inspect Windows
+            // endpoints after a quiet period and when the Audio tab is open.
+            if (g_page == 2 && !g_smoke_mode && g_headset_status)
+                SetWindowTextW(g_headset_status,
+                    L"Possivel alteracao de dispositivos; verificando o Windows...");
+            return TRUE;
+        }
+        break;
     case WM_COMMAND:
         if (LOWORD(wparam) == kNumberEdit && HIWORD(wparam) == EN_CHANGE) {
             refresh_destination_feedback(); // keyboard, paste and dialpad share validation.
@@ -980,6 +996,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
     }
     case WM_TIMER:
         if (wparam == kProcessTimer) {
+            if (g_audio_hotplug.take_if_due(GetTickCount64(), g_page == 2) &&
+                !g_smoke_mode)
+                refresh_audio_panel();
             refresh_runtime_banner(g_baresip_process.poll());
             if (g_shutdown.pending()) {
                 const auto state = g_baresip_process.poll();
@@ -1067,7 +1086,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && std::wcscmp(command_line, L"--ui-smoke") == 0;
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.37",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.41",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         kWindowWidth, kFullHeight,
         nullptr, nullptr, instance, nullptr);
@@ -1188,7 +1207,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             ui_color(axv::UiRole::SelectedText) == GetSysColor(COLOR_HIGHLIGHTTEXT) &&
             !IsWindowEnabled(GetDlgItem(window, kCallButton));
         g_high_contrast = original_contrast;
-        ok = ok && audio_ok && readiness_ok && contrast_ok;
+        SendMessageW(window, WM_DEVICECHANGE, DBT_DEVNODES_CHANGED, 0);
+        const bool hotplug_pending_ok = g_audio_hotplug.pending() &&
+            g_audio_hotplug.take_if_due(GetTickCount64() + 450, true) &&
+            !g_audio_hotplug.pending();
+        g_audio_hotplug_smoke = hotplug_pending_ok &&
+            !IsWindowEnabled(GetDlgItem(window, kCallButton));
+        ok = ok && audio_ok && readiness_ok && contrast_ok && g_audio_hotplug_smoke;
         if (!ok) {
             std::fprintf(stderr, "UI_SMOKE_FAIL baseline=%d compact=%d restored=%d audio=%d feedback=%d/%d/%d mode=%d page=%d height=%ld\n",
                          baseline_ok ? 1 : 0, compact_ok ? 1 : 0, restored_ok ? 1 : 0,

@@ -117,3 +117,12 @@ A regra do botão habilitado e a execução de `WM_COMMAND` usam agora a mesma f
 - Não altera credenciais, registros, telefonia ou preferências HKCU ao receber uma mudança de acessibilidade.
 
 A validação de contraste percebido, leitores de tela e escala DPI **ainda exige testes manuais em Windows 10/11**. 
+
+
+## v0.41 — Detecção de alterações de dispositivos no Windows
+
+- O frontend reage a `WM_DEVICECHANGE` (`DBT_DEVNODES_CHANGED`, `DBT_DEVICEARRIVAL`, `DBT_DEVICEREMOVECOMPLETE`) como **possível alteração** de dispositivos. A notificação do Windows não identifica, por si só, a inserção ou remoção de um headset.
+- A classe `AudioHotplugPolicy` aplica debounce de **450 ms**, coalescendo eventos consecutivos e evitando enumeração de dispositivos durante outras abas. Se a aba Áudio estiver aberta, atualiza automaticamente após a janela silenciosa; ao abrir a aba ou clicar em Atualizar, a leitura local explícita substitui uma notificação pendente.
+- A leitura usa o inventário Core Audio preexistente e o fallback de seleção quando algum dispositivo deixa de estar disponível. Nenhum comando SIP, configuração de Baresip, conexão à rede ou gravação de ID de hardware é realizada.
+- CTest `audio_hotplug_policy` valida códigos Win32, tempestades de eventos, debounce, aba oculta, execução única, atualização manual e relógio monotônico. O `ui_smoke` injeta mensagem sintética sem consultar hardware real.
+- Limites: notificação de dispositivos é genérica e pode gerar atualização sem mudança de áudio; alguns dispositivos não emitem notificação detectável. A homologação com headsets USB/Bluetooth reais, Windows 10/11, DPI e áudio de chamadas segue pendente. A aba não configura mídia no Baresip.
