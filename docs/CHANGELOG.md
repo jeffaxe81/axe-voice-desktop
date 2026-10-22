@@ -1,3 +1,8 @@
+## 0.34.0 — 2026-10-22 (laboratório)
+
+- Aba Áudio informa desconexão e fallback de microfone/saída sem registrar dados do dispositivo.
+- Novo teste determinístico do diagnóstico de hotplug; chamadas SIP permanecem bloqueadas.
+
 # Changelog
 
 ## v0.32.0 — projeção SIP persistente (protótipo)

@@ -18,6 +18,7 @@
 #include "baresip_probe.h"
 #include "baresip_modules.h"
 #include "audio_devices.h"
+#include "audio_selection_feedback.h"
 #include "windows_process.h"
 #include "shutdown_policy.h"
 #include <string>
@@ -418,22 +419,22 @@ void edit_number(HWND root, wchar_t action) {
 }
 
 // Audio preferences are previews only: they never configure or contact Baresip.
-void fill_audio_combo(HWND combo, const std::vector<axv::AudioEndpoint>& devices,
-                      std::wstring& selected_id) {
+axv::AudioSelectionRefresh fill_audio_combo(
+    HWND combo, const std::vector<axv::AudioEndpoint>& devices,
+    std::wstring& selected_id) {
+    const auto selection = axv::refresh_audio_selection(devices, selected_id);
     SendMessageW(combo, CB_RESETCONTENT, 0, 0);
     for (const auto& device : devices) {
         const std::wstring title = (device.default_communications ? L"[PADRAO] " : L"") +
                                    device.name;
         SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(title.c_str()));
     }
-    const int index = axv::preferred_audio_endpoint_index(devices, selected_id);
-    EnableWindow(combo, index >= 0);
-    if (index >= 0) {
-        SendMessageW(combo, CB_SETCURSEL, static_cast<WPARAM>(index), 0);
-        selected_id = devices[static_cast<std::size_t>(index)].id;
-    } else {
-        selected_id.clear();
+    EnableWindow(combo, selection.index >= 0);
+    if (selection.index >= 0) {
+        SendMessageW(combo, CB_SETCURSEL, static_cast<WPARAM>(selection.index), 0);
     }
+    selected_id = selection.selected_id;
+    return selection;
 }
 
 void refresh_audio_panel() {
@@ -447,10 +448,11 @@ void refresh_audio_panel() {
     }
     g_audio_inputs = inventory.input_devices;
     g_audio_outputs = inventory.output_devices;
-    fill_audio_combo(g_input_audio_combo, g_audio_inputs, g_selected_input_id);
-    fill_audio_combo(g_output_audio_combo, g_audio_outputs, g_selected_output_id);
-    SetWindowTextW(g_headset_status,
-        L"Preferencia local somente. Baresip e chamadas ainda nao conectados.");
+    const auto microphone = fill_audio_combo(
+        g_input_audio_combo, g_audio_inputs, g_selected_input_id);
+    const auto speaker = fill_audio_combo(
+        g_output_audio_combo, g_audio_outputs, g_selected_output_id);
+    SetWindowTextW(g_headset_status, axv::audio_selection_feedback(microphone, speaker));
 }
 
 axv::RuntimeProcess observed_process(axv::ProcessStatus status, bool stopping) {
@@ -984,7 +986,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && std::wcscmp(command_line, L"--ui-smoke") == 0;
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.33",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.34",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         kWindowWidth, kFullHeight,
         nullptr, nullptr, instance, nullptr);

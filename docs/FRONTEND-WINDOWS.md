@@ -81,3 +81,12 @@ A interface passa a drenar uma caixa de eventos thread-safe do futuro adaptador 
 ## v0.32 — Banner de estado orientado a sessão
 
 O banner agora consome uma projeção de eventos persistente entre ciclos do timer. Quando não há adaptador nativo validado (situação atual), continua a indicar registro SIP não confirmado. Em um backend futuro, overflow e perda de procedência derrubarão o estado para indisponível até uma nova sessão.
+
+## v0.34 — Diagnóstico de desconexão do headset
+
+- Ao atualizar a aba **Áudio**, as preferências de entrada/saída continuam válidas enquanto o dispositivo existir.
+- Quando um headset é removido, a preferência volta ao dispositivo padrão de comunicação do Windows (ou ao primeiro disponível), com aviso específico para microfone, saída ou ambos.
+- Quando falta entrada ou saída ativa, o aviso indica o recurso ausente; falhas na consulta Core Audio continuam sendo erros distintos.
+- IDs de endpoints são efêmeros e nunca são gravados em HKCU ou exibidos em logs/diagnósticos; mensagem inicial não confunde a primeira escolha com desconexão.
+- Novo teste determinístico `audio_selection_feedback` cobre inicialização, retenção, desconexão, falta de dispositivos e não exposição de IDs.
+- Nenhuma seleção configura o Baresip; registro SIP, RTP/SRTP, áudio real e chamadas permanecem indisponíveis. Revisão manual de hotplug e headset Windows segue pendente.
