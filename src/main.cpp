@@ -14,6 +14,7 @@
 #include "baresip_modules.h"
 #include "audio_devices.h"
 #include "windows_process.h"
+#include "shutdown_policy.h"
 #include <string>
 
 namespace {
@@ -39,6 +40,8 @@ HWND g_audio_status = nullptr;
 HWND g_process_status = nullptr;
 axv::WindowsProcess g_baresip_process;
 axv::ProcessStatus g_last_process_state = axv::ProcessStatus::Stopped;
+axv::ShutdownDeadline g_shutdown;
+constexpr std::uint64_t kGracePeriodMs = 1500;
 axv::EngineSelection g_sip_selection = axv::create_sip_engine();
 
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
@@ -95,11 +98,15 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_process_status = CreateWindowW(L"STATIC", L"Processo Baresip parado. Registro SIP indisponível.",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
             20, 617, 350, 56, window, nullptr, nullptr, nullptr);
-        SetTimer(window, kProcessTimer, 1000, nullptr);
+        SetTimer(window, kProcessTimer, 100, nullptr);
         return 0;
     }
     case WM_COMMAND:
         if (LOWORD(wparam) == kStartBaresipButton && HIWORD(wparam) == BN_CLICKED) {
+            if (g_shutdown.pending()) {
+                SetWindowTextW(g_process_status, L"Aguarde a parada do motor.");
+                return 0;
+            }
             wchar_t application[MAX_PATH] = {};
             const DWORD length = GetModuleFileNameW(nullptr, application, MAX_PATH);
             if (length == 0 || length >= MAX_PATH) {
@@ -157,17 +164,18 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             return 0;
         }
         if (LOWORD(wparam) == kStopBaresipButton && HIWORD(wparam) == BN_CLICKED) {
-            const auto outcome = g_baresip_process.stop_gracefully(1500);
-            g_last_process_state = outcome == axv::GracefulStopResult::Failed
-                ? axv::ProcessStatus::Failed : axv::ProcessStatus::Stopped;
-            const wchar_t* message = L"Motor parado.";
-            switch (outcome) {
-            case axv::GracefulStopResult::AlreadyStopped: message = L"Motor ja estava parado."; break;
-            case axv::GracefulStopResult::ExitedAfterQuit: message = L"Processo saiu apos tentativa de /quit; SIP nao validado."; break;
-            case axv::GracefulStopResult::Forced: message = L"Timeout: parada forcada pelo Job Object (lab)."; break;
-            case axv::GracefulStopResult::Failed: message = L"Falha ao encerrar; conferir processos."; break;
+            if (g_shutdown.pending()) return 0;
+            if (g_baresip_process.poll() != axv::ProcessStatus::Running) {
+                SetWindowTextW(g_process_status, L"Motor ja estava parado.");
+                return 0;
             }
-            SetWindowTextW(g_process_status, message);
+            const bool sent = g_baresip_process.request_quit();
+            g_shutdown.begin(GetTickCount64());
+            EnableWindow(GetDlgItem(window, kStartBaresipButton), FALSE);
+            EnableWindow(GetDlgItem(window, kStopBaresipButton), FALSE);
+            SetWindowTextW(g_process_status, sent
+                ? L"Parada solicitada via /quit; aguardando saida (sem bloquear a interface)."
+                : L"Falha ao enviar /quit; monitorando para encerramento forcado.");
             return 0;
         }
         if (LOWORD(wparam) == kAudioDevicesButton && HIWORD(wparam) == BN_CLICKED) {
@@ -241,6 +249,29 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         break;
     case WM_TIMER:
         if (wparam == kProcessTimer) {
+            if (g_shutdown.pending()) {
+                const auto state = g_baresip_process.poll();
+                if (state == axv::ProcessStatus::Exited) {
+                    g_shutdown.clear();
+                    g_last_process_state = axv::ProcessStatus::Stopped;
+                    SetWindowTextW(g_process_status,
+                        L"Processo encerrou apos pedido de /quit; SIP nao homologado.");
+                } else if (state != axv::ProcessStatus::Running ||
+                           g_shutdown.expired(GetTickCount64(), kGracePeriodMs)) {
+                    const bool stopped = g_baresip_process.stop();
+                    g_shutdown.clear();
+                    g_last_process_state = stopped ? axv::ProcessStatus::Stopped
+                                                   : axv::ProcessStatus::Failed;
+                    SetWindowTextW(g_process_status, stopped
+                        ? L"Timeout ou falha de processo: encerramento forcado pelo Job Object."
+                        : L"Nao foi possivel finalizar o processo; verificar tarefas do Windows.");
+                } else {
+                    return 0;
+                }
+                EnableWindow(GetDlgItem(window, kStartBaresipButton), TRUE);
+                EnableWindow(GetDlgItem(window, kStopBaresipButton), TRUE);
+                return 0;
+            }
             const auto state = g_baresip_process.poll();
             if (state != g_last_process_state) {
                 g_last_process_state = state;

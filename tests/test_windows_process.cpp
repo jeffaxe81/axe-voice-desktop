@@ -57,5 +57,19 @@ int wmain(int argc, wchar_t** argv) {
     if (!process.start(std::filesystem::path(argv[1]))) return 24;
     if (process.stop_gracefully(120) != GracefulStopResult::Forced) return 25;
     if (process.poll() != ProcessStatus::Stopped || process.exit_code().has_value()) return 26;
+    // Non-blocking shutdown primitive: request returns before the inert child exits.
+    if (!process.start(std::filesystem::path(argv[3]))) return 27;
+    if (!process.request_quit()) return 28;
+    if (process.request_quit()) return 29; // no second command may be written
+    bool quit_exited = false;
+    for (int i = 0; i != 100; ++i) {
+        if (process.poll() == ProcessStatus::Exited) { quit_exited = true; break; }
+        Sleep(20);
+    }
+    if (!quit_exited || !process.exit_code() || *process.exit_code() != 0) return 30;
+    if (!process.stop()) return 31;
+    if (!process.start(std::filesystem::path(argv[1]))) return 32;
+    if (!process.request_quit()) return 33;
+    if (!process.stop()) return 34; // forced fallback is still possible
     return 0;
 }

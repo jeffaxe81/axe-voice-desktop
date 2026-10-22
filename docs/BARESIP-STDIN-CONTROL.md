@@ -1,11 +1,11 @@
-# Encerramento local Baresip (0.18.0)
+# Controle local e parada observável (v0.19.0)
 
-Novo canal unidirecional **somente para encerramento**, feito por pipe anônimo do Windows. O supervisor herda exclusivamente o handle de leitura de stdin e o handle de saída NUL, via `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`.
+O Baresip de laboratório recebe somente o comando fixo `/quit\\n` por um pipe anônimo privado (stdin) no Windows, sem API exposta na rede e sem credenciais. A herança é limitada aos handles explicitamente permitidos por `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`.
 
-O botão Parar motor envia apenas `/quit` e aguarda no máximo 1,5 segundo, depois força o encerramento do Job Object caso ainda esteja ativo. Uma saída após o comando não comprova que o comando foi interpretado; apenas comprova o encerramento observado no Windows.
+Na v0.19, o botão **Parar motor** faz apenas a solicitação pelo pipe e retorna ao loop de mensagens da interface. O timer da UI consulta o estado do processo a cada 100 ms; quando observa a saída, habilita novamente os botões. Após 1500 ms, se ainda estiver ativo ou a consulta falhar, solicita encerramento forçado do Job Object. Um segundo comando `/quit` no mesmo processo é recusado; reiniciar durante a parada fica bloqueado.
 
-Os testes usam um processo filho inerte que aceita `/quit` e outro que ignora stdin. **Isso ainda não valida o `stdio` de Baresip em Windows**, nem o registro SIP, chamadas, DTMF, áudio ou criptografia.
+**Limites:** envio do comando não é confirmação de que o Baresip interpretou o stdin. O teste integrado usa apenas subprocessos sintéticos, não registra SIP e não valida áudio. O fechamento da janela ainda usa uma rotina de liberação síncrona, cuja duração deve ser auditada antes de produção. `WriteFile` permanece síncrono (mensagem de 6 bytes): a parada deixa de aguardar os 1,5 s no botão, mas não oferece garantia de latência máxima do Windows nem do processo.
 
-A UI aguarda de forma síncrona e deverá migrar para uma tarefa assíncrona antes de uso operacional. Nenhuma credencial real é enviada pelo pipe.
+A política de timeout é testada de forma determinística em `test_shutdown_policy`. O teste Windows `test_windows_process` comprova solicitação única, saída natural de processo de teste e fallback forçado.
 
-Referência: https://github.com/baresip/baresip/wiki/Commands-registry
+Referência do projeto Baresip: https://github.com/baresip/baresip/wiki/Commands-registry

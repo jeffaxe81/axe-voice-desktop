@@ -177,16 +177,25 @@ ProcessStatus WindowsProcess::poll() {
     return state_ = ProcessStatus::Failed;
 }
 
+bool WindowsProcess::request_quit() {
+    if (!process_ || !stdin_write_) {
+        last_error_ = ERROR_INVALID_HANDLE;
+        return false;
+    }
+    constexpr char command[] = "/quit\n";
+    DWORD bytes = 0;
+    const BOOL sent = WriteFile(stdin_write_, command, sizeof(command)-1, &bytes, nullptr);
+    if (!sent) last_error_ = GetLastError();
+    else if (bytes != sizeof(command)-1) last_error_ = ERROR_WRITE_FAULT;
+    const BOOL closed = CloseHandle(stdin_write_);
+    if (!closed) last_error_ = GetLastError();
+    stdin_write_ = nullptr;
+    return sent && bytes == sizeof(command)-1 && closed;
+}
+
 GracefulStopResult WindowsProcess::stop_gracefully(DWORD timeout_ms) {
     if (!process_) { stop(); return GracefulStopResult::AlreadyStopped; }
-    constexpr char command[] = "/quit\n";
-    if (stdin_write_) {
-        DWORD bytes = 0;
-        const BOOL sent = WriteFile(stdin_write_, command, sizeof(command)-1, &bytes, nullptr);
-        if (!sent) last_error_ = GetLastError();
-        else if (bytes != sizeof(command)-1) last_error_ = ERROR_WRITE_FAULT;
-        CloseHandle(stdin_write_); stdin_write_ = nullptr;
-    }
+    (void)request_quit();
     const DWORD waited = WaitForSingleObject(process_, timeout_ms);
     if (waited == WAIT_OBJECT_0) {
         DWORD code = 0;

@@ -22,6 +22,9 @@ public:
                const std::filesystem::path& config_directory = {});
     ProcessStatus poll();
     // Forced termination. A later Baresip control channel must provide graceful exit.
+    // Sends only /quit to the child's private stdin and returns without waiting for exit.
+    // One request per process instance. Caller must poll and apply a shutdown deadline.
+    bool request_quit();
     GracefulStopResult stop_gracefully(DWORD timeout_ms = 1500);
     bool stop();
     DWORD last_error() const { return last_error_; }

@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.19.0 — parada responsiva do motor (laboratório)
+- Solicitação `request_quit()` separada da espera pelo encerramento.
+- Timer da janela supervisiona o processo a cada 100 ms, aplica 1,5 s de tolerância e desabilita start/stop durante parada.
+- Novo teste de política de timeout determinístico e casos de requisição única ao filho de testes.
+- Não altera registro SIP, chamadas nem mídia; Baresip real ainda exige homologação.
+
 ## Unreleased — desenvolvimento v0.16.2
 ### Added
 - Inventário real de microfones e saídas ativos no Windows (MMDevice/Core Audio) com padrões de comunicação.
