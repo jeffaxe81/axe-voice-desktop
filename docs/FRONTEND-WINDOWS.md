@@ -126,3 +126,22 @@ A validação de contraste percebido, leitores de tela e escala DPI **ainda exig
 - Cartões, teclado telefônico, indicadores e botões owner-draw acompanham o DPI. MINI/MAX preserva proporções, incluindo 150% e 200%.
 - O smoke test Win32 verifica coordenadas do campo, troca de página e MINI nas escalas 150% e 200%, sem alterar as configurações reais do Windows. Novo teste unitário cobre a matemática do escalonamento.
 - Seguem pendentes os testes manuais em monitores físicos de DPI distintos, leitores de tela, truncamento de textos e resoluções pequenas. Registro SIP e áudio de chamada continuam não homologados.
+
+## v0.42 — Consolidação: alto contraste, headset e áudio assíncrono
+
+- A aba Áudio lista headsets de forma automática a cada 3 segundos, em uma thread de trabalho, sem bloquear a janela durante consultas Core Audio.
+- Preserva escolha explícita do usuário em desconexões, realiza fallback temporário e restaura o headset preferido quando ele retorna.
+- Alterações de abas invalidam resultados atrasados; combos abertos não são reconstruídos. Erro de dispositivo oculta listas inválidas, preservando preferência em memória.
+- Alto Contraste do Windows mantém a precedência sobre o tema claro/escuro, inclusive em controles desabilitados.
+- Atualização manual encerra o estado "Consultando..." mesmo se o catálogo estiver inalterado.
+- Novos testes: `audio_hotplug_refresh`, `audio_preference_state` e `audio_inventory_async`. `ui_smoke` não acessa hardware e mantém o botão Chamar bloqueado.
+- **Limitações:** botão de diagnóstico em Ajustes ainda consulta Core Audio de forma síncrona; áudio Baresip, RTP/SRTP e SIP reais não são implementados. Exige validação em Windows 10/11 com headset/driver e leitores de tela.
+
+## v0.43 — Diagnóstico de áudio não bloqueante na aba Ajustes
+
+- O botão **DISPOSITIVOS DE ÁUDIO**, em Ajustes, deixa de executar Core Audio na thread da janela.
+- Um worker dedicado apresenta "Consultando..." e entrega apenas o resumo local de microfones/saídas quando a enumeração conclui. A aba Áudio continua com seu próprio worker e hotplug.
+- Pedidos repetidos são coalescidos; sair de Ajustes descarta o resultado pendente, inclusive se o driver responder após a navegação.
+- Uma nova consulta invalida resultados anteriores não consumidos, evitando exibir um diagnóstico obsoleto.
+- O teste `ui_smoke` exercita o botão sem enumerar hardware. O CTest `audio_inventory_async` cobre resultado antigo descartado, reconsulta e falhas.
+- O relatório continua sem credenciais, números SIP ou IDs de headset, e **não confirma áudio RTP/SRTP real**. Testes manuais Windows/driver permanecem necessários.
