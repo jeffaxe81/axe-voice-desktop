@@ -13,6 +13,8 @@ enum class BaresipEventKind {
 struct BaresipNativeEvent {
     BaresipEventKind kind;
     std::uint64_t session; // Assigned by the future trusted in-process adapter.
+    std::uint64_t account_token = 0; // Local opaque account token, never SIP URI.
+    std::uint64_t call_token = 0;    // Local per-call token; zero for registration.
 };
 enum class EventTransition { Applied, StaleSession, UnverifiedSource, InvalidOrder };
 
