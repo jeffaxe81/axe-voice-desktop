@@ -155,3 +155,27 @@ register-success, later shutdown, blocked reuse and successful recovery.
 This protects local lifecycle assumptions but is **not a substitute** for
 ownership, callback quiescence and UA lifetime guarantees from a real,
 version-pinned Baresip event loop. Production SIP and audio remain disabled.
+
+
+## Explicit registration deadline (lab only)
+
+`BaresipSdkRegistrationGateway` now optionally arms an elapsed-time bound
+through `arm_registration_deadline(monotonic_ms, max_wait_ms)`. The native
+event-loop owner **must** call `poll_registration_deadline(monotonic_ms)` on
+the same serialized thread. A local call to `ua_register` is never proof of
+registration; a confirmed callback is observed only when an accepted
+`BEVENT_REGISTER_OK` for the selected generation is followed by an actual
+`ua_isregistered(selected_ua)` check.
+
+Until a callback arrives the poll result is `Pending`. At the deadline,
+on a rollback of the monotonic clock, or after a revoked native generation,
+the gateway invokes controlled `stop()` and invalidates the event mailbox.
+An early valid callback clears the deadline; a later attempt cannot inherit
+it. Time arithmetic uses subtraction, preventing addition overflow. Tests
+exercise edge timing, counter rollover, clock rollback, callback success,
+revocation and recovery.
+
+**The watchdog is opt-in and has no background timer:** without an owning
+native event-loop providing a monotonic clock and polling, nothing expires.
+This experimental code is not linked to AXEVoice and does not register with
+a real PBX, confirm TLS/SRTP, or start audio media.
