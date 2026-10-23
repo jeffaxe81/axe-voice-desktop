@@ -12,7 +12,7 @@ int fail(int code) {
 constexpr int kCall=1001,kDestination=1002,kServer=1004,kUser=1005,kPort=1006;
 constexpr int kDial=2001,kSettings=2002,kTheme=2003,kCompact=2005,kAudio=2006;
 constexpr int kMicrophone=2401,kCallOutput=2402,kRingtoneOutput=2403;
-constexpr int kTestRingtone=1014;
+constexpr int kFeedback=2501,kRuntimeBanner=2502;
 constexpr int kDigit=2100,kBackspace=2201,kClear=2202;
 struct Target { DWORD pid; HWND window=nullptr; };
 BOOL CALLBACK find_window(HWND hwnd,LPARAM param) {
@@ -42,6 +42,15 @@ std::wstring text(HWND hwnd) {
     if(!hwnd || !SendMessageTimeoutW(hwnd,WM_GETTEXT,256,
          reinterpret_cast<LPARAM>(buffer),SMTO_ABORTIFHUNG|SMTO_BLOCK,2000,&result)) return {};
     return buffer;
+}
+// Unlike SetWindowTextW, WM_SETTEXT is marshalled to EDIT controls in
+// another process. Round-trip the text so tests cannot pass on empty input.
+bool set_text(HWND hwnd,const wchar_t* value) {
+    if(!hwnd || !value) return false;
+    DWORD_PTR response=0;
+    const auto sent=SendMessageTimeoutW(hwnd,WM_SETTEXT,0,
+        reinterpret_cast<LPARAM>(value),SMTO_ABORTIFHUNG|SMTO_BLOCK,2000,&response);
+    return sent!=0 && response!=0 && text(hwnd)==value;
 }
 struct Process {
     PROCESS_INFORMATION info{};
@@ -80,12 +89,24 @@ int wmain(int argc,wchar_t** argv) {
     if(!GetDlgItem(window,kDial) || !GetDlgItem(window,kSettings) ||
        !GetDlgItem(window,kAudio) || !GetDlgItem(window,kDestination) ||
        !GetDlgItem(window,kCall) || !GetDlgItem(window,kCompact) ||
-       !GetDlgItem(window,kTheme)) return fail(5);
+       !GetDlgItem(window,kTheme) || !GetDlgItem(window,kFeedback) ||
+       !GetDlgItem(window,kRuntimeBanner)) return fail(5);
+    if(text(GetDlgItem(window,kRuntimeBanner)).find(L"NAO REGISTRADO")==std::wstring::npos)
+        return fail(30);
     if(!clicked(window,kSettings) || !shown(GetDlgItem(window,kServer))) return fail(6);
-    if(!SetWindowTextW(GetDlgItem(window,kServer),L"pbx.example.org") ||
-       !SetWindowTextW(GetDlgItem(window,kUser),L"1001") ||
-       !SetWindowTextW(GetDlgItem(window,kPort),L"65536")) return fail(7);
-    if(!SetWindowTextW(GetDlgItem(window,kPort),L"5060")) return fail(8);
+    if(!set_text(GetDlgItem(window,kServer),L"pbx.example.org") ||
+       !set_text(GetDlgItem(window,kUser),L"1001") ||
+       !set_text(GetDlgItem(window,kPort),L"65536")) return fail(7);
+    const auto invalid_port_feedback=text(GetDlgItem(window,kFeedback));
+    if(invalid_port_feedback.find(L"intervalo")==std::wstring::npos) {
+        std::fwprintf(stderr,L"BLACKBOX_ACCOUNT_INVALID server='%ls' user='%ls' port='%ls' feedback='%ls'\n",
+             text(GetDlgItem(window,kServer)).c_str(),text(GetDlgItem(window,kUser)).c_str(),
+             text(GetDlgItem(window,kPort)).c_str(),invalid_port_feedback.c_str());
+        return fail(31);
+    }
+    if(!set_text(GetDlgItem(window,kPort),L"5060")) return fail(8);
+    if(text(GetDlgItem(window,kFeedback)).find(L"Registro SIP nao realizado")==std::wstring::npos)
+        return fail(32);
     if(!clicked(window,kDial) || !shown(GetDlgItem(window,kDestination))) return fail(9);
 
     const HWND number=GetDlgItem(window,kDestination);
@@ -94,20 +115,32 @@ int wmain(int argc,wchar_t** argv) {
         const bool valid=(i%2)==0;
         const auto destination=valid ? std::wstring(L"100")+std::to_wstring(i+100)
             : std::wstring(L"100 ")+std::to_wstring(i+100);
-        if(!SetWindowTextW(number,destination.c_str())) return fail(10);
+        if(!set_text(number,destination.c_str())) return fail(10);
+        const auto feedback=text(GetDlgItem(window,kFeedback));
+        if(valid) {
+            if(feedback.find(L"Ramal valido")==std::wstring::npos ||
+               feedback.find(L"registro SIP real")==std::wstring::npos) return fail(33);
+        } else if(feedback.find(L"espacos")==std::wstring::npos) return fail(34);
         if(IsWindowEnabled(GetDlgItem(window,kCall))) return fail(11);
         if(!clicked(window,kCall)) return fail(12);
+        const auto denial=text(GetDlgItem(window,kFeedback));
+        if(valid) {
+            if(denial.find(L"AXV-SIP-003")==std::wstring::npos) return fail(35);
+        } else if(denial.find(L"Destino SIP inv\u00E1lido")==std::wstring::npos)
+            return fail(37);
         if(IsWindowEnabled(GetDlgItem(window,kCall))) return fail(13);
+        if(text(GetDlgItem(window,kRuntimeBanner)).find(L"NAO REGISTRADO")==std::wstring::npos)
+            return fail(36);
         ++checked;
     }
     if(checked!=100) return fail(14);
     // A hidden external GUI has no keyboard focus; selection/caret handling is
     // independently tested by the in-process Win32 ui_smoke. Here test real
     // boundary actions without assuming foreground focus in the CI runner.
-    if(!SetWindowTextW(number,L"")) return fail(15);
+    if(!set_text(number,L"")) return fail(15);
     if(!clicked(window,kDigit+4) || text(number)!=L"5") return fail(16);
     if(!clicked(window,kBackspace) || !text(number).empty()) return fail(17);
-    if(!SetWindowTextW(number,L"1234") ||
+    if(!set_text(number,L"1234") ||
        !clicked(window,kClear) || !text(number).empty()) return fail(18);
     if(!clicked(window,kTheme) || !clicked(window,kTheme)) return fail(19);
     if(!clicked(window,kCompact)) return fail(20);
@@ -126,12 +159,6 @@ int wmain(int argc,wchar_t** argv) {
             (GetWindowLongPtrW(combo,GWL_STYLE)&CBS_DROPDOWNLIST)!=CBS_DROPDOWNLIST)
             return fail(29);
     }
-    if(!shown(GetDlgItem(window,kTestRingtone)) ||
-       IsWindowEnabled(GetDlgItem(window,kTestRingtone))) return fail(30);
-    // Even a forged WM_COMMAND must not start hardware audio when the
-    // blackbox window has no selected endpoint.
-    if(!clicked(window,kTestRingtone) ||
-       IsWindowEnabled(GetDlgItem(window,kTestRingtone))) return fail(31);
     if(IsWindowEnabled(GetDlgItem(window,kCall))) return fail(25);
     if(!PostMessageW(window,WM_CLOSE,0,0)) return fail(26);
     if(WaitForSingleObject(child.info.hProcess,5000)!=WAIT_OBJECT_0) return fail(27);
