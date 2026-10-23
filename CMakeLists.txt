@@ -82,6 +82,16 @@ if(BUILD_TESTING)
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/fakes")
   target_compile_features(test_libre_owner_reactor PRIVATE cxx_std_17)
   add_test(NAME libre_owner_reactor COMMAND test_libre_owner_reactor)
+  add_executable(test_libre_registration_owner_integration
+    tests/test_libre_registration_owner_integration.cpp
+    src/baresip_native_libre_reactor.cpp
+    src/baresip_sdk_event_adapter.cpp)
+  target_include_directories(test_libre_registration_owner_integration PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fakes")
+  target_compile_features(test_libre_registration_owner_integration PRIVATE cxx_std_17)
+  add_test(NAME libre_registration_owner_integration
+    COMMAND test_libre_registration_owner_integration)
+  set_tests_properties(libre_registration_owner_integration PROPERTIES TIMEOUT 15)
   set_tests_properties(libre_owner_reactor PROPERTIES TIMEOUT 15)
   add_executable(test_ui_dpi_policy tests/test_ui_dpi_policy.cpp)
   target_compile_features(test_ui_dpi_policy PRIVATE cxx_std_17)
