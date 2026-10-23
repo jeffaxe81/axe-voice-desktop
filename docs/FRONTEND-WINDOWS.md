@@ -142,3 +142,7 @@ A primeira seleção escolhe a saída padrão de comunicação para voz e, quand
 ## v0.49 — Botões TESTAR TOQUE e TESTAR VOZ
 
 Os dois seletores de saída agora permitem reproduzir um tom curto no endpoint escolhido via renderização WASAPI (modo compartilhado do Windows). Não muda a saída padrão do sistema, não grava IDs, não acessa o microfone e não envia comandos ao Baresip. A execução ocorre em worker limitado e só após clique explícito, com erro local caso não haja dispositivo suportado. Teste de geração de amostras mono/estéreo, limites de volume e silêncio fora do sinal somado à suíte. O áudio ouvido comprova somente a seleção do endpoint Windows; chamadas SIP e áudio remoto não estão implementados.
+
+## v0.52 — Volume separado para testes dos dois destinos
+
+Seletores independentes de 25%, 50%, 75% e 100% do **som de teste** de toque/voz. Implementação sobre o tom local existente, multiplicando amostras PCM16 ou float32 pela fração escolhida. A UI não modifica volume mestre do Windows nem controle de áudio do Baresip. Default 75% do tom seguro. Unit test cobrindo níveis válidos/inválidos, ambos formatos e saída mono/estéreo; smoke Windows cobre seleção sem dispositivo físico. Toda mídia de chamada SIP permanece bloqueada até integração nativa.
