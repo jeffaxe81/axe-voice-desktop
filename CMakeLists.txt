@@ -50,6 +50,16 @@ if(AXV_BUILD_NATIVE_BARESIP_ADAPTER)
   target_link_libraries(axv_native_baresip_abi_probe PRIVATE
     "${AXV_BARESIP_LIBRARY}" "${AXV_LIBRE_LIBRARY}")
   target_compile_features(axv_native_baresip_abi_probe PRIVATE cxx_std_17)
+  # The SDK-enabled test exercises the REAL libre re_main/mqueue/timer
+  # without creating a Baresip UA, loading account secrets or sending SIP.
+  add_executable(axv_native_libre_reactor_smoke
+    tests/native_libre_reactor_smoke.cpp
+    src/baresip_native_libre_reactor.cpp)
+  target_include_directories(axv_native_libre_reactor_smoke PRIVATE
+    "${AXV_LIBRE_INCLUDE_DIR}")
+  target_link_libraries(axv_native_libre_reactor_smoke PRIVATE
+    "${AXV_LIBRE_LIBRARY}")
+  target_compile_features(axv_native_libre_reactor_smoke PRIVATE cxx_std_17)
 endif()
 add_executable(AXEVoice WIN32 src/main.cpp)
 target_compile_features(AXEVoice PRIVATE cxx_std_17)
@@ -60,6 +70,19 @@ endif()
 target_link_libraries(AXEVoice PRIVATE user32 gdi32 advapi32 shell32 axv_sip_address axv_audio_devices axv_windows_process)
 include(CTest)
 if(BUILD_TESTING)
+  if(AXV_BUILD_NATIVE_BARESIP_ADAPTER)
+    add_test(NAME native_libre_reactor_smoke
+      COMMAND axv_native_libre_reactor_smoke)
+    set_tests_properties(native_libre_reactor_smoke PROPERTIES TIMEOUT 15)
+  endif()
+  add_executable(test_libre_owner_reactor
+    tests/test_libre_owner_reactor.cpp
+    src/baresip_native_libre_reactor.cpp)
+  target_include_directories(test_libre_owner_reactor PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fakes")
+  target_compile_features(test_libre_owner_reactor PRIVATE cxx_std_17)
+  add_test(NAME libre_owner_reactor COMMAND test_libre_owner_reactor)
+  set_tests_properties(libre_owner_reactor PROPERTIES TIMEOUT 15)
   add_executable(test_ui_dpi_policy tests/test_ui_dpi_policy.cpp)
   target_compile_features(test_ui_dpi_policy PRIVATE cxx_std_17)
   add_test(NAME ui_dpi_policy COMMAND test_ui_dpi_policy)
