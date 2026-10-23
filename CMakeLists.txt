@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AXEVoiceDesktop VERSION 0.60.0 LANGUAGES CXX)
+project(AXEVoiceDesktop VERSION 0.61.0 LANGUAGES CXX)
 if(NOT WIN32)
   message(FATAL_ERROR "This bootstrap currently supports Windows only")
 endif()
@@ -156,6 +156,11 @@ if(BUILD_TESTING)
   add_executable(test_integration_ring_fencing_matrix tests/test_integration_ring_fencing_matrix.cpp)
   target_compile_features(test_integration_ring_fencing_matrix PRIVATE cxx_std_17)
   add_test(NAME integration_ring_fencing_matrix COMMAND test_integration_ring_fencing_matrix)
+  # Produces the SHA-256 manifest of the exact LAB binary validated by this run.
+  add_test(NAME lab_artifact_manifest COMMAND "${CMAKE_COMMAND}"
+    "-DAXV_EXE=$<TARGET_FILE:AXEVoice>"
+    "-DAXV_OUTPUT=$<TARGET_FILE_DIR:AXEVoice>/AXE-Voice-LAB.sha256"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/verify-lab-artifact.cmake")
   add_executable(test_dial_authorization tests/test_dial_authorization.cpp)
   target_compile_features(test_dial_authorization PRIVATE cxx_std_17)
   target_link_libraries(test_dial_authorization PRIVATE axv_sip_address)
@@ -281,5 +286,6 @@ set_tests_properties(integration_sip_safety baresip_sdk_abi_probe windows_proces
   sip_event_projection baresip_event_mailbox baresip_callback_ingress
   baresip_callback_lifecycle baresip_sdk_event_adapter baresip_sdk_single_owner baresip_sdk_epochs
   call_command_authorization sip_command_executor integration_incoming_ringtone
-  integration_ringtone_playback_control integration_ringtone_worker integration_ring_fencing_matrix PROPERTIES LABELS "integration")
+  integration_ringtone_playback_control integration_ringtone_worker integration_ring_fencing_matrix
+  lab_artifact_manifest PROPERTIES LABELS "integration")
 set_target_properties(AXEVoice PROPERTIES OUTPUT_NAME "AXE-Voice")
