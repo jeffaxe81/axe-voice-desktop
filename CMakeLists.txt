@@ -21,11 +21,10 @@ option(AXV_BUILD_NATIVE_BARESIP_ADAPTER
 if(AXV_BUILD_NATIVE_BARESIP_ADAPTER)
   set(AXV_BARESIP_INCLUDE_DIR "" CACHE PATH "Audited Baresip SDK include path")
   set(AXV_BARESIP_LIBRARY "" CACHE FILEPATH "Audited Baresip SDK library path")
-  if(NOT EXISTS "${AXV_BARESIP_INCLUDE_DIR}/baresip.h" OR
-     NOT EXISTS "${AXV_BARESIP_LIBRARY}")
-    message(FATAL_ERROR
-      "Native bridge requires explicitly audited Baresip headers and library")
-  endif()
+  set(AXV_BARESIP_HEADER_SHA256 "" CACHE STRING "Approved SHA256 of baresip.h")
+  set(AXV_BARESIP_LIBRARY_SHA256 "" CACHE STRING "Approved SHA256 of the Baresip SDK library")
+  set(AXV_BARESIP_HEADER "${AXV_BARESIP_INCLUDE_DIR}/baresip.h")
+  include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/verify-baresip-sdk.cmake")
   add_library(axv_native_baresip_adapter STATIC src/baresip_sdk_event_adapter.cpp)
   target_include_directories(axv_native_baresip_adapter PRIVATE "${AXV_BARESIP_INCLUDE_DIR}")
   target_link_libraries(axv_native_baresip_adapter PUBLIC "${AXV_BARESIP_LIBRARY}")
@@ -40,6 +39,12 @@ endif()
 target_link_libraries(AXEVoice PRIVATE user32 gdi32 advapi32 shell32 axv_sip_address axv_audio_devices axv_windows_process)
 include(CTest)
 if(BUILD_TESTING)
+  add_test(NAME baresip_sdk_provenance
+    COMMAND "${CMAKE_COMMAND}"
+      "-DAXV_GATE_SCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/cmake/verify-baresip-sdk.cmake"
+      "-DAXV_FIXTURE_HEADER=${CMAKE_CURRENT_SOURCE_DIR}/tests/fakes/baresip.h"
+      "-DAXV_GATE_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/sdk-provenance-fixture"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_baresip_sdk_provenance.cmake")
   add_executable(test_ui_dpi_policy tests/test_ui_dpi_policy.cpp)
   target_compile_features(test_ui_dpi_policy PRIVATE cxx_std_17)
   add_test(NAME ui_dpi_policy COMMAND test_ui_dpi_policy)
@@ -180,6 +185,7 @@ foreach(axv_test IN LISTS axv_registered_tests)
 endforeach()
 set_tests_properties(ui_smoke ui_blackbox PROPERTIES LABELS "blackbox")
 set_tests_properties(integration_sip_safety windows_process sip_runtime_session_guard
+  baresip_sdk_provenance
   sip_event_projection baresip_event_mailbox baresip_callback_ingress
   baresip_callback_lifecycle baresip_sdk_event_adapter baresip_sdk_epochs
   call_command_authorization PROPERTIES LABELS "integration")
