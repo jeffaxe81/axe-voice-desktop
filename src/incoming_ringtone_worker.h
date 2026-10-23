@@ -14,7 +14,7 @@ namespace axv {
 // has terminated; no detached worker or concurrent dual-output playback.
 class CancellableIncomingRingtoneSink final : public IncomingRingtoneSink {
 public:
-    using Render = std::function<bool(const std::wstring&, std::uint8_t)>;
+    using Render = std::function<bool(const std::wstring&, std::uint8_t, const std::atomic<bool>&)>;
     explicit CancellableIncomingRingtoneSink(Render render, std::uint8_t level=75);
     ~CancellableIncomingRingtoneSink() override;
     CancellableIncomingRingtoneSink(const CancellableIncomingRingtoneSink&)=delete;
@@ -35,5 +35,6 @@ private:
     std::atomic<bool> failed_{false};
 };
 // Short WASAPI audio test, not a SIP callback or registered call.
-bool windows_incoming_ring_tone_once(const std::wstring&, std::uint8_t);
+bool windows_incoming_ring_tone_once(const std::wstring&, std::uint8_t,
+                                   const std::atomic<bool>&);
 } // namespace axv

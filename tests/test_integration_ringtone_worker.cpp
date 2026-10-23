@@ -18,7 +18,7 @@ int main() {
         SipEvidence::VerifiedNativeApi,mailbox.drain());
     std::atomic<int> count{0};
     CancellableIncomingRingtoneSink sink(
-        [&](const std::wstring&,std::uint8_t) {
+        [&](const std::wstring&,std::uint8_t,const std::atomic<bool>&) {
             count.fetch_add(1,std::memory_order_relaxed);
             std::this_thread::sleep_for(100ms);
             return true;

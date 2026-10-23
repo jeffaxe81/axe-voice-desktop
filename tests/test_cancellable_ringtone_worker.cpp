@@ -15,7 +15,7 @@ int main() {
     std::wstring device;
     std::uint8_t level=0;
     CancellableIncomingRingtoneSink sink(
-        [&](const std::wstring& id,std::uint8_t gain) {
+        [&](const std::wstring& id,std::uint8_t gain,const std::atomic<bool>&) {
             std::unique_lock<std::mutex> lock(mu);
             device=id;level=gain;++calls;entered=true;cv.notify_all();
             return cv.wait_for(lock,1500ms,[&]{return release;});
@@ -44,13 +44,13 @@ int main() {
         std::this_thread::sleep_for(10ms);
     if(!sink.stop()) return 10;
     CancellableIncomingRingtoneSink error(
-        [](const std::wstring&,std::uint8_t){return false;});
+        [](const std::wstring&,std::uint8_t,const std::atomic<bool>&){return false;});
     if(!error.start(L"pc")) return 11;
     for(int i=0;i<100 && !error.finished();++i)
         std::this_thread::sleep_for(10ms);
     if(!error.finished() || error.operational() || !error.stop()) return 12;
     CancellableIncomingRingtoneSink invalid(
-        [](const std::wstring&,std::uint8_t){return true;},101);
+        [](const std::wstring&,std::uint8_t,const std::atomic<bool>&){return true;},101);
     if(invalid.start(L"pc") || !invalid.stop()) return 13;
     return 0;
 }
