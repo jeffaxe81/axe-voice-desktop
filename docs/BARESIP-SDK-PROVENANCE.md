@@ -50,6 +50,27 @@ missing hash, invalid length, missing file, directory instead of library,
 modified library and modified header. Every intentionally invalid case must
 be rejected. This is an integration quality gate, not SIP interoperability.
 
+## v0.46 — mandatory SDK ABI/link smoke
+
+A hash match proves the selected SDK files have expected bytes. It does not
+prove that the C++ adapter compiles against the Baresip public API or that
+the linker can resolve exported functions. With
+`AXV_BUILD_NATIVE_BARESIP_ADAPTER=ON`, CMake now builds the additional
+`axv_native_baresip_sdk_abi_probe` executable. Its symbol references and
+signature checks force the compiler/linker to validate
+`bevent_register`, `bevent_unregister`, `bevent_get_ua` and
+`bevent_get_call` from the supplied SDK.
+
+The native probe is **build-only** and is not listed in CTest. Do not run it
+against an uninitialized native runtime. Missing symbols, wrong signatures or
+missing transitive libraries must fail the opt-in native build.
+
+The default Windows CI builds and runs `baresip_sdk_abi_probe` using
+`tests/fakes/baresip.h` and `tests/fakes/baresip_sdk_stub.cpp`. This confirms
+the probe itself links and executes with a fake SDK, **not** that a genuine
+Windows Baresip library has been acquired, pinned, compiled or tested.
+A green default CI is not real-SDK ABI evidence.
+
 ## Next gates before native calls
 
 - Audit/pin a matching Baresip and libre SDK release, ABIs, dependency
