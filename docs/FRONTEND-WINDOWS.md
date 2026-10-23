@@ -155,3 +155,12 @@ A validação de contraste percebido, leitores de tela e escala DPI **ainda exig
 - A verificação periódica de 3 segundos permanece **obrigatória**: `WM_DEVICECHANGE` é só um indício e não cobre necessariamente mudanças do dispositivo padrão.
 - O CTest `audio_device_change_policy` verifica categorias válidas, filtros de página/CI smoke e descarte de eventos não aplicáveis.
 - **Limites:** esta entrega não prova headset real, permissão de microfone, ligação Baresip, registro SIP ou RTP/SRTP. Os testes com USB/Bluetooth físicos e Windows 10/11 continuam pendentes.
+
+## v0.45 — Atualização manual confiável com headset ocupado
+
+- Quando o usuário clica em **Atualizar dispositivos** e a enumeração do Windows ainda está ocupada, a solicitação fica pendente e o snapshot antigo é invalidado.
+- Vários cliques durante a mesma consulta geram **somente uma reconsulta** quando o worker liberar, sem executar Core Audio na thread Win32.
+- A interface mostra que a atualização aguarda a consulta anterior; o timer de 100 ms inicia a reconsulta quando possível, antes de exibir um inventário atualizado.
+- A mudança de aba ou encerramento cancela pedidos pendentes; nenhum ID de headset é persistido, exibido no status ou entregue ao Baresip.
+- Novo CTest `audio_manual_refresh` cobre coalescência, cancelamento, worker lento e descarte de resultado obsoleto.
+- Ainda não há configuração de mídia Baresip nem teste real de headset/USB/Bluetooth; testes manuais Windows 10/11 permanecem obrigatórios.

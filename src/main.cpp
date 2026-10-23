@@ -23,6 +23,7 @@
 #include "audio_selection_feedback.h"
 #include "audio_hotplug_refresh.h"
 #include "audio_device_change_policy.h"
+#include "audio_manual_refresh.h"
 #include "audio_preference_state.h"
 #include "audio_inventory_async.h"
 #include "windows_process.h"
@@ -109,6 +110,7 @@ std::vector<axv::AudioEndpoint> g_audio_outputs;
 axv::AudioInventory g_previous_audio_inventory;
 bool g_audio_seen = false;
 bool g_audio_force_update = false;
+axv::AudioManualRefresh g_audio_manual_refresh;
 axv::AudioInventoryAsync g_audio_worker(axv::inspect_windows_audio_devices);
 axv::AudioInventoryAsync g_settings_audio_worker(axv::inspect_windows_audio_devices);
 // Dedicated workers keep Settings requests independent from the Audio-tab poll.
@@ -387,6 +389,7 @@ void show_page(HWND root, int page) {
         KillTimer(root, kAudioDeviceChangeTimer);
         g_audio_worker.invalidate();
         g_audio_force_update = false;
+        g_audio_manual_refresh.cancel();
     }
     for (auto child : g_dial_controls) {
         const bool visible = page == 0 &&
@@ -569,10 +572,29 @@ void apply_audio_inventory(const axv::AudioInventory& inventory,
 }
 void request_audio_refresh(bool show_waiting = false) {
     if (g_smoke_mode) return;
-    if (g_audio_worker.request() && show_waiting) {
+    // A manual request cannot be silently discarded because a prior scan is
+    // busy. Invalidate that old snapshot and coalesce multiple clicks into
+    // one later scan, without spawning overlapping enumeration threads.
+    if (show_waiting && g_audio_worker.busy()) {
+        g_audio_worker.invalidate();
+        g_audio_manual_refresh.defer();
         g_audio_force_update = true;
         SetWindowTextW(g_headset_status,
-            L"Consultando dispositivos do Windows sem bloquear a interface...");
+            L"Atualizacao solicitada: aguardando consulta anterior...");
+        return;
+    }
+    if (!show_waiting && g_audio_manual_refresh.pending()) return;
+    if (g_audio_worker.request()) {
+        if (show_waiting) {
+            g_audio_force_update = true;
+            g_audio_manual_refresh.started();
+            SetWindowTextW(g_headset_status,
+                L"Consultando dispositivos do Windows sem bloquear a interface...");
+        }
+    } else if (show_waiting) {
+        g_audio_manual_refresh.defer();
+        SetWindowTextW(g_headset_status,
+            L"Consulta em andamento; atualizacao manual pendente.");
     }
 }
 
@@ -1145,14 +1167,20 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                     SetWindowTextW(g_audio_status, summary.c_str());
                 }
             }
-            // Consume a completed worker snapshot without blocking Win32.
+            // Drain or restart without blocking the Win32 message loop.
             if (g_page == 2 && !g_smoke_mode && IsWindowVisible(window) &&
                 !SendMessageW(g_input_audio_combo, CB_GETDROPPEDSTATE, 0, 0) &&
                 !SendMessageW(g_output_audio_combo, CB_GETDROPPEDSTATE, 0, 0)) {
-                const auto result = g_audio_worker.take();
-                if (result) {
-                    apply_audio_inventory(*result, !g_audio_force_update);
-                    g_audio_force_update = false;
+                if (g_audio_manual_refresh.retry_ready(g_audio_worker.busy())) {
+                    // The prior generation has already been invalidated.
+                    if (g_audio_worker.request())
+                        g_audio_manual_refresh.started();
+                } else if (!g_audio_manual_refresh.pending()) {
+                    const auto result = g_audio_worker.take();
+                    if (result) {
+                        apply_audio_inventory(*result, !g_audio_force_update);
+                        g_audio_force_update = false;
+                    }
                 }
             }
             refresh_runtime_banner(g_baresip_process.poll());
@@ -1218,6 +1246,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         KillTimer(window, kAudioInventoryTimer);
         KillTimer(window, kAudioDeviceChangeTimer);
         g_audio_worker.invalidate();
+        g_audio_manual_refresh.cancel();
         g_settings_audio_worker.invalidate();
         remove_tray(window);
         g_layout.clear();
@@ -1249,7 +1278,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && std::wcscmp(command_line, L"--ui-smoke") == 0;
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.44",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.45",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
@@ -1362,6 +1391,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             !IsWindowEnabled(GetDlgItem(window, kCallButton)) &&
             !IsWindowEnabled(g_input_audio_combo) &&
             !g_audio_worker.busy() &&
+            !g_audio_manual_refresh.pending() &&
             !axv::should_schedule_audio_device_refresh(
                 DBT_DEVNODES_CHANGED, true, true); // Smoke never scans.
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(kReadinessButton, 1), 0);

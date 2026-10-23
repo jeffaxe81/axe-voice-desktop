@@ -1,3 +1,9 @@
+## v0.45.0 — 2026-10-22 (laboratório)
+
+- Pedidos manuais de atualização de áudio deixam de ser perdidos quando o Core Audio já está ocupado.
+- Reconsultas são coalescidas e resultados anteriores invalidados; novos testes sintéticos de worker ocupado.
+- Sem registro SIP e mídia real: UI permanece fail-closed.
+
 ## v0.44.0 — 2026-10-22 (laboratório)
 
 - Eventos Windows de conexão/remoção passam a antecipar a consulta assíncrona de headset com debounce.
