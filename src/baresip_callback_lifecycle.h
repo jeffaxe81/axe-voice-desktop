@@ -133,6 +133,19 @@ public:
         return lease && ingress_.call_changed(captured.mailbox_session, native_key, event);
     }
 
+    // Fail closed from a native callback without waiting for itself to return.
+    // The management owner must still explicitly revoke_and_wait() at shutdown.
+    void reject_current() {
+        std::lock_guard<std::mutex> lock(lifecycle_);
+        fence_.close();
+        ingress_.revoke();
+    }
+
+    bool is_live(CapturedSession captured) {
+        auto lease = fence_.admit(captured.fence_generation);
+        return lease && ingress_.session() == captured.mailbox_session;
+    }
+
     // Unregister the native callback FIRST to prevent new native C API entries;
     // then use this operation to reject queued/stale work, drop pending events
     // and wait for callbacks already admitted to finish. Not callable from one

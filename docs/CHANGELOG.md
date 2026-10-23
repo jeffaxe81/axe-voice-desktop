@@ -1,3 +1,11 @@
+# Changelog
+
+## v0.44.0 — isolamento de gerações do adaptador SDK (laboratório)
+- Callback nativo captura geração e sessão imutáveis; evento antigo não contamina reinício.
+- `BaresipCallbackLifecycle` agora gerencia revogação e espera no adaptador isolado.
+- Falha dentro de callback revoga sem auto-bloqueio; teste adicional cobre 100 reinícios.
+- Sem integração SIP, chamadas ou mídia reais no executável AXE Voice.
+
 ## v0.41.0 — isolamento de eventos de terminal e falhas SIP (laboratório)
 - Corrigido `BEVENT_SHUTDOWN`: somente eventos da UA selecionada encerram a sessão; `BEVENT_EXIT` permanece global.
 - `BEVENT_AUDIO_ERROR` e `BEVENT_SIPSESS_FAILED` da UA selecionada invalidam evidências pendentes e a sessão do bridge.

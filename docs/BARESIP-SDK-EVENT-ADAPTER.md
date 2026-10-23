@@ -63,3 +63,28 @@ and licenses; implement an owned native event-loop with callback quiescence;
 secure account credential handling; trust issuance; call controls; device
 routing; TLS/SRTP verification; call/SIP integration tests and manual Windows
 audio/headset QA.
+
+## v0.44 — session-epoch isolation and lifecycle close/wait
+
+The experimental SDK bridge now connects to `BaresipCallbackLifecycle`.
+Each successful native callback registration has a **unique, immutable**
+`CallbackContext` that captures both the fence generation and mailbox
+session. An event originating from an older registration is silently rejected
+even after the bridge restarts. A bounded set of up to 512 contexts remains
+alive through restarts of the same adapter instance.
+
+On a malformed call callback, the new `reject_current()` immediately closes
+admission and discards events without blocking on its own callback, avoiding a
+self-deadlock. `stop()` unregisters the SDK handler and waits for admitted
+lifecycle operations to finish.
+
+IMPORTANT: None of this alone guarantees that the upstream SDK has finished
+all raw C callbacks. The future event-loop owner **must serialize native
+registration, dispatch, unregistration, and destruction** and independently
+establish callback quiescence. Do not destroy the adapter while any external
+native callbacks may still reference old contexts. The bridge does not grant
+`VerifiedNativeApi`, implement credentials/call operations, or link Baresip
+into the AXEVoice GUI.
+
+CTest `baresip_sdk_epochs` simulates stale callbacks after restart and
+performs 100 additional start/stop iterations, using only fake SDK events.

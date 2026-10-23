@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AXEVoiceDesktop VERSION 0.43.0 LANGUAGES CXX)
+project(AXEVoiceDesktop VERSION 0.44.0 LANGUAGES CXX)
 if(NOT WIN32)
   message(FATAL_ERROR "This bootstrap currently supports Windows only")
 endif()
@@ -112,6 +112,12 @@ if(BUILD_TESTING)
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/fakes")
   target_compile_features(test_baresip_sdk_event_adapter PRIVATE cxx_std_17)
   add_test(NAME baresip_sdk_event_adapter COMMAND test_baresip_sdk_event_adapter)
+  add_executable(test_baresip_sdk_epochs tests/test_baresip_sdk_epochs.cpp
+    src/baresip_sdk_event_adapter.cpp)
+  target_include_directories(test_baresip_sdk_epochs PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fakes")
+  target_compile_features(test_baresip_sdk_epochs PRIVATE cxx_std_17)
+  add_test(NAME baresip_sdk_epochs COMMAND test_baresip_sdk_epochs)
   add_executable(test_sip_engine tests/test_sip_engine.cpp)
   target_compile_features(test_sip_engine PRIVATE cxx_std_17)
   add_test(NAME sip_engine COMMAND test_sip_engine)
@@ -171,5 +177,5 @@ endforeach()
 set_tests_properties(ui_smoke ui_blackbox PROPERTIES LABELS "blackbox")
 set_tests_properties(integration_sip_safety windows_process sip_runtime_session_guard
   sip_event_projection baresip_event_mailbox baresip_callback_ingress
-  baresip_callback_lifecycle baresip_sdk_event_adapter PROPERTIES LABELS "integration")
+  baresip_callback_lifecycle baresip_sdk_event_adapter baresip_sdk_epochs PROPERTIES LABELS "integration")
 set_target_properties(AXEVoice PROPERTIES OUTPUT_NAME "AXE-Voice")
