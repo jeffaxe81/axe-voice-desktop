@@ -48,6 +48,7 @@ public:
         native_key_ = 0;
         active_call_ = nullptr;
         active_token_ = 0;
+        sip_registered_ = false;
         seen_calls_.clear();
         // Each native registration receives a *distinct immutable epoch*.
         // Contexts remain allocated until owner-proven callback quiescence.
@@ -88,6 +89,7 @@ public:
         native_key_ = 0;
         active_call_ = nullptr;
         active_token_ = 0;
+        sip_registered_ = false;
         seen_calls_.clear();
         // Only release the process-wide claim AFTER native unregistration
         // and callback admission quiescence, never while subscribed.
@@ -132,6 +134,7 @@ private:
         captured_ = {}; // explicit stop() required before restart
         active_call_ = nullptr;
         active_token_ = 0;
+        sip_registered_ = false;
     }
 
     void on_event(BaresipCallbackLifecycle::CapturedSession callback_session,
@@ -177,18 +180,22 @@ private:
         case BEVENT_REGISTERING:
             if (!lifecycle_.registration(callback_session, BaresipEventKind::Registering))
                 fail_closed();
+            else sip_registered_ = false;
             return;
         case BEVENT_REGISTER_OK:
             if (!lifecycle_.registration(callback_session, BaresipEventKind::RegisterOk))
                 fail_closed();
+            else sip_registered_ = true;
             return;
         case BEVENT_REGISTER_FAIL:
             if (!lifecycle_.registration(callback_session, BaresipEventKind::RegisterFail))
                 fail_closed();
+            else sip_registered_ = false;
             return;
         case BEVENT_UNREGISTERING:
             if (!lifecycle_.registration(callback_session, BaresipEventKind::Unregistering))
                 fail_closed();
+            else sip_registered_ = false;
             return;
         case BEVENT_CALL_INCOMING:
         case BEVENT_CALL_OUTGOING: {
@@ -255,5 +262,8 @@ private:
     // The actual mailbox token (NOT assumed to equal native_key_).
     std::uint64_t active_token_ = 0;
     bool registered_ = false;
+    // SDK callbacks, not process heuristics. This flag alone never grants
+    // VerifiedNativeApi or permission to show a registered UI state.
+    bool sip_registered_ = false;
 };
 } // namespace axv
