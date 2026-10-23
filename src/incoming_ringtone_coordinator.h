@@ -14,6 +14,7 @@ public:
     virtual ~IncomingRingtoneSink() = default;
     virtual bool start(const std::wstring& endpoint_id) = 0;
     virtual bool stop() = 0;
+    virtual bool operational() const { return true; }
 };
 
 // The executable intentionally has NO automatic ringtone backend.
@@ -41,6 +42,17 @@ public:
             gate_.revoke();
             if (!sink.stop()) return IncomingRingtoneOutcome::StopPending;
             stop_pending_ = false;
+            playing_ = false;
+            return IncomingRingtoneOutcome::Stopped;
+        }
+        if (playing_ && !sink.operational()) {
+            denied_session_ = current_session;
+            denied_call_id_ = state.call_id;
+            gate_.revoke();
+            if (!sink.stop()) {
+                stop_pending_ = true;
+                return IncomingRingtoneOutcome::StopPending;
+            }
             playing_ = false;
             return IncomingRingtoneOutcome::Stopped;
         }
