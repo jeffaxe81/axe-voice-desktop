@@ -102,6 +102,14 @@ if(BUILD_TESTING)
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/fakes")
   target_compile_features(test_baresip_sdk_event_adapter PRIVATE cxx_std_17)
   add_test(NAME baresip_sdk_event_adapter COMMAND test_baresip_sdk_event_adapter)
+  add_executable(test_baresip_sdk_registration_gateway
+    tests/test_baresip_sdk_registration_gateway.cpp
+    src/baresip_sdk_event_adapter.cpp)
+  target_include_directories(test_baresip_sdk_registration_gateway PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fakes")
+  target_compile_features(test_baresip_sdk_registration_gateway PRIVATE cxx_std_17)
+  add_test(NAME baresip_sdk_registration_gateway COMMAND test_baresip_sdk_registration_gateway)
+  set_tests_properties(baresip_sdk_registration_gateway PROPERTIES TIMEOUT 15)
   set_tests_properties(baresip_sdk_event_adapter PROPERTIES TIMEOUT 15)
   add_executable(test_baresip_sdk_callback_epochs
     tests/test_baresip_sdk_callback_epochs.cpp
