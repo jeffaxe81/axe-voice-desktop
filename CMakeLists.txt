@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AXEVoiceDesktop VERSION 0.64.0 LANGUAGES CXX)
+project(AXEVoiceDesktop VERSION 0.65.0 LANGUAGES CXX)
 if(NOT WIN32)
   message(FATAL_ERROR "This bootstrap currently supports Windows only")
 endif()
@@ -243,6 +243,15 @@ if(BUILD_TESTING)
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/fakes")
   target_compile_features(test_baresip_sdk_epochs PRIVATE cxx_std_17)
   add_test(NAME baresip_sdk_epochs COMMAND test_baresip_sdk_epochs)
+  add_executable(test_baresip_sdk_callback_quiescence
+    tests/test_baresip_sdk_callback_quiescence.cpp
+    src/baresip_sdk_event_adapter.cpp)
+  target_include_directories(test_baresip_sdk_callback_quiescence PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fakes")
+  target_compile_features(test_baresip_sdk_callback_quiescence PRIVATE cxx_std_17)
+  add_test(NAME baresip_sdk_callback_quiescence
+    COMMAND test_baresip_sdk_callback_quiescence)
+  set_tests_properties(baresip_sdk_callback_quiescence PROPERTIES TIMEOUT 15)
   add_executable(test_sip_engine tests/test_sip_engine.cpp)
   target_compile_features(test_sip_engine PRIVATE cxx_std_17)
   add_test(NAME sip_engine COMMAND test_sip_engine)
@@ -326,6 +335,7 @@ set_tests_properties(integration_sip_safety baresip_sdk_abi_probe windows_proces
   baresip_sdk_provenance
   sip_event_projection baresip_event_mailbox baresip_callback_ingress
   baresip_callback_lifecycle baresip_sdk_event_adapter baresip_sdk_single_owner baresip_sdk_epochs
+  baresip_sdk_callback_quiescence
   call_command_authorization sip_command_executor integration_incoming_ringtone
   integration_ringtone_playback_control integration_ringtone_worker integration_ring_fencing_matrix
   lab_artifact_manifest lab_artifact_manifest_negative

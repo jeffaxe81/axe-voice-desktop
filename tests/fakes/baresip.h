@@ -19,6 +19,7 @@ int bevent_register(bevent_h* handler, void* argument);
 void bevent_unregister(bevent_h* handler);
 struct ua* bevent_get_ua(const struct bevent* event);
 struct call* bevent_get_call(const struct bevent* event);
+bool ua_isregistered(const struct ua* selected);
 #ifdef __cplusplus
 }
 #endif

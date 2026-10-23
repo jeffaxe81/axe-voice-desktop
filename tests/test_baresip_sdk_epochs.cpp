@@ -18,6 +18,10 @@ extern "C" ua* bevent_get_ua(const bevent* event) {
 extern "C" call* bevent_get_call(const bevent* event) {
     return event ? event->active_call : nullptr;
 }
+extern "C" bool ua_isregistered(const struct ua* selected) {
+    return selected && selected->test_id == 1;
+}
+
 int main() {
     using namespace axv;
     BaresipEventMailbox mailbox;
