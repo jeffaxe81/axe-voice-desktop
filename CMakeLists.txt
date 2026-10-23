@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AXEVoiceDesktop VERSION 0.47.0 LANGUAGES CXX)
+project(AXEVoiceDesktop VERSION 0.49.0 LANGUAGES CXX)
 if(NOT WIN32)
   message(FATAL_ERROR "This bootstrap currently supports Windows only")
 endif()
@@ -141,6 +141,9 @@ if(BUILD_TESTING)
   add_executable(test_audio_manual_refresh tests/test_audio_manual_refresh.cpp)
   target_compile_features(test_audio_manual_refresh PRIVATE cxx_std_17)
   add_test(NAME audio_manual_refresh COMMAND test_audio_manual_refresh)
+  add_executable(test_audio_settings_resume tests/test_audio_settings_resume.cpp)
+  target_compile_features(test_audio_settings_resume PRIVATE cxx_std_17)
+  add_test(NAME audio_settings_resume COMMAND test_audio_settings_resume)
   add_executable(test_audio_endpoint_notifications
     tests/test_audio_endpoint_notifications.cpp
     src/audio_endpoint_notifications_win32.cpp)

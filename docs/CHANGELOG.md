@@ -1,3 +1,9 @@
+## v0.49.0 — 2026-10-22 — recuperação do diagnóstico em Ajustes (laboratório)
+
+- Ao retornar rapidamente à aba Ajustes, novas verificações aguardam a consulta antiga terminar e então retomam automaticamente, sem exibir resultados de outra sessão.
+- Solicitações repetidas são agrupadas; falhas transitórias de início permanecem pendentes até a próxima tentativa; navegação cancela.
+- Novo CTest `audio_settings_resume`. Sem alterações na liberação de SIP/chamadas.
+
 ## v0.47.0 — 2026-10-22 (laboratório)
 
 - Adiciona observador nativo de alterações de endpoints Core Audio, inclusive dispositivo padrão de comunicação.

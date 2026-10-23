@@ -172,3 +172,12 @@ A validação de contraste percebido, leitores de tela e escala DPI **ainda exig
 - O callback é desconectado antes do fechamento da janela e o observador COM é desregistrado no encerramento. Falha no registro mantém o polling anterior de 3 segundos.
 - Novo CTest `audio_endpoint_notifications` simula callbacks usando uma janela Win32 local, exercitando sinalização e interrupção após detach, sem microfone/USB/Bluetooth.
 - Ainda não há ligação do catálogo ao Baresip, permissão de microfone comprovada ou chamadas/áudio RTP/SRTP. Homologação física Windows 10/11 permanece pendente.
+
+## v0.49 — Diagnóstico de Ajustes recuperável após navegação
+
+- Quando o usuário sai da aba Ajustes enquanto o driver Windows ainda está consultando dispositivos, o resultado antigo é invalidado.
+- Se clicar em **Dispositivos de áudio** antes de a primeira consulta terminar, a nova verificação fica pendente, sem bloquear a interface. Cliques repetidos são agrupados e a consulta recomeça após o worker liberar.
+- Erro transitório na criação do worker também preserva o pedido para tentar novamente no timer da UI; sair da aba ou fechar o programa cancela o pedido pendente.
+- O teste `audio_settings_resume` usa driver simulado para verificar ida e volta de abas, descarte de resultados antigos, coalescência, independência dos workers e cancelamento sem hardware/SIP.
+- O `ui_smoke` valida que a ação em Ajustes não inicia uma consulta de hardware no ambiente de teste.
+- **Limites:** a enumeração de dispositivos não comprova captura/reprodução, integração nativa ao Baresip, registro SIP ou mídia RTP/SRTP. Permanecem necessários testes manuais com Windows 10/11 e headset real.

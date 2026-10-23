@@ -116,7 +116,9 @@ axv::AudioManualRefresh g_audio_manual_refresh;
 axv::AudioInventoryAsync g_audio_worker(axv::inspect_windows_audio_devices);
 axv::AudioEndpointNotifier g_audio_notifier;
 axv::AudioInventoryAsync g_settings_audio_worker(axv::inspect_windows_audio_devices);
-// Dedicated workers keep Settings requests independent from the Audio-tab poll.
+axv::AudioManualRefresh g_settings_manual_refresh;
+// Each tab has its own worker and pending-request state: never compete for a
+// completed snapshot or leave the Settings panel on a stale "Consultando".
 bool g_settings_audio_smoke_requested = false;
 axv::AudioDeviceChoice g_input_choice;
 axv::AudioDeviceChoice g_output_choice;
@@ -383,7 +385,10 @@ void refresh_account_feedback() {
 void show_page(HWND root, int page) {
     g_page = page;
     // A Settings diagnostic may complete after the user navigates away.
-    if (page != 1) g_settings_audio_worker.invalidate();
+    if (page != 1) {
+        g_settings_audio_worker.invalidate();
+        g_settings_manual_refresh.cancel();
+    }
     // Poll Core Audio only while the Audio tab is visible.
     if (page == 2 && !g_smoke_mode)
         SetTimer(root, kAudioInventoryTimer, kAudioInventoryIntervalMs, nullptr);
@@ -965,11 +970,25 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 g_settings_audio_smoke_requested = !g_settings_audio_worker.busy();
                 return 0;
             }
-            // Do not block Win32 on a slow/disconnected Core Audio driver.
-            const bool queued = g_settings_audio_worker.request();
-            SetWindowTextW(g_audio_status, queued || g_settings_audio_worker.busy()
-                ? L"Consultando dispositivos do Windows..."
-                : L"Nao foi possivel iniciar o diagnostico de audio.");
+            // A prior query can remain busy after leaving and returning to
+            // Settings. Never display its stale result or drop the new click.
+            if (g_settings_audio_worker.busy()) {
+                g_settings_audio_worker.invalidate();
+                g_settings_manual_refresh.defer();
+                SetWindowTextW(g_audio_status,
+                    L"Aguardando consulta anterior; nova verificacao agendada...");
+            } else if (g_settings_audio_worker.request()) {
+                g_settings_manual_refresh.started();
+                SetWindowTextW(g_audio_status,
+                    L"Consultando dispositivos do Windows...");
+            } else {
+                // Thread creation can fail transiently; keep an explicit
+                // request to retry on the regular, nonblocking UI tick.
+                g_settings_audio_worker.invalidate();
+                g_settings_manual_refresh.defer();
+                SetWindowTextW(g_audio_status,
+                    L"Nao foi possivel iniciar agora; tentando novamente...");
+            }
             return 0;
         }
         if (LOWORD(wparam) == kProbeButton && HIWORD(wparam) == BN_CLICKED) {
@@ -1176,12 +1195,21 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             return 0;
         }
         if (wparam == kProcessTimer) {
-            // Settings diagnostics use a separate worker and UI-only summary.
+            // A Settings click is durable until a fresh scan can run. A
+            // discarded prior generation is never displayed as new evidence.
             if (g_page == 1 && !g_smoke_mode && IsWindowVisible(window)) {
-                const auto diagnostic = g_settings_audio_worker.take();
-                if (diagnostic) {
-                    const std::wstring summary = axv::audio_inventory_summary(*diagnostic);
-                    SetWindowTextW(g_audio_status, summary.c_str());
+                if (g_settings_manual_refresh.retry_ready(g_settings_audio_worker.busy())) {
+                    if (g_settings_audio_worker.request()) {
+                        g_settings_manual_refresh.started();
+                        SetWindowTextW(g_audio_status,
+                            L"Consultando dispositivos do Windows...");
+                    }
+                } else if (!g_settings_manual_refresh.pending()) {
+                    const auto diagnostic = g_settings_audio_worker.take();
+                    if (diagnostic) {
+                        const std::wstring summary = axv::audio_inventory_summary(*diagnostic);
+                        SetWindowTextW(g_audio_status, summary.c_str());
+                    }
                 }
             }
             // Drain or restart without blocking the Win32 message loop.
@@ -1266,6 +1294,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_audio_worker.invalidate();
         g_audio_manual_refresh.cancel();
         g_settings_audio_worker.invalidate();
+        g_settings_manual_refresh.cancel();
         remove_tray(window);
         g_layout.clear();
         if (g_font_regular) DeleteObject(g_font_regular);
@@ -1296,7 +1325,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && std::wcscmp(command_line, L"--ui-smoke") == 0;
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.47",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.49",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
@@ -1331,7 +1360,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(kAudioDevicesButton, BN_CLICKED),
                      reinterpret_cast<LPARAM>(GetDlgItem(window, kAudioDevicesButton)));
         const bool settings_audio_smoke_ok = g_settings_audio_smoke_requested &&
-            !g_settings_audio_worker.busy();
+            !g_settings_audio_worker.busy() &&
+            !g_settings_manual_refresh.pending();
         ok = ok && account_invalid_ok && account_valid_ok && settings_audio_smoke_ok;
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(kShowDial, BN_CLICKED),
                      reinterpret_cast<LPARAM>(GetDlgItem(window, kShowDial)));
