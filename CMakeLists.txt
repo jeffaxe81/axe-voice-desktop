@@ -157,6 +157,18 @@ if(BUILD_TESTING)
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/fakes")
   target_compile_features(test_baresip_sdk_single_owner PRIVATE cxx_std_17)
   add_test(NAME baresip_sdk_single_owner COMMAND test_baresip_sdk_single_owner)
+  add_executable(test_baresip_sdk_call_port
+    tests/test_baresip_sdk_call_port.cpp
+    src/baresip_sdk_event_adapter.cpp)
+  target_include_directories(test_baresip_sdk_call_port PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fakes")
+  target_compile_features(test_baresip_sdk_call_port PRIVATE cxx_std_17)
+  if(MSVC)
+    target_compile_options(test_baresip_sdk_call_port PRIVATE /utf-8 /W4)
+  endif()
+  target_link_libraries(test_baresip_sdk_call_port PRIVATE axv_sip_address)
+  add_test(NAME baresip_sdk_call_port COMMAND test_baresip_sdk_call_port)
+
   add_executable(test_baresip_sdk_epochs tests/test_baresip_sdk_epochs.cpp
     src/baresip_sdk_event_adapter.cpp)
   target_include_directories(test_baresip_sdk_epochs PRIVATE
@@ -230,6 +242,7 @@ set_tests_properties(ui_smoke ui_blackbox PROPERTIES LABELS "blackbox")
 set_tests_properties(integration_sip_safety baresip_sdk_abi_probe windows_process sip_runtime_session_guard
   baresip_sdk_provenance
   sip_event_projection baresip_event_mailbox baresip_callback_ingress
-  baresip_callback_lifecycle baresip_sdk_event_adapter baresip_sdk_single_owner baresip_sdk_epochs
+  baresip_callback_lifecycle baresip_sdk_event_adapter baresip_sdk_single_owner
+  baresip_sdk_call_port baresip_sdk_epochs
   call_command_authorization sip_command_executor PROPERTIES LABELS "integration")
 set_target_properties(AXEVoice PROPERTIES OUTPUT_NAME "AXE-Voice")
