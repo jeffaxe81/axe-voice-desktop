@@ -1,4 +1,5 @@
 #include "../src/baresip_native_registration_host.h"
+#include "../src/baresip_native_ua_factory.h"
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -29,6 +30,10 @@ static bool sdk_registered=false;
 static std::atomic<bool> wrong_owner{false},emit_ok{false},emit_shutdown{false};
 static std::atomic<bool> deny_init{false},deny_push{false};
 static std::atomic<bool> confirm_on_register{false};
+static std::atomic<bool> deny_ua_alloc{false}, partial_ua_alloc{false};
+static std::atomic<unsigned> allocated_ua{0}, freed_ua{0};
+static std::string last_account_aor; // Test-only: never enters application logs.
+
 static std::atomic<unsigned> native_register{0},native_unregister{0},
                              callbacks_added{0},callbacks_removed{0},
                              libre_started{0},libre_closed{0},queues_freed{0};
@@ -111,6 +116,24 @@ extern "C" void bevent_unregister(bevent_h* fn) {
 extern "C" ua* bevent_get_ua(const bevent* ev){return ev?ev->owner:nullptr;}
 extern "C" call* bevent_get_call(const bevent* ev){
     return ev?ev->active_call:nullptr;
+}
+extern "C" int ua_alloc(ua** out, const char* aor) {
+    if (std::this_thread::get_id()!=owner_thread || !out || !aor) {
+        wrong_owner=true;
+        return 70;
+    }
+    if (deny_ua_alloc) { *out=nullptr; return 71; }
+    last_account_aor=aor;
+    *out=&selected;
+    ++allocated_ua;
+    return partial_ua_alloc ? 72 : 0;
+}
+extern "C" unsigned ua_destroy(ua* account) {
+    if (std::this_thread::get_id()!=owner_thread ||
+        account!=&selected || event_handler || sdk_registered)
+        wrong_owner=true;
+    ++freed_ua;
+    return 0;
 }
 extern "C" bool ua_isregistered(const ua* account) {
     return account==&selected && sdk_registered;
@@ -220,7 +243,76 @@ static int test_owned_ua_lifecycle() {
     return 0;
 }
 
+// SDK UA factory test. The SDK below is a fake: no socket, password,
+// TLS negotiation, RTP, or real account authentication occurs.
+static int test_sdk_native_factory() {
+    using namespace axv;
+    const NativeUaIdentity good{"1001","pbx.example.com",5061,true};
+    const auto aor=native_ua_safe_aor(good);
+    if (!aor || *aor!="<sip:1001@pbx.example.com:5061;transport=tls>")
+        return 201;
+    if (native_ua_safe_aor({"user:secret","pbx.example.com",5061,true}) ||
+        native_ua_safe_aor({"1001","pbx.example.com;evil",5061,true}) ||
+        native_ua_safe_aor({"1001","pbx.example.com",0,true}) ||
+        native_ua_safe_aor({"1001","pbx.example.com",5060,false}) ||
+        native_ua_safe_aor({"1001","-pbx.example.com",5061,true}) ||
+        native_ua_safe_aor({"1001","pbx..example.com",5061,true}) ||
+        native_ua_safe_aor({"1001@other","pbx.example.com",5061,true}) ||
+        native_ua_safe_aor({"1001","pbx.example.com\nctrl_tcp",5061,true}) ||
+        native_ua_safe_aor({"1001",std::string(64,'a')+".example",5061,true}))
+        return 202;
+
+    BaresipNativeRegistrationHost host(
+        BaresipNativeUaFactory::make_owner_hooks(good), {}, 5ms);
+    if (!host.start() || !host.snapshot().account_provisioned ||
+        allocated_ua!=1 || freed_ua || last_account_aor!=*aor)
+        return 203;
+    const auto generation=host.generation();
+    confirm_on_register=true;
+    std::thread ui([&] {
+        if (!host.submit_for_generation(generation, 2000)) wrong_owner=true;
+    });
+    ui.join();
+    if (!await_event(host,RegistrationDispatchKind::Confirmed) ||
+        native_register!=1 || !host.snapshot().account_provisioned)
+        return 204;
+    if (!host.stop() || host.snapshot().account_provisioned ||
+        host.snapshot().running || host.generation() ||
+        allocated_ua!=1 || freed_ua!=1 || native_unregister!=1)
+        return 205;
+    confirm_on_register=false;
+    deny_ua_alloc=true;
+    if (host.start() || host.snapshot().account_provisioned ||
+        host.snapshot().reactor_fault!=LibreReactorFault::HookFailed ||
+        allocated_ua!=1 || freed_ua!=1 || host.submit(2000))
+        return 206;
+    deny_ua_alloc=false;
+    partial_ua_alloc=true;
+    if (host.start() || host.snapshot().account_provisioned ||
+        host.snapshot().reactor_fault!=LibreReactorFault::HookFailed ||
+        allocated_ua!=2 || freed_ua!=2) return 207;
+    partial_ua_alloc=false;
+    if (!host.start() || host.generation()<=generation ||
+        host.submit_for_generation(generation,2000) ||
+        allocated_ua!=3 || !host.snapshot().account_provisioned)
+        return 208;
+    if (!host.stop() || freed_ua!=3) return 209;
+
+    BaresipNativeRegistrationHost invalid(
+        BaresipNativeUaFactory::make_owner_hooks(
+            {"malicious@domain","pbx.example.com",5061,true}),{},5ms);
+    if (invalid.start() || invalid.snapshot().account_provisioned ||
+        invalid.snapshot().reactor_fault!=LibreReactorFault::HookFailed ||
+        allocated_ua!=3 || freed_ua!=3) return 210;
+    if (wrong_owner || callbacks_added!=callbacks_removed ||
+        libre_started!=libre_closed || queues_freed!=libre_closed)
+        return 211;
+    return 0;
+}
+
 int main(int argc, char** argv) {
+    if (argc==2 && std::string(argv[1])=="--sdk-ua")
+        return test_sdk_native_factory();
     if (argc==2 && std::string(argv[1])=="--owned-ua")
         return test_owned_ua_lifecycle();
     using namespace axv;
