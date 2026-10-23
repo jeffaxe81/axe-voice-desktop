@@ -290,3 +290,27 @@ queue owned by the `re_main` thread. The C++ ABI contract checks
 the function pointer types; an optional real-library executable link
 probe catches unresolved imports. Default Windows CI remains offline and
 uses test-only headers; nothing is connected to the GUI yet.
+
+
+## Real libre event-loop host — optional, no SIP
+
+`BaresipNativeLibreReactor` creates a dedicated native-loop owner thread.
+The thread calls the audited libre API `libre_init()`,
+`mqueue_alloc()`, `tmr_init()`, periodic `tmr_start()`, and
+`re_main()`. A foreign thread may only `wake()` via
+`mqueue_push()`. Its native message handler and periodic timer invoke
+owner-thread hooks; stop requests are delivered through the native
+queue and the timer can also call `re_cancel()` on the owner.
+Native queue/timer cleanup and `libre_close()` run on that thread.
+
+An offline fake-libre test verifies owner identity, cross-thread wake,
+timer-driven polling, shutdown/restart, and initialization failures.
+When **AXV_BUILD_NATIVE_BARESIP_ADAPTER=ON** with audited/pinned
+libraries, the separate `axv_native_libre_reactor_smoke` binary
+compiles and runs against the REAL libre `re_main` with no account
+creation or SIP traffic.
+
+**Scope:** this is the actual libre reactor primitive, NOT initialization
+of the Baresip core, a provisioned UA, or the registration dispatcher
+wired into that core. The UI remains disconnected, and no call/RTP
+features are enabled. The default Windows CI uses fake libre.
