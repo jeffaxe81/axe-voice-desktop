@@ -88,3 +88,10 @@
 - Callback não bloqueante agenda mensagem no loop Win32, reutilizando debounce existente.
 - Encerramento explícito do callback antes da destruição da janela.
 - Testes de notificação COM/filtragem com janela isolada e smoke da interface sem hardware.
+
+### v0.48.0 — Saídas independentes para toque e voz
+
+- Três listas na aba ÁUDIO (microfone, áudio da conversa, campainha).
+- Botão INVERTER TOQUE/VOZ prepara dois modos sem inferir se o endpoint é PC ou headset.
+- Recuperação isolada das duas saídas em caso de desconexão, com estado somente em memória.
+- Novos testes puros de roteamento, UI smoke com saídas simuladas e teste de caixa-preta sem hardware; não há reprodução SIP.
