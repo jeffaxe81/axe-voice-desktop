@@ -88,6 +88,13 @@ if(BUILD_TESTING)
   add_executable(test_baresip_event_mailbox tests/test_baresip_event_mailbox.cpp)
   target_compile_features(test_baresip_event_mailbox PRIVATE cxx_std_17)
   add_test(NAME baresip_event_mailbox COMMAND test_baresip_event_mailbox)
+  add_executable(test_sip_batch_bounds tests/test_sip_batch_bounds.cpp)
+  target_compile_features(test_sip_batch_bounds PRIVATE cxx_std_17)
+  add_test(NAME sip_batch_bounds COMMAND test_sip_batch_bounds)
+  add_executable(test_sip_dial_matrix tests/test_sip_dial_matrix.cpp)
+  target_compile_features(test_sip_dial_matrix PRIVATE cxx_std_17)
+  target_link_libraries(test_sip_dial_matrix PRIVATE axv_sip_address)
+  add_test(NAME sip_dial_matrix COMMAND test_sip_dial_matrix)
   add_executable(test_sip_event_projection tests/test_sip_event_projection.cpp)
   target_compile_features(test_sip_event_projection PRIVATE cxx_std_17)
   add_test(NAME sip_event_projection COMMAND test_sip_event_projection)
@@ -184,7 +191,7 @@ foreach(axv_test IN LISTS axv_registered_tests)
   set_tests_properties("${axv_test}" PROPERTIES LABELS "unit")
 endforeach()
 set_tests_properties(ui_smoke ui_blackbox PROPERTIES LABELS "blackbox")
-set_tests_properties(integration_sip_safety windows_process sip_runtime_session_guard
+set_tests_properties(integration_sip_safety sip_batch_bounds windows_process sip_runtime_session_guard
   baresip_sdk_provenance
   sip_event_projection baresip_event_mailbox baresip_callback_ingress
   baresip_callback_lifecycle baresip_sdk_event_adapter baresip_sdk_epochs
