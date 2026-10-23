@@ -65,3 +65,11 @@ G.711, G.722 e Opus são alvos do MVP, ainda não homologados; G.729 exige avali
 ## Histórico/licenciamento
 
 O histórico do repositório inclui pesquisa da baseline MicroSIP/PJSIP sob GPL, que não será usada como backend proprietário sem auditoria de licenças. Antes da distribuição comercial, avaliar dependências, licenças e isolamento do código. Nunca incluir segredos ou credenciais SIP reais no Git.
+
+## v0.46.0 — Atualizacao de headset por notificacao Windows
+
+O painel ÁUDIO reage a eventos `WM_DEVICECHANGE`, agrupa notificações com debounce de 400 ms e inspeciona dispositivos ativos somente quando a aba está visível. Reabrir a aba força atualização imediata. A seleção continua efêmera e não é aplicada ao motor Baresip. O botão manual continua disponível porque `WM_DEVICECHANGE` não é completo para alterações de endpoint padrão. Não há chamada SIP ou áudio RTP/SRTP funcional.
+
+## v0.47.0 — Notificações Core Audio de dispositivos padrão
+
+O painel ÁUDIO agora registra um `IMMNotificationClient` oficial do Windows para detectar mudanças no dispositivo padrão de comunicação, além de adição, remoção, estado e propriedades de endpoints. O callback apenas envia uma mensagem interna à interface; o timer existente agrupa alterações e atualiza o inventário do Windows, sem acessar o Core Audio no callback. A subscrição é encerrada ao destruir a janela; falhas no registro não impedem atualização manual ou via `WM_DEVICECHANGE`. Não utiliza dados dos endpoints fora da memória, não configura áudio do Baresip nem habilita chamadas.

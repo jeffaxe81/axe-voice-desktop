@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <dbt.h>
 #include <shlobj.h>
 #include <shellapi.h>
 #include <commctrl.h>
@@ -21,6 +22,8 @@
 #include "baresip_modules.h"
 #include "audio_devices.h"
 #include "audio_selection_feedback.h"
+#include "audio_hotplug_debounce.h"
+#include "audio_endpoint_watcher.h"
 #include "windows_process.h"
 #include "shutdown_policy.h"
 #include <string>
@@ -80,6 +83,7 @@ constexpr int kTransferFuture = 2303;
 constexpr int kHangupFuture = 2304;
 constexpr int kFocusNumber = 2305;
 constexpr UINT kTrayCallback = WM_APP + 41;
+constexpr UINT kAudioEndpointNotification = WM_APP + 42;
 constexpr UINT kTrayIconId = 1;
 constexpr UINT kTrayOpen = 3001;
 constexpr UINT kTrayExit = 3002;
@@ -100,6 +104,8 @@ std::vector<axv::AudioEndpoint> g_audio_inputs;
 std::vector<axv::AudioEndpoint> g_audio_outputs;
 std::wstring g_selected_input_id;
 std::wstring g_selected_output_id;
+axv::AudioHotplugDebounce g_audio_hotplug;
+axv::AudioEndpointWatcher g_audio_endpoint_watcher;
 axv::WindowsProcess g_baresip_process;
 axv::ProcessStatus g_last_process_state = axv::ProcessStatus::Stopped;
 axv::ShutdownDeadline g_shutdown;
@@ -515,6 +521,7 @@ axv::AudioSelectionRefresh fill_audio_combo(
 }
 
 void refresh_audio_panel() {
+    g_audio_hotplug.clear();
     const auto inventory = axv::inspect_windows_audio_devices();
     if (inventory.error != axv::AudioInventoryError::None) {
         g_audio_inputs.clear(); g_audio_outputs.clear();
@@ -703,6 +710,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         show_page(window, 0);
         apply_compact_layout(window);
         refresh_runtime_banner(g_baresip_process.poll());
+        if (!g_smoke_mode) g_audio_endpoint_watcher.start(window, kAudioEndpointNotification);
         SetTimer(window, kProcessTimer, 100, nullptr);
         return 0;
     }
@@ -743,6 +751,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             }
             if (control == kRefreshHeadsetsButton && g_page == 2) {
                 if (!g_smoke_mode) refresh_audio_panel();
+                else g_audio_hotplug.clear();
                 return 0;
             }
             if (control == kShowAudio) {
@@ -753,6 +762,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 }
                 show_page(window, 2);
                 if (!g_smoke_mode) refresh_audio_panel();
+                else g_audio_hotplug.clear();
                 return 0;
             }
             if (control == kShowSettings) {
@@ -868,6 +878,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         }
         if (LOWORD(wparam) == kRefreshHeadsetsButton && HIWORD(wparam) == BN_CLICKED) {
             if (!g_smoke_mode) refresh_audio_panel();
+            else g_audio_hotplug.clear();
             return 0;
         }
         if (HIWORD(wparam) == CBN_SELCHANGE) {
@@ -980,6 +991,26 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             return 0;
         }
         break;
+    case WM_APP + 42:
+        // IMMNotificationClient callbacks post only this opaque wake-up.
+        // The UI loop owns all state changes and performs delayed inventory.
+        g_audio_hotplug.notify(GetTickCount64());
+        if (g_page == 2 && g_headset_status)
+            SetWindowTextW(g_headset_status,
+                L"Dispositivo de audio alterado. Atualizando...");
+        return 0;
+    case WM_DEVICECHANGE:
+        // Best-effort notification; not a replacement for IMMNotificationClient.
+        if (wparam == DBT_DEVNODES_CHANGED ||
+            wparam == DBT_DEVICEARRIVAL ||
+            wparam == DBT_DEVICEREMOVECOMPLETE ||
+            wparam == DBT_CONFIGCHANGED) {
+            g_audio_hotplug.notify(GetTickCount64());
+            if (g_page == 2 && g_headset_status)
+                SetWindowTextW(g_headset_status,
+                    L"Alteracao de dispositivos detectada. Atualizando...");
+        }
+        return TRUE;
     case WM_SYSCOLORCHANGE:
     case WM_THEMECHANGED:
     case WM_SETTINGCHANGE:
@@ -1048,6 +1079,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
     }
     case WM_TIMER:
         if (wparam == kProcessTimer) {
+            if (g_audio_hotplug.consume_if_due(GetTickCount64(), g_page == 2) &&
+                !g_smoke_mode) refresh_audio_panel();
             refresh_runtime_banner(g_baresip_process.poll());
             if (g_shutdown.pending()) {
                 const auto state = g_baresip_process.poll();
@@ -1106,6 +1139,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         DestroyWindow(window);
         return 0;
     case WM_DESTROY:
+        g_audio_endpoint_watcher.stop();
         g_sip_session_guard.revoke(axv::RuntimeProcess::Stopped, g_native_event_mailbox, g_sip_projection);
         KillTimer(window, kProcessTimer);
         remove_tray(window);
@@ -1139,7 +1173,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.42",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.47",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
@@ -1262,7 +1296,21 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             ui_color(axv::UiRole::SelectedText) == GetSysColor(COLOR_HIGHLIGHTTEXT) &&
             !IsWindowEnabled(GetDlgItem(window, kCallButton));
         g_high_contrast = original_contrast;
-        ok=ok && audio_ok && readiness_ok && contrast_ok;
+        SendMessageW(window, kAudioEndpointNotification, 0, 0);
+        const bool core_audio_signal_ok = g_audio_hotplug.pending() &&
+            !IsWindowEnabled(GetDlgItem(window, kCallButton));
+        g_audio_hotplug.clear();
+        SendMessageW(window, WM_DEVICECHANGE, DBT_DEVNODES_CHANGED, 0);
+        wchar_t hotplug_message[128]{};
+        GetWindowTextW(g_headset_status, hotplug_message, 128);
+        const bool hotplug_smoke_ok = g_audio_hotplug.pending() &&
+            std::wstring_view(hotplug_message).find(L"detectada") != std::wstring_view::npos &&
+            !g_audio_hotplug.consume_if_due(GetTickCount64(), false) &&
+            g_audio_hotplug.consume_if_due(GetTickCount64() +
+                axv::AudioHotplugDebounce::kQuietPeriodMs, true) &&
+            !IsWindowEnabled(GetDlgItem(window, kCallButton));
+        ok=ok && audio_ok && core_audio_signal_ok && hotplug_smoke_ok &&
+            readiness_ok && contrast_ok;
         // DPI reflow is synthetic; no display settings, HKCU or SIP are touched.
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kShowDial,BN_CLICKED),
                      reinterpret_cast<LPARAM>(GetDlgItem(window,kShowDial)));

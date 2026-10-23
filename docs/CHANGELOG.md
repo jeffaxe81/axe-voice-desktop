@@ -94,3 +94,10 @@
 - README principal.
 - Estrutura documental.
 - Estratégia inicial de branches.
+
+### v0.47.0 — Monitoramento real de endpoints de áudio
+
+- Registrado `IMMNotificationClient` para detectar mudanças de dispositivo padrão de comunicações e hotplug de endpoints.
+- Callback não bloqueante agenda mensagem no loop Win32, reutilizando debounce existente.
+- Encerramento explícito do callback antes da destruição da janela.
+- Testes de notificação COM/filtragem com janela isolada e smoke da interface sem hardware.
