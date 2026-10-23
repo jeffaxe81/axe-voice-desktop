@@ -159,11 +159,18 @@ public:
     // of those callbacks. The native adapter must serialize its registrations
     // with begin()/revoke_and_wait() and maintain object lifetime externally.
     void revoke_and_wait() {
-        std::lock_guard<std::mutex> lock(lifecycle_);
-        fence_.close();
-        ingress_.revoke();
-        fence_.wait();
-        current_ = {};
+        // Do not hold lifecycle_ while waiting for admitted callbacks:
+        // an in-flight callback may need reject_current() to finish.
+        {
+            std::lock_guard<std::mutex> lock(lifecycle_);
+            fence_.close();
+            ingress_.revoke();
+        }
+        fence_.wait(); // stop() only, never on a native callback thread.
+        {
+            std::lock_guard<std::mutex> lock(lifecycle_);
+            current_ = {};
+        }
     }
 
 private:
