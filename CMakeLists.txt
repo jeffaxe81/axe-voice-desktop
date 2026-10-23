@@ -161,6 +161,9 @@ if(BUILD_TESTING)
     "-DAXV_EXE=$<TARGET_FILE:AXEVoice>"
     "-DAXV_OUTPUT=$<TARGET_FILE_DIR:AXEVoice>/AXE-Voice-LAB.sha256"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/verify-lab-artifact.cmake")
+  add_test(NAME lab_artifact_manifest_negative COMMAND "${CMAKE_COMMAND}"
+    "-DAXV_NEGATIVE_DIR=$<TARGET_FILE_DIR:AXEVoice>/manifest-negative-test"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/test-lab-artifact-negative.cmake")
   add_executable(test_dial_authorization tests/test_dial_authorization.cpp)
   target_compile_features(test_dial_authorization PRIVATE cxx_std_17)
   target_link_libraries(test_dial_authorization PRIVATE axv_sip_address)
@@ -287,5 +290,5 @@ set_tests_properties(integration_sip_safety baresip_sdk_abi_probe windows_proces
   baresip_callback_lifecycle baresip_sdk_event_adapter baresip_sdk_single_owner baresip_sdk_epochs
   call_command_authorization sip_command_executor integration_incoming_ringtone
   integration_ringtone_playback_control integration_ringtone_worker integration_ring_fencing_matrix
-  lab_artifact_manifest PROPERTIES LABELS "integration")
+  lab_artifact_manifest lab_artifact_manifest_negative PROPERTIES LABELS "integration")
 set_target_properties(AXEVoice PROPERTIES OUTPUT_NAME "AXE-Voice")
