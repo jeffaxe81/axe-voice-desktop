@@ -16,6 +16,18 @@ jobs:
       - name: Verify quality gates (unit, blackbox, integration)
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/test-quality-gates.ps1
+      - name: Package Windows laboratory ZIP
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/package-windows-lab.ps1
+      - name: Test laboratory package integrity
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/test-package-windows-lab.ps1
+      - name: Publish laboratory ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: AXE-Voice-Windows-Lab-Package
+          path: dist/AXE-Voice-Windows-Lab-v*.zip
+          if-no-files-found: error
       - name: Publish executable
         uses: actions/upload-artifact@v4
         with:
