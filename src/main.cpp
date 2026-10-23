@@ -28,6 +28,7 @@
 #include "audio_preview_target.h"
 #include "audio_preview_cancel_policy.h"
 #include "audio_preview_levels.h"
+#include "audio_route_change_fence.h"
 #include "windows_process.h"
 #include "shutdown_policy.h"
 #include <string>
@@ -140,6 +141,7 @@ axv::SipEventProjection g_sip_projection;
 axv::SipRuntimeSessionGuard g_sip_session_guard;
 axv::IncomingRingtoneCoordinator g_incoming_ring_coordinator;
 axv::DisabledIncomingRingtoneSink g_incoming_ring_sink;
+axv::AudioRouteChangeFence g_audio_route_fence;
 
 
 bool g_dark = true;
@@ -557,7 +559,8 @@ void update_swap_button() {
     if (!parent) return;
     const auto plan = axv::plan_audio_role_swap(
         g_audio_outputs, g_selected_output_id, g_selected_ringtone_id);
-    EnableWindow(GetDlgItem(parent, kSwapAudioRolesButton), plan.can_swap);
+    EnableWindow(GetDlgItem(parent, kSwapAudioRolesButton),
+                 plan.can_swap && !g_preview_running.load() && !g_preview_pending);
 }
 
 void update_audio_preview_buttons(HWND window) {
@@ -618,6 +621,92 @@ void refresh_audio_panel() {
     update_audio_preview_buttons(GetParent(g_ringtone_audio_combo));
     SetWindowTextW(g_headset_status,
         axv::audio_routing_preview_feedback({microphone, speaker, ringtone}));
+}
+
+bool defer_route_while_preview_active(HWND window, const axv::AudioRouteChange& change) {
+    if (!g_audio_route_fence.defer_if_busy(change,
+            g_preview_running.load() || g_preview_pending))
+        return false;
+    // The old endpoint must be fully stopped (worker joined) before changing
+    // any visible route, including the two independently selected outputs.
+    g_preview_cancel.store(true);
+    SetWindowTextW(g_headset_status,
+        L"Parando teste local antes de mudar dispositivo. Aguarde confirmacao.");
+    update_swap_button();
+    update_audio_preview_buttons(window);
+    return true;
+}
+
+void apply_audio_route_change(HWND window, const axv::AudioRouteChange& change) {
+    using Kind = axv::AudioRouteChangeKind;
+    if (change.kind == Kind::None) return;
+    if (change.kind == Kind::Refresh) {
+        refresh_audio_panel();
+        return;
+    }
+    if (change.kind == Kind::Swap) {
+        const auto plan = axv::plan_audio_role_swap(
+            g_audio_outputs, g_selected_output_id, g_selected_ringtone_id);
+        if (!plan.can_swap) {
+            update_swap_button();
+            SetWindowTextW(g_headset_status,
+                L"Troca indisponivel: escolha duas saidas ativas e distintas. Sem audio SIP.");
+            return;
+        }
+        (void)g_incoming_ring_coordinator.revoke(g_incoming_ring_sink);
+        g_selected_output_id = plan.next_call_id;
+        g_selected_ringtone_id = plan.next_ringtone_id;
+        SendMessageW(g_output_audio_combo, CB_SETCURSEL,
+                     static_cast<WPARAM>(plan.next_call_index), 0);
+        SendMessageW(g_ringtone_audio_combo, CB_SETCURSEL,
+                     static_cast<WPARAM>(plan.next_ringtone_index), 0);
+        update_swap_button();
+        update_audio_preview_buttons(window);
+        SetWindowTextW(g_headset_status,
+            L"Toque e voz invertidos apos parada confirmada. Sem audio SIP.");
+        return;
+    }
+    HWND combo = change.kind == Kind::Microphone ? g_input_audio_combo :
+                 change.kind == Kind::Voice ? g_output_audio_combo : g_ringtone_audio_combo;
+    const auto& devices = change.kind == Kind::Microphone ? g_audio_inputs : g_audio_outputs;
+    int index = -1;
+    if (!change.endpoint_id.empty() && change.endpoint_id.size() <= 4096) {
+        for (std::size_t i = 0; i < devices.size(); ++i)
+            if (devices[i].id == change.endpoint_id) {
+                index = static_cast<int>(i);
+                break;
+            }
+    }
+    if (index < 0) {
+        // Never route to a stale index after a hotplug or inventory refresh.
+        refresh_audio_panel();
+        SetWindowTextW(g_headset_status,
+            L"Dispositivo nao disponivel. Lista atualizada; selecione novamente.");
+        return;
+    }
+    if (change.kind != Kind::Microphone)
+        (void)g_incoming_ring_coordinator.revoke(g_incoming_ring_sink);
+    std::wstring& selected = change.kind == Kind::Microphone ? g_selected_input_id :
+                             change.kind == Kind::Voice ? g_selected_output_id :
+                             g_selected_ringtone_id;
+    selected = change.endpoint_id;
+    SendMessageW(combo, CB_SETCURSEL, static_cast<WPARAM>(index), 0);
+    const auto routing = axv::preview_audio_routing(
+        g_audio_inputs, g_audio_outputs,
+        g_selected_input_id, g_selected_output_id, g_selected_ringtone_id);
+    SetWindowTextW(g_headset_status, axv::audio_routing_preview_feedback(routing));
+    update_swap_button();
+    update_audio_preview_buttons(window);
+}
+
+void restore_audio_combo_selection(HWND combo,
+    const std::vector<axv::AudioEndpoint>& devices, const std::wstring& selected_id) {
+    for (std::size_t i = 0; i < devices.size(); ++i)
+        if (devices[i].id == selected_id) {
+            SendMessageW(combo, CB_SETCURSEL, static_cast<WPARAM>(i), 0);
+            return;
+        }
+    SendMessageW(combo, CB_SETCURSEL, static_cast<WPARAM>(-1), 0);
 }
 
 axv::RuntimeProcess observed_process(axv::ProcessStatus status, bool stopping) {
@@ -866,30 +955,15 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 return 0;
             }
             if (control == kRefreshHeadsetsButton && g_page == 2) {
-                if (!g_smoke_mode) refresh_audio_panel();
+                if (!g_smoke_mode && !defer_route_while_preview_active(
+                        window, {axv::AudioRouteChangeKind::Refresh, {}}))
+                    refresh_audio_panel();
                 return 0;
             }
             if (control == kSwapAudioRolesButton && g_page == 2) {
-                if (g_preview_running.load()) g_preview_cancel.store(true);
-                const auto plan = axv::plan_audio_role_swap(
-                    g_audio_outputs, g_selected_output_id, g_selected_ringtone_id);
-                if (!plan.can_swap) {
-                    update_swap_button();
-                    SetWindowTextW(g_headset_status,
-                        L"Troca indisponivel: escolha duas saidas ativas e distintas. Sem audio SIP.");
-                } else {
-                    (void)g_incoming_ring_coordinator.revoke(g_incoming_ring_sink); // Stop previous endpoint first.
-                    g_selected_output_id = plan.next_call_id;
-                    g_selected_ringtone_id = plan.next_ringtone_id;
-                    SendMessageW(g_output_audio_combo, CB_SETCURSEL,
-                                 static_cast<WPARAM>(plan.next_call_index), 0);
-                    SendMessageW(g_ringtone_audio_combo, CB_SETCURSEL,
-                                 static_cast<WPARAM>(plan.next_ringtone_index), 0);
-                    update_swap_button();
-                    update_audio_preview_buttons(window);
-                    SetWindowTextW(g_headset_status,
-                        L"Toque e voz invertidos: apenas preferencia local, sem audio SIP.");
-                }
+                const axv::AudioRouteChange route{axv::AudioRouteChangeKind::Swap, {}};
+                if (!defer_route_while_preview_active(window, route))
+                    apply_audio_route_change(window, route);
                 return 0;
             }
             if (control == kShowAudio) {
@@ -899,7 +973,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                     save_ui_preferences();
                 }
                 show_page(window, 2);
-                if (!g_smoke_mode) refresh_audio_panel();
+                if (!g_smoke_mode && !defer_route_while_preview_active(
+                        window, {axv::AudioRouteChangeKind::Refresh, {}}))
+                    refresh_audio_panel();
                 return 0;
             }
             if (control == kShowSettings) {
@@ -1014,7 +1090,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             return 0;
         }
         if (LOWORD(wparam) == kRefreshHeadsetsButton && HIWORD(wparam) == BN_CLICKED) {
-            if (!g_smoke_mode) refresh_audio_panel();
+            if (!g_smoke_mode && !defer_route_while_preview_active(
+                    window, {axv::AudioRouteChangeKind::Refresh, {}}))
+                refresh_audio_panel();
             return 0;
         }
         if ((LOWORD(wparam) == kTestRingtoneButton ||
@@ -1085,20 +1163,18 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 const auto& devices = id == kInputAudioCombo ? g_audio_inputs : g_audio_outputs;
                 const LRESULT index = SendMessageW(combo, CB_GETCURSEL, 0, 0);
                 if (index >= 0 && static_cast<std::size_t>(index) < devices.size()) {
-                    if (id != kInputAudioCombo && g_preview_running.load())
-                        g_preview_cancel.store(true);
-                    if (id == kRingtoneAudioCombo)
-                        (void)g_incoming_ring_coordinator.revoke(g_incoming_ring_sink);
-                    std::wstring& selected = id == kInputAudioCombo ? g_selected_input_id :
-                        id == kOutputAudioCombo ? g_selected_output_id : g_selected_ringtone_id;
-                    selected = devices[static_cast<std::size_t>(index)].id;
-                    const auto routing = axv::preview_audio_routing(
-                        g_audio_inputs, g_audio_outputs,
-                        g_selected_input_id, g_selected_output_id, g_selected_ringtone_id);
-                    SetWindowTextW(g_headset_status,
-                        axv::audio_routing_preview_feedback(routing));
-                    update_swap_button();
-                    update_audio_preview_buttons(window);
+                    const auto kind = id == kInputAudioCombo ? axv::AudioRouteChangeKind::Microphone :
+                        id == kOutputAudioCombo ? axv::AudioRouteChangeKind::Voice :
+                        axv::AudioRouteChangeKind::Ringtone;
+                    const axv::AudioRouteChange route{kind,
+                        devices[static_cast<std::size_t>(index)].id};
+                    if (defer_route_while_preview_active(window, route)) {
+                        const auto& current = id == kInputAudioCombo ? g_selected_input_id :
+                            id == kOutputAudioCombo ? g_selected_output_id : g_selected_ringtone_id;
+                        restore_audio_combo_selection(combo, devices, current);
+                    } else {
+                        apply_audio_route_change(window, route);
+                    }
                 }
                 return 0;
             }
@@ -1282,6 +1358,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                     : (voice ? L"Falha ao testar saida de VOZ ou formato de audio."
                              : L"Falha ao testar saida de TOQUE ou formato de audio."));
                 update_audio_preview_buttons(window);
+                // join() above is the STOP acknowledgement for the local WASAPI worker.
+                const auto route = g_audio_route_fence.take_after_stop_ack(true);
+                if (route.kind != axv::AudioRouteChangeKind::None)
+                    apply_audio_route_change(window, route);
             }
             refresh_runtime_banner(g_baresip_process.poll());
             if (g_shutdown.pending()) {
@@ -1345,6 +1425,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         // Stop cooperatively before waiting; worker never posts to a dead HWND.
         g_preview_cancel.store(true);
         if (g_preview_worker.joinable()) g_preview_worker.join();
+        g_audio_route_fence.clear();
         g_sip_session_guard.revoke(axv::RuntimeProcess::Stopped, g_native_event_mailbox, g_sip_projection);
         KillTimer(window, kProcessTimer);
         remove_tray(window);
