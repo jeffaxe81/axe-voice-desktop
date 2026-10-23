@@ -105,13 +105,31 @@ private:
             fail_closed();
             return;
         }
+        // Upstream emits SIPSESS_CONN/FAILED with bevent_sip_msg_emit:
+        // those are message events, NOT UA/call events. A rejected INVITE
+        // cannot be attributed to this UA through bevent_get_ua().
+        // Nor may foreign/unsupported event types be read as UA events.
+        switch (type) {
+        case BEVENT_REGISTERING:
+        case BEVENT_REGISTER_OK:
+        case BEVENT_REGISTER_FAIL:
+        case BEVENT_UNREGISTERING:
+        case BEVENT_SHUTDOWN:
+        case BEVENT_AUDIO_ERROR:
+        case BEVENT_CALL_INCOMING:
+        case BEVENT_CALL_OUTGOING:
+        case BEVENT_CALL_ESTABLISHED:
+        case BEVENT_CALL_CLOSED:
+            break;
+        default:
+            return;
+        }
         if (!event || bevent_get_ua(event) != owner_) return;
         if (type == BEVENT_SHUTDOWN) {
             fail_closed();
             return;
         }
         switch (type) {
-        case BEVENT_SIPSESS_FAILED:
         case BEVENT_AUDIO_ERROR:
             // Signaling/media failures must not leave a usable call state.
             // Only errors from the selected UA are allowed to revoke it.
