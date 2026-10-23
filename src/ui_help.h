@@ -10,6 +10,7 @@ inline constexpr wchar_t kFrontendHelp[] =
     L"Ctrl+R: Atualizar dispositivos (apenas em Audio)\n"
     L"Na aba Audio: INVERTER VOZ/TOQUE troca as preferencias locais.\n"
     L"TESTAR VOZ / TESTAR TOQUE: tom local em cada saida. Sem SIP.\n"
+    L"Durante o teste: PARAR VOZ / PARAR TOQUE interrompe o tom local.\n"
     L"Esc: Voltar ao teclado    F1: Esta ajuda\n"
     L"F2: Checklist local de prontidao\n\n"
     L"Os campos validam somente a sintaxe local.\n"

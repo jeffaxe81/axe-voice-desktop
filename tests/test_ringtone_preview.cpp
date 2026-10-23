@@ -1,5 +1,6 @@
 #include "../src/ringtone_preview.h"
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <vector>
@@ -38,5 +39,14 @@ int main() {
         render_ring_samples(left_right.data(), frames, 2, 0, RingSampleFormat::Float32) ||
         render_ring_samples(left_right.data(), frames, 2, 1000000, RingSampleFormat::Float32))
         return 9;
+    // Must cancel before opening a real endpoint/COM; CI remains hardware free.
+    std::atomic<bool> cancel{true};
+    if (!ring_preview_cancelled(&cancel) ||
+        play_selected_ringtone_preview(L"not-a-real-device", &cancel) !=
+            RingPreviewResult::Cancelled) return 10;
+    cancel.store(false);
+    if (ring_preview_cancelled(&cancel) || ring_preview_cancelled(nullptr)) return 11;
+    cancel.store(true);
+    if (play_selected_ringtone_preview(L"", &cancel) != RingPreviewResult::Cancelled) return 12;
     return 0;
 }
