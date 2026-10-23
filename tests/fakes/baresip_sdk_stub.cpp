@@ -14,3 +14,11 @@ extern "C" struct ua* bevent_get_ua(const struct bevent* event) {
 extern "C" struct call* bevent_get_call(const struct bevent* event) {
     return event ? event->active_call : nullptr;
 }
+
+extern "C" int ua_connect(struct ua*, struct call**, const char*,
+                          const char*, enum vidmode) { return 95; }
+extern "C" int ua_answer(struct ua*, struct call*, enum vidmode) {
+    return 95;
+}
+extern "C" void ua_hangup(struct ua*, struct call*, unsigned short,
+                          const char*) {}
