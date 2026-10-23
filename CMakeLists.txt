@@ -20,16 +20,36 @@ option(AXV_BUILD_NATIVE_BARESIP_ADAPTER
   "Compile isolated Baresip C API callback adapter (NOT linked into AXEVoice)" OFF)
 if(AXV_BUILD_NATIVE_BARESIP_ADAPTER)
   set(AXV_BARESIP_INCLUDE_DIR "" CACHE PATH "Audited Baresip SDK include path")
-  set(AXV_BARESIP_LIBRARY "" CACHE FILEPATH "Audited Baresip SDK library path")
-  if(NOT EXISTS "${AXV_BARESIP_INCLUDE_DIR}/baresip.h" OR
-     NOT EXISTS "${AXV_BARESIP_LIBRARY}")
-    message(FATAL_ERROR
-      "Native bridge requires explicitly audited Baresip headers and library")
-  endif()
+  set(AXV_BARESIP_LIBRARY "" CACHE FILEPATH "Audited Baresip SDK MSVC import library")
+  set(AXV_BARESIP_HEADER_SHA256 "" CACHE STRING "Audited baresip.h SHA-256")
+  set(AXV_BARESIP_LIBRARY_SHA256 "" CACHE STRING "Audited Baresip .lib SHA-256")
+  set(AXV_BARESIP_VERSION "" CACHE STRING "Audited BARESIP_VERSION macro value")
+  set(AXV_LIBRE_INCLUDE_DIR "" CACHE PATH "Audited libre/re include path")
+  set(AXV_LIBRE_LIBRARY "" CACHE FILEPATH "Audited libre/re MSVC import library")
+  set(AXV_LIBRE_HEADER_SHA256 "" CACHE STRING "Audited re.h SHA-256")
+  set(AXV_LIBRE_LIBRARY_SHA256 "" CACHE STRING "Audited libre/re .lib SHA-256")
+  set(AXV_REPOSITORY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
+  include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/axv_verify_baresip_sdk.cmake")
+  include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/axv_verify_libre_sdk.cmake")
+
+  # SDK remains entirely optional and is NEVER linked into AXEVoice GUI.
   add_library(axv_native_baresip_adapter STATIC src/baresip_sdk_event_adapter.cpp)
-  target_include_directories(axv_native_baresip_adapter PRIVATE "${AXV_BARESIP_INCLUDE_DIR}")
-  target_link_libraries(axv_native_baresip_adapter PUBLIC "${AXV_BARESIP_LIBRARY}")
+  target_include_directories(axv_native_baresip_adapter PRIVATE
+    "${AXV_LIBRE_INCLUDE_DIR}" "${AXV_BARESIP_INCLUDE_DIR}")
+  target_link_libraries(axv_native_baresip_adapter PUBLIC
+    "${AXV_BARESIP_LIBRARY}" "${AXV_LIBRE_LIBRARY}")
   target_compile_features(axv_native_baresip_adapter PRIVATE cxx_std_17)
+
+  # Unlike a static library alone, an EXE link probe must resolve the actual
+  # SDK symbols. Builds fail on ABI/header/import-library mismatches.
+  add_executable(axv_native_baresip_abi_probe src/baresip_sdk_abi_probe.cpp)
+  target_include_directories(axv_native_baresip_abi_probe PRIVATE
+    "${AXV_LIBRE_INCLUDE_DIR}" "${AXV_BARESIP_INCLUDE_DIR}")
+  target_compile_definitions(axv_native_baresip_abi_probe PRIVATE
+    AXV_BARESIP_AUDITED_VERSION="${AXV_BARESIP_VERSION}")
+  target_link_libraries(axv_native_baresip_abi_probe PRIVATE
+    "${AXV_BARESIP_LIBRARY}" "${AXV_LIBRE_LIBRARY}")
+  target_compile_features(axv_native_baresip_abi_probe PRIVATE cxx_std_17)
 endif()
 add_executable(AXEVoice WIN32 src/main.cpp)
 target_compile_features(AXEVoice PRIVATE cxx_std_17)
@@ -140,6 +160,24 @@ if(BUILD_TESTING)
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/fakes")
   target_compile_features(test_baresip_registration_lab_worker PRIVATE cxx_std_17)
   add_test(NAME baresip_registration_lab_worker COMMAND test_baresip_registration_lab_worker)
+  # ABI type-check is compiled with fake headers only, with no native SDK.
+  add_executable(test_baresip_sdk_abi_contract tests/test_baresip_sdk_abi_contract.cpp)
+  target_include_directories(test_baresip_sdk_abi_contract PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fakes")
+  target_compile_features(test_baresip_sdk_abi_contract PRIVATE cxx_std_17)
+  add_test(NAME baresip_sdk_abi_contract COMMAND test_baresip_sdk_abi_contract)
+  add_test(NAME baresip_sdk_integrity_preflight
+    COMMAND "${CMAKE_COMMAND}"
+      "-DAXV_REPOSITORY_ROOT=${CMAKE_CURRENT_SOURCE_DIR}"
+      "-DAXV_SCRATCH=${CMAKE_CURRENT_BINARY_DIR}/sdk-integrity-cts"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cmake/test_baresip_sdk_integrity.cmake")
+  add_test(NAME libre_sdk_integrity_preflight
+    COMMAND "${CMAKE_COMMAND}"
+      "-DAXV_REPOSITORY_ROOT=${CMAKE_CURRENT_SOURCE_DIR}"
+      "-DAXV_SCRATCH=${CMAKE_CURRENT_BINARY_DIR}/libre-integrity-cts"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cmake/test_libre_sdk_integrity.cmake")
+  set_tests_properties(baresip_sdk_integrity_preflight libre_sdk_integrity_preflight
+    PROPERTIES TIMEOUT 15)
   set_tests_properties(baresip_registration_lab_worker PROPERTIES TIMEOUT 15)
   set_tests_properties(baresip_registration_command_races PROPERTIES TIMEOUT 15)
   set_tests_properties(baresip_registration_command_dispatcher PROPERTIES TIMEOUT 15)
