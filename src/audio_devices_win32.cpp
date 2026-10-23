@@ -12,9 +12,9 @@
 
 namespace axv {
 namespace {
-std::wstring default_communications_id(IMMDeviceEnumerator* enumerator, EDataFlow flow) {
+std::wstring default_endpoint_id(IMMDeviceEnumerator* enumerator, EDataFlow flow, ERole role) {
     IMMDevice* device = nullptr;
-    if (FAILED(enumerator->GetDefaultAudioEndpoint(flow, eCommunications, &device)) || !device)
+    if (FAILED(enumerator->GetDefaultAudioEndpoint(flow, role, &device)) || !device)
         return {};
     LPWSTR id = nullptr;
     const HRESULT hr = device->GetId(&id);
@@ -50,7 +50,9 @@ bool collect(IMMDeviceEnumerator* enumerator, EDataFlow flow,
         collection->Release();
         return false;
     }
-    const std::wstring default_id = default_communications_id(enumerator, flow);
+    const std::wstring default_id = default_endpoint_id(enumerator, flow, eCommunications);
+    const std::wstring multimedia_id = flow == eRender
+        ? default_endpoint_id(enumerator, flow, eMultimedia) : std::wstring{};
     devices.clear();
     devices.reserve(total);
     bool ok = true;
@@ -69,6 +71,7 @@ bool collect(IMMDeviceEnumerator* enumerator, EDataFlow flow,
         CoTaskMemFree(id);
         item.name = friendly_name(device);
         item.default_communications = !default_id.empty() && item.id == default_id;
+        item.default_multimedia = !multimedia_id.empty() && item.id == multimedia_id;
         devices.push_back(std::move(item));
         device->Release();
     }
