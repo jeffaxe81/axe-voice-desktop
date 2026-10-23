@@ -508,8 +508,10 @@ axv::AudioSelectionRefresh fill_audio_combo(
         : axv::refresh_audio_selection(devices, selected_id);
     SendMessageW(combo, CB_RESETCONTENT, 0, 0);
     for (const auto& device : devices) {
-        const std::wstring title = (device.default_communications ? L"[PADRAO] " : L"") +
-                                   device.name;
+        const std::wstring prefix = ringtone
+            ? (device.default_multimedia ? L"[PADRAO TOQUE] " : L"")
+            : (device.default_communications ? L"[PADRAO] " : L"");
+        const std::wstring title = prefix + device.name;
         SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(title.c_str()));
     }
     EnableWindow(combo, selection.index >= 0);
