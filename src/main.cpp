@@ -1422,8 +1422,18 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             bounds.bottom-bounds.top==axv::dpi_pixels(kCompactHeight,144);
         SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(192,192),0);
         GetWindowRect(window,&bounds);
+        MONITORINFO smoke_monitor{};
+        smoke_monitor.cbSize = sizeof(smoke_monitor);
+        const HMONITOR smoke_display = MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
+        const int requested_mini_height = axv::dpi_pixels(kCompactHeight,192);
+        int expected_mini_height = requested_mini_height;
+        if (smoke_display && GetMonitorInfoW(smoke_display, &smoke_monitor)) {
+            const int work_height = smoke_monitor.rcWork.bottom-smoke_monitor.rcWork.top;
+            if (work_height > 0)
+                expected_mini_height = std::min(requested_mini_height, work_height);
+        }
         const bool compact_200_ok=g_dpi==192 && g_compact &&
-            bounds.bottom-bounds.top==axv::dpi_pixels(kCompactHeight,192);
+            bounds.bottom-bounds.top==expected_mini_height;
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kShowSettings,BN_CLICKED),
                      reinterpret_cast<LPARAM>(GetDlgItem(window,kShowSettings)));
         const bool full_200_ok=!g_compact && g_page==1 &&
