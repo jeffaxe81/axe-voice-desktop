@@ -8,6 +8,7 @@ inline constexpr wchar_t kFrontendHelp[] =
     L"Ctrl+L: Focar destino    Ctrl+K: Teclado\n"
     L"Ctrl+M: MINI/MAX    Ctrl+T: Tema    Ctrl+P: Fixar\n"
     L"Ctrl+R: Atualizar dispositivos (apenas em Audio)\n"
+    L"Na aba Audio: INVERTER VOZ/TOQUE troca as preferencias locais.\n"
     L"Esc: Voltar ao teclado    F1: Esta ajuda\n"
     L"F2: Checklist local de prontidao\n\n"
     L"Os campos validam somente a sintaxe local.\n"

@@ -22,6 +22,7 @@
 #include "audio_devices.h"
 #include "audio_selection_feedback.h"
 #include "audio_routing_preview.h"
+#include "audio_role_swap.h"
 #include "windows_process.h"
 #include "shutdown_policy.h"
 #include <string>
@@ -55,6 +56,7 @@ constexpr int kTlsCheckbox = 1007;
 constexpr int kProbeButton = 1008;
 constexpr int kAudioDevicesButton = 1009;
 constexpr int kRefreshHeadsetsButton = 1013;
+constexpr int kSwapAudioRolesButton = 1015;
 constexpr int kStartBaresipButton = 1010;
 constexpr int kStopBaresipButton = 1011;
 constexpr UINT_PTR kProcessTimer = 1012;
@@ -522,6 +524,17 @@ axv::AudioSelectionRefresh fill_audio_combo(
     return selection;
 }
 
+
+// UI-only: there is no Baresip routing or actual ringtone in this build.
+void update_swap_button() {
+    if (!g_output_audio_combo) return;
+    HWND parent = GetParent(g_output_audio_combo);
+    if (!parent) return;
+    const auto plan = axv::plan_audio_role_swap(
+        g_audio_outputs, g_selected_output_id, g_selected_ringtone_id);
+    EnableWindow(GetDlgItem(parent, kSwapAudioRolesButton), plan.can_swap);
+}
+
 void refresh_audio_panel() {
     const auto inventory = axv::inspect_windows_audio_devices();
     if (inventory.error != axv::AudioInventoryError::None) {
@@ -529,6 +542,7 @@ void refresh_audio_panel() {
         fill_audio_combo(g_input_audio_combo, g_audio_inputs, g_selected_input_id);
         fill_audio_combo(g_output_audio_combo, g_audio_outputs, g_selected_output_id);
         fill_audio_combo(g_ringtone_audio_combo, g_audio_outputs, g_selected_ringtone_id, true);
+        update_swap_button();
         SetWindowTextW(g_headset_status, L"Falha ao consultar os dispositivos do Windows.");
         return;
     }
@@ -540,6 +554,7 @@ void refresh_audio_panel() {
         g_output_audio_combo, g_audio_outputs, g_selected_output_id);
     const auto ringtone = fill_audio_combo(
         g_ringtone_audio_combo, g_audio_outputs, g_selected_ringtone_id, true);
+    update_swap_button();
     SetWindowTextW(g_headset_status,
         axv::audio_routing_preview_feedback({microphone, speaker, ringtone}));
 }
@@ -697,8 +712,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_ringtone_audio_combo = make_control(window, L"COMBOBOX", L"",
             WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
             39, 435, 350, 200, kRingtoneAudioCombo, 2);
-        make_button(window, L"ATUALIZAR DISPOSITIVOS", kRefreshHeadsetsButton,
-                    39, 507, 350, 43, 2);
+        make_button(window, L"ATUALIZAR", kRefreshHeadsetsButton,
+                    39, 507, 167, 43, 2);
+        make_button(window, L"INVERTER VOZ/TOQUE", kSwapAudioRolesButton,
+                    214, 507, 175, 43, 2);
         make_label(window, L"Preferencias locais. Ainda sem roteamento Baresip.",
                    39, 566, 350, 40, 2, g_font_small);
         g_headset_status = make_label(window, L"Abra AUDIO para consultar o Windows.",
@@ -712,6 +729,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         EnableWindow(g_input_audio_combo, FALSE);
         EnableWindow(g_output_audio_combo, FALSE);
         EnableWindow(g_ringtone_audio_combo, FALSE);
+        update_swap_button();
         // A clear disabled affordance: no real SIP engine has been connected yet.
         for (int id : {kCallButton, kMuteFuture, kHoldFuture,
                        kTransferFuture, kHangupFuture}) {
@@ -760,6 +778,26 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             }
             if (control == kRefreshHeadsetsButton && g_page == 2) {
                 if (!g_smoke_mode) refresh_audio_panel();
+                return 0;
+            }
+            if (control == kSwapAudioRolesButton && g_page == 2) {
+                const auto plan = axv::plan_audio_role_swap(
+                    g_audio_outputs, g_selected_output_id, g_selected_ringtone_id);
+                if (!plan.can_swap) {
+                    update_swap_button();
+                    SetWindowTextW(g_headset_status,
+                        L"Troca indisponivel: escolha duas saidas ativas e distintas. Sem audio SIP.");
+                } else {
+                    g_selected_output_id = plan.next_call_id;
+                    g_selected_ringtone_id = plan.next_ringtone_id;
+                    SendMessageW(g_output_audio_combo, CB_SETCURSEL,
+                                 static_cast<WPARAM>(plan.next_call_index), 0);
+                    SendMessageW(g_ringtone_audio_combo, CB_SETCURSEL,
+                                 static_cast<WPARAM>(plan.next_ringtone_index), 0);
+                    update_swap_button();
+                    SetWindowTextW(g_headset_status,
+                        L"Toque e voz invertidos: apenas preferencia local, sem audio SIP.");
+                }
                 return 0;
             }
             if (control == kShowAudio) {
@@ -904,6 +942,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                         g_selected_input_id, g_selected_output_id, g_selected_ringtone_id);
                     SetWindowTextW(g_headset_status,
                         axv::audio_routing_preview_feedback(routing));
+                    update_swap_button();
                 }
                 return 0;
             }
@@ -1162,7 +1201,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.42",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.50",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
@@ -1272,7 +1311,40 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             (GetWindowLongW(g_ringtone_audio_combo, GWL_STYLE) & WS_VISIBLE) &&
             !IsWindowEnabled(GetDlgItem(window, kCallButton)) &&
             !IsWindowEnabled(g_input_audio_combo) &&
-            !IsWindowEnabled(g_ringtone_audio_combo); // No hardware inspected in smoke.
+            !IsWindowEnabled(g_ringtone_audio_combo) &&
+            GetDlgItem(window, kSwapAudioRolesButton) &&
+            (GetWindowLongW(GetDlgItem(window, kSwapAudioRolesButton), GWL_STYLE) & WS_VISIBLE) &&
+            !IsWindowEnabled(GetDlgItem(window, kSwapAudioRolesButton)); // No hardware inspected in smoke.
+        // Exercise real Win32 controls with synthetic outputs, never probing devices or SIP.
+        g_audio_outputs = {
+            {L"test-headset", L"Headset", true, false},
+            {L"test-speaker", L"Computer", false, true}
+        };
+        g_selected_output_id = L"test-headset";
+        g_selected_ringtone_id = L"test-speaker";
+        const std::wstring mic_before = g_selected_input_id;
+        fill_audio_combo(g_output_audio_combo, g_audio_outputs, g_selected_output_id);
+        fill_audio_combo(g_ringtone_audio_combo, g_audio_outputs, g_selected_ringtone_id, true);
+        update_swap_button();
+        const bool can_swap_in_smoke = IsWindowEnabled(GetDlgItem(window, kSwapAudioRolesButton));
+        SendMessageW(window, WM_COMMAND,
+            MAKEWPARAM(kSwapAudioRolesButton, BN_CLICKED),
+            reinterpret_cast<LPARAM>(GetDlgItem(window, kSwapAudioRolesButton)));
+        const bool swapped_in_smoke = can_swap_in_smoke &&
+            g_selected_output_id == L"test-speaker" &&
+            g_selected_ringtone_id == L"test-headset" &&
+            g_selected_input_id == mic_before &&
+            SendMessageW(g_output_audio_combo, CB_GETCURSEL, 0, 0) == 1 &&
+            SendMessageW(g_ringtone_audio_combo, CB_GETCURSEL, 0, 0) == 0 &&
+            !IsWindowEnabled(GetDlgItem(window, kCallButton));
+        g_audio_outputs.clear();
+        g_selected_output_id.clear();
+        g_selected_ringtone_id.clear();
+        fill_audio_combo(g_output_audio_combo, g_audio_outputs, g_selected_output_id);
+        fill_audio_combo(g_ringtone_audio_combo, g_audio_outputs, g_selected_ringtone_id, true);
+        update_swap_button();
+        ok = ok && swapped_in_smoke &&
+             !IsWindowEnabled(GetDlgItem(window, kSwapAudioRolesButton));
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(kReadinessButton, 1), 0);
         const bool readiness_ok = g_readiness_requested_smoke &&
             GetDlgItem(window, kReadinessButton) &&
