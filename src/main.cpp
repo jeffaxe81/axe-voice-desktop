@@ -23,6 +23,7 @@
 #include "audio_selection_feedback.h"
 #include "audio_hotplug_refresh.h"
 #include "audio_device_change_policy.h"
+#include "audio_endpoint_notifications_win32.h"
 #include "audio_manual_refresh.h"
 #include "audio_preference_state.h"
 #include "audio_inventory_async.h"
@@ -89,6 +90,7 @@ constexpr int kTransferFuture = 2303;
 constexpr int kHangupFuture = 2304;
 constexpr int kFocusNumber = 2305;
 constexpr UINT kTrayCallback = WM_APP + 41;
+constexpr UINT kAudioEndpointChanged = WM_APP + 42;
 constexpr UINT kTrayIconId = 1;
 constexpr UINT kTrayOpen = 3001;
 constexpr UINT kTrayExit = 3002;
@@ -112,6 +114,7 @@ bool g_audio_seen = false;
 bool g_audio_force_update = false;
 axv::AudioManualRefresh g_audio_manual_refresh;
 axv::AudioInventoryAsync g_audio_worker(axv::inspect_windows_audio_devices);
+axv::AudioEndpointNotifier g_audio_notifier;
 axv::AudioInventoryAsync g_settings_audio_worker(axv::inspect_windows_audio_devices);
 // Dedicated workers keep Settings requests independent from the Audio-tab poll.
 bool g_settings_audio_smoke_requested = false;
@@ -771,6 +774,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         apply_compact_layout(window);
         refresh_runtime_banner(g_baresip_process.poll());
         SetTimer(window, kProcessTimer, 100, nullptr);
+        // Event notifications improve responsiveness to a change in the
+        // default communications endpoint. Polling remains the fallback.
+        if (!g_smoke_mode) (void)g_audio_notifier.start(window, kAudioEndpointChanged);
         return 0;
     }
     case WM_COMMAND:
@@ -1121,6 +1127,16 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         EndPaint(window, &paint);
         return 0;
     }
+    case kAudioEndpointChanged:
+        // IMMNotificationClient posts only a notification, never audio data,
+        // device IDs or HWND manipulation from a Core Audio callback thread.
+        if (g_page == 2 && !g_smoke_mode && IsWindowVisible(window)) {
+            g_audio_worker.invalidate();
+            g_audio_force_update = true;
+            SetTimer(window, kAudioDeviceChangeTimer,
+                     kAudioDeviceChangeDebounceMs, nullptr);
+        }
+        return 0;
     case WM_DEVICECHANGE:
         // Windows broadcasts coarse device-tree changes to top-level windows.
         // This is a hint only: defaults/mixer state may change without a
@@ -1242,6 +1258,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         DestroyWindow(window);
         return 0;
     case WM_DESTROY:
+        g_audio_notifier.stop(); // Revoke COM callback before HWND is destroyed.
         g_sip_session_guard.revoke(axv::RuntimeProcess::Stopped, g_native_event_mailbox, g_sip_projection);
         KillTimer(window, kProcessTimer);
         KillTimer(window, kAudioInventoryTimer);
@@ -1279,7 +1296,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && std::wcscmp(command_line, L"--ui-smoke") == 0;
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.45",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.47",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);

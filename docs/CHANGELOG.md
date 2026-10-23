@@ -1,3 +1,9 @@
+## v0.47.0 — 2026-10-22 (laboratório)
+
+- Adiciona observador nativo de alterações de endpoints Core Audio, inclusive dispositivo padrão de comunicação.
+- Callback COM sinaliza a UI, sem enumerar no evento; resultado é tratado pelo worker assíncrono já existente.
+- Teste offline de callback, detach e ciclo de referência. Sem áudio SIP real.
+
 ## v0.45.0 — 2026-10-22 (laboratório)
 
 - Pedidos manuais de atualização de áudio deixam de ser perdidos quando o Core Audio já está ocupado.

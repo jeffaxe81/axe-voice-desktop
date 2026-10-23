@@ -164,3 +164,11 @@ A validação de contraste percebido, leitores de tela e escala DPI **ainda exig
 - A mudança de aba ou encerramento cancela pedidos pendentes; nenhum ID de headset é persistido, exibido no status ou entregue ao Baresip.
 - Novo CTest `audio_manual_refresh` cobre coalescência, cancelamento, worker lento e descarte de resultado obsoleto.
 - Ainda não há configuração de mídia Baresip nem teste real de headset/USB/Bluetooth; testes manuais Windows 10/11 permanecem obrigatórios.
+
+## v0.47 — Notificações nativas do Core Audio (Windows)
+
+- Registra um observador COM `IMMNotificationClient` para mudanças de endpoints, estado, nome/propriedades e padrão de comunicação. As notificações chegam ao UI thread como mensagens `WM_APP`, **sem IDs de headset ou qualquer credencial SIP**.
+- A janela agenda consulta assíncrona com o debounce já existente; não lê o hardware dentro do callback, nem o modifica.
+- O callback é desconectado antes do fechamento da janela e o observador COM é desregistrado no encerramento. Falha no registro mantém o polling anterior de 3 segundos.
+- Novo CTest `audio_endpoint_notifications` simula callbacks usando uma janela Win32 local, exercitando sinalização e interrupção após detach, sem microfone/USB/Bluetooth.
+- Ainda não há ligação do catálogo ao Baresip, permissão de microfone comprovada ou chamadas/áudio RTP/SRTP. Homologação física Windows 10/11 permanece pendente.
