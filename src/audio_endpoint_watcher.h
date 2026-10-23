@@ -25,7 +25,7 @@ public:
     HRESULT STDMETHODCALLTYPE OnPropertyValueChanged(LPCWSTR id, const PROPERTYKEY key) override;
 
 private:
-    ~AudioEndpointNotificationSink() override = default;
+    ~AudioEndpointNotificationSink() = default;
     void wake_gui() noexcept;
     std::atomic<ULONG> refs_{1};
     const HWND recipient_;
