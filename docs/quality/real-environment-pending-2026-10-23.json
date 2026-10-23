@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "project": "AXE Voice Windows",
+  "review_date": "2026-10-23",
+  "policy": {
+    "development_may_continue_without_external_environment": true,
+    "automated_code_security_tests_required": true,
+    "manual_environment_tests_required_before_production_go": true,
+    "do_not_claim_unperformed_tests_as_passed": true,
+    "do_not_disable_technical_security_gates": true
+  },
+  "release_status": "NOT_APPROVED_FOR_PRODUCTION",
+  "risk_note": "Binário atual é LAB, com mecanismo SIP indisponível; não declarar telefonia operacional/comercial.",
+  "external_environment_tests": [
+    {
+      "id": "VOICE-REAL-01",
+      "area": "SIP/mídia",
+      "status": "PENDING_REAL_ENVIRONMENT",
+      "gate": "PRODUCTION_GO",
+      "procedure": "Auditar integração Baresip/libre, REGISTER TLS com PABX, chamadas de entrada/saída, RTP/SRTP, DTMF, espera, transferência e recuperação de sessão.",
+      "evidence_required": "pcaps e logs sanitizados, codecs negociados e evidência dos dois extremos",
+      "owner": "to_be_assigned",
+      "executed_at": null,
+      "evidence_url": null
+    },
+    {
+      "id": "VOICE-REAL-02",
+      "area": "Áudio Windows",
+      "status": "PENDING_REAL_ENVIRONMENT",
+      "gate": "PRODUCTION_GO",
+      "procedure": "Validar fisicamente em Windows 10/11 headset USB/Bluetooth, troca e desconexão durante chamadas/preview, STOP ACK e dispositivos de PC distintos.",
+      "evidence_required": "matriz de hardware/driver, build SHA, resultados e falhas reproduzíveis",
+      "owner": "to_be_assigned",
+      "executed_at": null,
+      "evidence_url": null
+    },
+    {
+      "id": "VOICE-REAL-03",
+      "area": "Distribuição/UX",
+      "status": "PENDING_REAL_ENVIRONMENT",
+      "gate": "PRODUCTION_GO",
+      "procedure": "Validar mini-janelinha, bandeja, notificações, sobrevivência minimizada, instalador, assinatura e procedimento de atualização/rollback.",
+      "evidence_required": "registro de aceites, assinatura verificável e relatório de instalação",
+      "owner": "to_be_assigned",
+      "executed_at": null,
+      "evidence_url": null
+    }
+  ],
+  "references": [
+    "https://github.com/jeffaxe81/axe-voice-desktop/issues/7",
+    "https://github.com/jeffaxe81/axe-voice-desktop/pull/78"
+  ]
+}
