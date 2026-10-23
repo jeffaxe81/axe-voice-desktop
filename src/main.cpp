@@ -22,6 +22,7 @@
 #include "audio_devices.h"
 #include "audio_selection_feedback.h"
 #include "audio_routing_preview.h"
+#include "audio_test_tone_win32.h"
 #include "windows_process.h"
 #include "shutdown_policy.h"
 #include <string>
@@ -55,6 +56,7 @@ constexpr int kTlsCheckbox = 1007;
 constexpr int kProbeButton = 1008;
 constexpr int kAudioDevicesButton = 1009;
 constexpr int kRefreshHeadsetsButton = 1013;
+constexpr int kTestRingtoneButton = 1014;
 constexpr int kStartBaresipButton = 1010;
 constexpr int kStopBaresipButton = 1011;
 constexpr UINT_PTR kProcessTimer = 1012;
@@ -104,6 +106,8 @@ std::vector<axv::AudioEndpoint> g_audio_outputs;
 std::wstring g_selected_input_id;
 std::wstring g_selected_output_id;
 std::wstring g_selected_ringtone_id;
+axv::TonePreviewPlayer g_tone_preview;
+axv::TonePreviewState g_last_tone_state = axv::TonePreviewState::Idle;
 axv::WindowsProcess g_baresip_process;
 axv::ProcessStatus g_last_process_state = axv::ProcessStatus::Stopped;
 axv::ShutdownDeadline g_shutdown;
@@ -529,6 +533,7 @@ void refresh_audio_panel() {
         fill_audio_combo(g_input_audio_combo, g_audio_inputs, g_selected_input_id);
         fill_audio_combo(g_output_audio_combo, g_audio_outputs, g_selected_output_id);
         fill_audio_combo(g_ringtone_audio_combo, g_audio_outputs, g_selected_ringtone_id, true);
+        EnableWindow(GetDlgItem(GetParent(g_ringtone_audio_combo), kTestRingtoneButton), FALSE);
         SetWindowTextW(g_headset_status, L"Falha ao consultar os dispositivos do Windows.");
         return;
     }
@@ -540,6 +545,8 @@ void refresh_audio_panel() {
         g_output_audio_combo, g_audio_outputs, g_selected_output_id);
     const auto ringtone = fill_audio_combo(
         g_ringtone_audio_combo, g_audio_outputs, g_selected_ringtone_id, true);
+    EnableWindow(GetDlgItem(GetParent(g_ringtone_audio_combo), kTestRingtoneButton),
+        ringtone.available() && g_tone_preview.state() != axv::TonePreviewState::Playing);
     SetWindowTextW(g_headset_status,
         axv::audio_routing_preview_feedback({microphone, speaker, ringtone}));
 }
@@ -697,8 +704,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_ringtone_audio_combo = make_control(window, L"COMBOBOX", L"",
             WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
             39, 435, 350, 200, kRingtoneAudioCombo, 2);
-        make_button(window, L"ATUALIZAR DISPOSITIVOS", kRefreshHeadsetsButton,
-                    39, 507, 350, 43, 2);
+        make_button(window, L"ATUALIZAR", kRefreshHeadsetsButton,
+                    39, 507, 169, 43, 2);
+        make_button(window, L"TESTAR TOQUE", kTestRingtoneButton,
+                    219, 507, 170, 43, 2);
         make_label(window, L"Preferencias locais. Ainda sem roteamento Baresip.",
                    39, 566, 350, 40, 2, g_font_small);
         g_headset_status = make_label(window, L"Abra AUDIO para consultar o Windows.",
@@ -712,6 +721,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         EnableWindow(g_input_audio_combo, FALSE);
         EnableWindow(g_output_audio_combo, FALSE);
         EnableWindow(g_ringtone_audio_combo, FALSE);
+        EnableWindow(GetDlgItem(window, kTestRingtoneButton), FALSE);
         // A clear disabled affordance: no real SIP engine has been connected yet.
         for (int id : {kCallButton, kMuteFuture, kHoldFuture,
                        kTransferFuture, kHangupFuture}) {
@@ -904,9 +914,32 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                         g_selected_input_id, g_selected_output_id, g_selected_ringtone_id);
                     SetWindowTextW(g_headset_status,
                         axv::audio_routing_preview_feedback(routing));
+                    EnableWindow(GetDlgItem(window, kTestRingtoneButton),
+                        routing.ringtone_output.available() &&
+                        g_tone_preview.state() != axv::TonePreviewState::Playing);
                 }
                 return 0;
             }
+        }
+        if (LOWORD(wparam) == kTestRingtoneButton && HIWORD(wparam) == BN_CLICKED) {
+            // Local manual test only. Never start during unattended smoke tests
+            // and never select a missing or previously unplugged endpoint.
+            const auto found = std::find_if(g_audio_outputs.begin(), g_audio_outputs.end(),
+                [](const axv::AudioEndpoint& endpoint) {
+                    return endpoint.id == g_selected_ringtone_id;
+                });
+            if (g_smoke_mode || g_selected_ringtone_id.empty() ||
+                found == g_audio_outputs.end()) {
+                if (g_headset_status)
+                    SetWindowTextW(g_headset_status,
+                        L"Escolha uma saida ativa e atualize os dispositivos.");
+            } else if (g_tone_preview.start(g_selected_ringtone_id)) {
+                g_last_tone_state = axv::TonePreviewState::Playing;
+                SetWindowTextW(g_headset_status,
+                    axv::tone_preview_feedback(g_last_tone_state));
+                EnableWindow(GetDlgItem(window, kTestRingtoneButton), FALSE);
+            }
+            return 0;
         }
         if (LOWORD(wparam) == kAudioDevicesButton && HIWORD(wparam) == BN_CLICKED) {
             const axv::AudioInventory inventory = axv::inspect_windows_audio_devices();
@@ -1071,6 +1104,17 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
     }
     case WM_TIMER:
         if (wparam == kProcessTimer) {
+            // No Windows UI operations occur on the WASAPI worker thread.
+            const auto tone_state = g_tone_preview.state();
+            if (tone_state != g_last_tone_state) {
+                g_last_tone_state = tone_state;
+                if (g_headset_status && g_page == 2)
+                    SetWindowTextW(g_headset_status,
+                        axv::tone_preview_feedback(tone_state));
+                EnableWindow(GetDlgItem(window, kTestRingtoneButton),
+                    tone_state != axv::TonePreviewState::Playing &&
+                    !g_selected_ringtone_id.empty());
+            }
             refresh_runtime_banner(g_baresip_process.poll());
             if (g_shutdown.pending()) {
                 const auto state = g_baresip_process.poll();
@@ -1270,8 +1314,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             (GetWindowLongW(g_input_audio_combo, GWL_STYLE) & WS_VISIBLE) &&
             (GetWindowLongW(g_output_audio_combo, GWL_STYLE) & WS_VISIBLE) &&
             (GetWindowLongW(g_ringtone_audio_combo, GWL_STYLE) & WS_VISIBLE) &&
+            (GetWindowLongW(GetDlgItem(window, kTestRingtoneButton), GWL_STYLE) & WS_VISIBLE) &&
             !IsWindowEnabled(GetDlgItem(window, kCallButton)) &&
             !IsWindowEnabled(g_input_audio_combo) &&
+            !IsWindowEnabled(GetDlgItem(window, kTestRingtoneButton)) &&
             !IsWindowEnabled(g_ringtone_audio_combo); // No hardware inspected in smoke.
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(kReadinessButton, 1), 0);
         const bool readiness_ok = g_readiness_requested_smoke &&
