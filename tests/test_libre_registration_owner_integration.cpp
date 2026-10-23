@@ -218,7 +218,7 @@ int main() {
     if(!host.start() || !host.stop()) return 19;
 
     if(wrong_owner || callbacks_added!=callbacks_removed ||
-       libre_started!=5 || libre_closed!=4 || queues_freed!=4 ||
+       libre_started!=6 || libre_closed!=5 || queues_freed!=5 ||
        native_register!=3 || native_unregister!=2) return 20;
     return 0;
 }

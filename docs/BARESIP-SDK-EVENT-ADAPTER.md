@@ -314,3 +314,31 @@ creation or SIP traffic.
 of the Baresip core, a provisioned UA, or the registration dispatcher
 wired into that core. The UI remains disconnected, and no call/RTP
 features are enabled. The default Windows CI uses fake libre.
+
+
+## Register dispatcher running on libre's owner thread
+
+`BaresipNativeRegistrationHost` is the first wiring of the bounded
+registration command queue and owner-thread gateway to
+`BaresipNativeLibreReactor`. At `on_start`, the reactor thread
+constructs the event mailbox, lifecycle, adapter, gateway and command
+dispatcher, then publishes a new opaque generation. A GUI or controller
+thread may only enqueue `submit(timeout_ms)` or `cancel()`;
+`mqueue_push` wakes `re_main()` for owner-side processing and
+the timer invokes polling even if a wake is missed.
+
+A rejected wake forces a queued cancellation rather than leaving
+an unacknowledged request pending. Shutdown stops admission, invalidates
+the generation and **joins after the owner thread unregisters**
+callbacks. Restart requires a fresh native control-plane generation.
+A diagnostic snapshot exposes only outcomes, ticks and fault state,
+never credentials, SIP URI, call object or `ua*` pointer.
+
+The new default CI fake-libre + fake-Baresip integration test verifies
+UI-to-native register routing, native confirmation, cancellation,
+deadline expiry, terminal native shutdown, failed wakes and failed
+initialization across restarts. It is a **control-plane seam only**:
+the caller must still initialize Baresip itself, securely provision/
+own the UA and keep it alive throughout `stop()`. The actual
+`AXV_BUILD_NATIVE_BARESIP_ADAPTER=ON` SDK gate is separate.
+No real PABX login, RTP, SRTP, GUI dialing or voice is enabled.
