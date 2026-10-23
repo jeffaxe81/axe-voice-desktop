@@ -5,6 +5,7 @@
 - A posse permanece protegida durante falha e encerramento; só é liberada depois de desregistrar e aguardar callbacks.
 - Teste com registro SDK simulado verifica concorrência lógica, tentativas indevidas, recuperação e 64 reinícios alternados.
 - Continua sem Baresip real, credenciais, chamadas SIP ou mídia integrada no aplicativo Windows.
+- Adicionada pré-visualização de toque independente da saída de voz na aba ÁUDIO: padrão multimídia para toque, comunicação para voz, seleção inversa e fallback de hotplug, sem áudio SIP efetivo.
 
 
 ## v0.48.0 — isolamento de origem dos eventos Baresip (laboratório)
