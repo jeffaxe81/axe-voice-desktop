@@ -94,6 +94,10 @@ public:
         active_call_ = nullptr;
         active_token_ = 0;
         sip_registered_ = false;
+        active_incoming_ = false;
+        call_established_ = false;
+        hangup_sent_ = false;
+        answer_sent_ = false;
         seen_calls_.clear();
         // Only release the process-wide claim AFTER native unregistration
         // and callback admission quiescence, never while subscribed.
