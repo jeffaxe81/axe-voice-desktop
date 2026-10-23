@@ -23,6 +23,32 @@ Upstream declarations: https://github.com/baresip/baresip/blob/main/include/bare
   production GUI remains disconnected from the native adapter; no SIP login,
   registration, calls or audio media are implemented here.
 
+## v0.48 — SIP-message event origin isolation
+
+Upstream `baresip/src/ua.c` emits `BEVENT_SIPSESS_CONN` and
+`BEVENT_SIPSESS_FAILED` via `bevent_sip_msg_emit`, not via a UA
+or established call. An unauthenticated or rejected inbound INVITE may cause
+such events even when no owned UA is selected. They **must not** be
+misclassified as events from the active account merely because they share the
+process event registry.
+
+The adapter now filters all unrecognized and message-only event kinds
+*before* invoking `bevent_get_ua`. Only an allowlist of UA and call events
+is eligible for ownership lookup and event translation. `BEVENT_EXIT`
+remains global and fail-closed. A selected UA's `BEVENT_AUDIO_ERROR`
+remains fail-closed. A SIP-message failure alone no longer revokes an
+unrelated live UA session. `BEVENT_CALL_RTPESTAB` and `BEVENT_CALL_MENC`
+are ignored and never treated as proof of RTP/SRTP safety.
+
+The fake-SDK regression checks that message-only and unsupported events
+produce **zero UA-identity lookups and zero mailbox events**, even with a
+forged UA-like fixture. Registration events remain accepted for the owner.
+No real Baresip SDK or SIP endpoint is executed by this test.
+
+Sources (reconfirm against the pinned SDK tag before production):
+- https://github.com/baresip/baresip/blob/main/src/ua.c
+- https://github.com/baresip/baresip/blob/main/include/baresip.h
+
 ## Deliberate limitations
 
 - **Not linked into the AXEVoice GUI.** Its default engine remains
