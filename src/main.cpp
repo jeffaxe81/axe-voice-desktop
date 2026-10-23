@@ -25,6 +25,7 @@
 #include "ringtone_preview.h"
 #include "audio_role_swap.h"
 #include "audio_preview_target.h"
+#include "audio_preview_cancel_policy.h"
 #include "windows_process.h"
 #include "shutdown_policy.h"
 #include <string>
@@ -115,6 +116,7 @@ std::wstring g_selected_output_id;
 std::wstring g_selected_ringtone_id;
 std::thread g_preview_worker;
 std::atomic<bool> g_preview_running{false};
+std::atomic<bool> g_preview_cancel{false};
 std::atomic<int> g_preview_result{0};
 bool g_preview_pending = false;
 axv::AudioPreviewRole g_preview_role = axv::AudioPreviewRole::Ringtone;
@@ -379,6 +381,7 @@ void refresh_account_feedback() {
     InvalidateRect(g_port, nullptr, TRUE);
 }
 void show_page(HWND root, int page) {
+    if (page != 2 && g_preview_running.load()) g_preview_cancel.store(true);
     g_page = page;
     for (auto child : g_dial_controls) {
         const bool visible = page == 0 &&
@@ -548,7 +551,8 @@ void update_swap_button() {
 }
 
 void update_audio_preview_buttons(HWND window) {
-    const bool idle = !g_preview_running.load() && !g_preview_pending && !g_smoke_mode;
+    const bool running = g_preview_running.load();
+    const bool idle = !running && !g_preview_pending && !g_smoke_mode;
     const bool has_voice = axv::select_audio_preview_target(
         g_audio_outputs, g_selected_output_id, g_selected_ringtone_id,
         axv::AudioPreviewRole::Voice).available;
@@ -557,11 +561,28 @@ void update_audio_preview_buttons(HWND window) {
         axv::AudioPreviewRole::Ringtone).available;
     HWND voice = GetDlgItem(window, kTestVoiceButton);
     HWND ring = GetDlgItem(window, kTestRingtoneButton);
-    if (voice) EnableWindow(voice, idle && has_voice);
-    if (ring) EnableWindow(ring, idle && has_ring);
+    const bool stop_voice = axv::preview_can_cancel(running,
+        g_preview_cancel.load(), g_smoke_mode, g_preview_role,
+        axv::AudioPreviewRole::Voice);
+    const bool stop_ring = axv::preview_can_cancel(running,
+        g_preview_cancel.load(), g_smoke_mode, g_preview_role,
+        axv::AudioPreviewRole::Ringtone);
+    if (voice) {
+        SetWindowTextW(voice, running && g_preview_role == axv::AudioPreviewRole::Voice
+            ? (g_preview_cancel.load() ? L"PARANDO VOZ..." : L"PARAR VOZ")
+            : L"TESTAR VOZ");
+        EnableWindow(voice, stop_voice || (idle && has_voice));
+    }
+    if (ring) {
+        SetWindowTextW(ring, running && g_preview_role == axv::AudioPreviewRole::Ringtone
+            ? (g_preview_cancel.load() ? L"PARANDO TOQUE..." : L"PARAR TOQUE")
+            : L"TESTAR TOQUE");
+        EnableWindow(ring, stop_ring || (idle && has_ring));
+    }
 }
 
 void refresh_audio_panel() {
+    if (g_preview_running.load()) g_preview_cancel.store(true);
     const auto inventory = axv::inspect_windows_audio_devices();
     if (inventory.error != axv::AudioInventoryError::None) {
         g_audio_inputs.clear(); g_audio_outputs.clear();
@@ -814,6 +835,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 return 0;
             }
             if (control == kSwapAudioRolesButton && g_page == 2) {
+                if (g_preview_running.load()) g_preview_cancel.store(true);
                 const auto plan = axv::plan_audio_role_swap(
                     g_audio_outputs, g_selected_output_id, g_selected_ringtone_id);
                 if (!plan.can_swap) {
@@ -964,11 +986,21 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             // The user must click; neither account nor incoming SIP events play audio.
             const auto role = LOWORD(wparam) == kTestVoiceButton
                 ? axv::AudioPreviewRole::Voice : axv::AudioPreviewRole::Ringtone;
+            // A second click on the active role requests a cooperative stop.
+            if (axv::preview_can_cancel(g_preview_running.load(),
+                    g_preview_cancel.load(), g_smoke_mode, g_preview_role, role)) {
+                g_preview_cancel.store(true);
+                SetWindowTextW(g_headset_status,
+                    L"Interrompendo teste local. Nao e chamada SIP.");
+                update_audio_preview_buttons(window);
+                return 0;
+            }
             const auto target = axv::select_audio_preview_target(
                 g_audio_outputs, g_selected_output_id, g_selected_ringtone_id, role);
             if (!g_smoke_mode && g_page == 2 && !g_preview_running.load() &&
                 !g_preview_pending && target.available) {
                 if (g_preview_worker.joinable()) g_preview_worker.join();
+                g_preview_cancel.store(false);
                 g_preview_running.store(true);
                 g_preview_result.store(-1);
                 g_preview_pending = true;
@@ -977,7 +1009,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 try {
                     std::wstring id = target.endpoint_id;
                     g_preview_worker = std::thread([id = std::move(id)] {
-                        const auto result = axv::play_selected_ringtone_preview(id);
+                        const auto result = axv::play_selected_ringtone_preview(id, &g_preview_cancel);
                         g_preview_result.store(static_cast<int>(result));
                         g_preview_running.store(false);
                     });
@@ -1003,6 +1035,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 const auto& devices = id == kInputAudioCombo ? g_audio_inputs : g_audio_outputs;
                 const LRESULT index = SendMessageW(combo, CB_GETCURSEL, 0, 0);
                 if (index >= 0 && static_cast<std::size_t>(index) < devices.size()) {
+                    if (id != kInputAudioCombo && g_preview_running.load())
+                        g_preview_cancel.store(true);
                     std::wstring& selected = id == kInputAudioCombo ? g_selected_input_id :
                         id == kOutputAudioCombo ? g_selected_output_id : g_selected_ringtone_id;
                     selected = devices[static_cast<std::size_t>(index)].id;
@@ -1183,10 +1217,14 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             if (g_preview_pending && !g_preview_running.load()) {
                 if (g_preview_worker.joinable()) g_preview_worker.join();
                 g_preview_pending = false;
-                const auto played = static_cast<axv::RingPreviewResult>(
-                    g_preview_result.load()) == axv::RingPreviewResult::Played;
+                const auto result = static_cast<axv::RingPreviewResult>(
+                    g_preview_result.load());
                 const bool voice = g_preview_role == axv::AudioPreviewRole::Voice;
-                SetWindowTextW(g_headset_status, played
+                SetWindowTextW(g_headset_status,
+                    result == axv::RingPreviewResult::Cancelled
+                    ? (voice ? L"Teste local de VOZ interrompido."
+                             : L"Teste local de TOQUE interrompido.")
+                    : result == axv::RingPreviewResult::Played
                     ? (voice ? L"Teste local de VOZ enviado. Nao e chamada SIP."
                              : L"Teste local de TOQUE enviado. Nao e chamada SIP.")
                     : (voice ? L"Falha ao testar saida de VOZ ou formato de audio."
@@ -1251,8 +1289,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         DestroyWindow(window);
         return 0;
     case WM_DESTROY:
-        // Worker never posts to a dead HWND. Maximum local tone duration is
-        // bounded; stop all owner-owned work before destroying UI resources.
+        // Stop cooperatively before waiting; worker never posts to a dead HWND.
+        g_preview_cancel.store(true);
         if (g_preview_worker.joinable()) g_preview_worker.join();
         g_sip_session_guard.revoke(axv::RuntimeProcess::Stopped, g_native_event_mailbox, g_sip_projection);
         KillTimer(window, kProcessTimer);
@@ -1287,7 +1325,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.52",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.53",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);

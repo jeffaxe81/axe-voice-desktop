@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -9,7 +10,7 @@ namespace axv {
 // A short, non-looping local speaker test; NOT a SIP incoming-call ringtone.
 enum class RingSampleFormat { Float32, Pcm16 };
 enum class RingPreviewResult {
-    Played, DeviceUnavailable, UnsupportedFormat, AudioServiceUnavailable
+    Played, DeviceUnavailable, UnsupportedFormat, AudioServiceUnavailable, Cancelled
 };
 
 inline float ring_sample(std::uint64_t frame, std::uint32_t sample_rate) {
@@ -66,5 +67,12 @@ inline bool render_ring_samples(void* target, std::size_t frames,
 
 // Explicit endpoint selection only. Failure does not fall back silently to a
 // different speaker and NEVER changes SIP / call / RTP state.
-RingPreviewResult play_selected_ringtone_preview(const std::wstring& endpoint_id);
+inline bool ring_preview_cancelled(const std::atomic<bool>* signal) {
+    return signal && signal->load(std::memory_order_acquire);
+}
+
+// Cooperative cancellation; no WASAPI access if already cancelled.
+// Signal must outlive the call. The UI joins the worker before destruction.
+RingPreviewResult play_selected_ringtone_preview(
+    const std::wstring& endpoint_id, const std::atomic<bool>* cancellation = nullptr);
 } // namespace axv
