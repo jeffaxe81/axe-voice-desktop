@@ -4,7 +4,8 @@
 namespace axv {
 // Deterministic, externally-polled deadline. No global clock or timer thread.
 enum class RegistrationDeadlineVerdict {
-    Unarmed, Pending, CallbackConfirmed, Expired, ClockRegressed, SessionRevoked
+    Unarmed, Pending, CallbackConfirmed, Expired, ClockRegressed, SessionRevoked,
+    WrongEventLoopThread
 };
 class RegistrationDeadline {
 public:
