@@ -1,6 +1,7 @@
 #include "../src/audio_test_tone.h"
 #include "../src/audio_test_tone_win32.h"
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -71,5 +72,14 @@ int main() {
             .find(L"Sem chamada SIP") == std::wstring_view::npos) return 15;
     if (std::wstring_view(tone_preview_feedback(TonePreviewState::MissingDevice))
             .find(L"desconectada") == std::wstring_view::npos) return 16;
+    std::atomic<bool> cancelled{true};
+    if (play_windows_tone_on_endpoint(L"synthetic-endpoint", &cancelled) !=
+        TonePreviewState::Cancelled) return 17;
+    if (std::wstring_view(tone_preview_feedback(TonePreviewState::Cancelled))
+            .find(L"interrompido") == std::wstring_view::npos) return 18;
+    TonePreviewPlayer player;
+    if (player.cancel() || player.state() != TonePreviewState::Idle) return 19;
+    player.cancel_and_join();
+    if (player.start(L"")) return 20;
     return 0;
 }

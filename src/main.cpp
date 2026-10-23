@@ -527,13 +527,17 @@ axv::AudioSelectionRefresh fill_audio_combo(
 }
 
 void refresh_audio_panel() {
+    const auto previous_ringtone_id = g_selected_ringtone_id;
     const auto inventory = axv::inspect_windows_audio_devices();
     if (inventory.error != axv::AudioInventoryError::None) {
         g_audio_inputs.clear(); g_audio_outputs.clear();
         fill_audio_combo(g_input_audio_combo, g_audio_inputs, g_selected_input_id);
         fill_audio_combo(g_output_audio_combo, g_audio_outputs, g_selected_output_id);
         fill_audio_combo(g_ringtone_audio_combo, g_audio_outputs, g_selected_ringtone_id, true);
-        EnableWindow(GetDlgItem(GetParent(g_ringtone_audio_combo), kTestRingtoneButton), FALSE);
+        if (g_tone_preview.state() == axv::TonePreviewState::Playing)
+            g_tone_preview.cancel();
+        EnableWindow(GetDlgItem(GetParent(g_ringtone_audio_combo), kTestRingtoneButton),
+            g_tone_preview.state() == axv::TonePreviewState::Playing);
         SetWindowTextW(g_headset_status, L"Falha ao consultar os dispositivos do Windows.");
         return;
     }
@@ -545,8 +549,11 @@ void refresh_audio_panel() {
         g_output_audio_combo, g_audio_outputs, g_selected_output_id);
     const auto ringtone = fill_audio_combo(
         g_ringtone_audio_combo, g_audio_outputs, g_selected_ringtone_id, true);
+    if (g_selected_ringtone_id != previous_ringtone_id &&
+        g_tone_preview.state() == axv::TonePreviewState::Playing)
+        g_tone_preview.cancel();
     EnableWindow(GetDlgItem(GetParent(g_ringtone_audio_combo), kTestRingtoneButton),
-        ringtone.available() && g_tone_preview.state() != axv::TonePreviewState::Playing);
+        ringtone.available() || g_tone_preview.state() == axv::TonePreviewState::Playing);
     SetWindowTextW(g_headset_status,
         axv::audio_routing_preview_feedback({microphone, speaker, ringtone}));
 }
@@ -914,14 +921,22 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                         g_selected_input_id, g_selected_output_id, g_selected_ringtone_id);
                     SetWindowTextW(g_headset_status,
                         axv::audio_routing_preview_feedback(routing));
+                    if (id == kRingtoneAudioCombo &&
+                        g_tone_preview.state() == axv::TonePreviewState::Playing)
+                        g_tone_preview.cancel();
                     EnableWindow(GetDlgItem(window, kTestRingtoneButton),
-                        routing.ringtone_output.available() &&
-                        g_tone_preview.state() != axv::TonePreviewState::Playing);
+                        routing.ringtone_output.available() ||
+                        g_tone_preview.state() == axv::TonePreviewState::Playing);
                 }
                 return 0;
             }
         }
         if (LOWORD(wparam) == kTestRingtoneButton && HIWORD(wparam) == BN_CLICKED) {
+            if (g_tone_preview.state() == axv::TonePreviewState::Playing) {
+                g_tone_preview.cancel();
+                SetWindowTextW(g_headset_status, L"Interrompendo toque local...");
+                return 0;
+            }
             // Local manual test only. Never start during unattended smoke tests
             // and never select a missing or previously unplugged endpoint.
             const auto found = std::find_if(g_audio_outputs.begin(), g_audio_outputs.end(),
@@ -937,7 +952,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 g_last_tone_state = axv::TonePreviewState::Playing;
                 SetWindowTextW(g_headset_status,
                     axv::tone_preview_feedback(g_last_tone_state));
-                EnableWindow(GetDlgItem(window, kTestRingtoneButton), FALSE);
+                SetWindowTextW(GetDlgItem(window, kTestRingtoneButton), L"PARAR TOQUE");
+                EnableWindow(GetDlgItem(window, kTestRingtoneButton), TRUE);
             }
             return 0;
         }
@@ -1111,9 +1127,16 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 if (g_headset_status && g_page == 2)
                     SetWindowTextW(g_headset_status,
                         axv::tone_preview_feedback(tone_state));
+                SetWindowTextW(GetDlgItem(window, kTestRingtoneButton),
+                    tone_state == axv::TonePreviewState::Playing
+                        ? L"PARAR TOQUE" : L"TESTAR TOQUE");
+                const auto found = std::find_if(g_audio_outputs.begin(), g_audio_outputs.end(),
+                    [](const axv::AudioEndpoint& endpoint) {
+                        return !endpoint.id.empty() && endpoint.id == g_selected_ringtone_id;
+                    });
                 EnableWindow(GetDlgItem(window, kTestRingtoneButton),
-                    tone_state != axv::TonePreviewState::Playing &&
-                    !g_selected_ringtone_id.empty());
+                    tone_state == axv::TonePreviewState::Playing ||
+                    (found != g_audio_outputs.end() && !g_smoke_mode));
             }
             refresh_runtime_banner(g_baresip_process.poll());
             if (g_shutdown.pending()) {
@@ -1173,6 +1196,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         DestroyWindow(window);
         return 0;
     case WM_DESTROY:
+        g_tone_preview.cancel_and_join();
         g_sip_session_guard.revoke(axv::RuntimeProcess::Stopped, g_native_event_mailbox, g_sip_projection);
         KillTimer(window, kProcessTimer);
         remove_tray(window);
@@ -1206,7 +1230,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.42",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.51",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);

@@ -126,3 +126,11 @@ A validação de contraste percebido, leitores de tela e escala DPI **ainda exig
 - Cartões, teclado telefônico, indicadores e botões owner-draw acompanham o DPI. MINI/MAX preserva proporções, incluindo 150% e 200%.
 - O smoke test Win32 verifica coordenadas do campo, troca de página e MINI nas escalas 150% e 200%, sem alterar as configurações reais do Windows. Novo teste unitário cobre a matemática do escalonamento.
 - Seguem pendentes os testes manuais em monitores físicos de DPI distintos, leitores de tela, truncamento de textos e resoluções pequenas. Registro SIP e áudio de chamada continuam não homologados.
+
+
+## v0.51 — Interromper toque local sem afetar SIP
+
+- O botão **Testar toque** passa a **Parar toque** durante a prévia WASAPI; um novo clique solicita cancelamento não bloqueante.
+- O worker consulta o pedido antes de iniciar a saída, durante os pacotes PCM e na drenagem. Alterar ou perder o endpoint de toque solicita cancelamento. O fechamento aguarda o worker antes de destruir o frontend.
+- O CTest `audio_test_tone` testa cancelamento anterior à abertura de dispositivos, feedback e parada idempotente; os testes Windows de CI não reproduzem sons nem validam percepção acústica.
+- Esta função controla apenas o teste de áudio local: o backend Baresip, a voz SIP e o RTP/SRTP continuam indisponíveis e exigem testes físicos.
