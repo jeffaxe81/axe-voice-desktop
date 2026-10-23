@@ -279,3 +279,14 @@ with a fresh generation.
 real SIP registration, GUI integration or voice media transport. The caller
 must serialize start/stop, keep the UA alive through shutdown and establish
 native callback quiescence before destroying the real SDK.
+
+
+## Audited native SDK compile/link gate
+
+The optional build now requires pinned `baresip.h`/`re.h` and their
+MSVC import libraries. Upstream Baresip's public API uses libre, and
+the recommended multi-threaded integration is to post to a message
+queue owned by the `re_main` thread. The C++ ABI contract checks
+the function pointer types; an optional real-library executable link
+probe catches unresolved imports. Default Windows CI remains offline and
+uses test-only headers; nothing is connected to the GUI yet.
