@@ -233,3 +233,28 @@ callback lifetime and serial event-loop operations. The fake-SDK tests
 exercise cross-thread enqueue, wrong-thread execution, expiry, native
 confirmation, cancellation, restart and overflow. Production SIP, TLS/SRTP
 and audio remain intentionally disabled.
+
+
+## Cancel/overflow during in-flight ua_register (fake SDK)
+
+A UI request can cancel a command AFTER the event loop drains a Submit
+but BEFORE the native `ua_register` call returns. The bounded queue
+therefore carries a revocation revision with each drained batch. Cancellation,
+overflow and explicit invalidation advance that revision.
+
+The native dispatcher checks admission before and after `ua_register`,
+and again after arming the watchdog. When a newer cancellation or overflow
+supersedes a drained request, the dispatcher immediately stops the gateway,
+drops pending SIP evidence, invalidates the command generation and reports
+`SupersededDuringDispatch` rather than `Submitted`.
+
+No mutex is held across native Baresip calls; callbacks cannot deadlock
+against UI cancellation. The new mock SDK regression test injects actual
+cross-thread cancellation/overflow **inside** `ua_register`; neither
+case may leave a registered callback or usable SIP state behind.
+
+This is a *reconciliation guarantee at owner-thread checkpoints*, not an
+instantaneous inter-thread cancellation of a blocking SDK function.
+Cancel requests arriving after the final checkpoint are processed by the
+next event-loop tick; an external loop still must run and own native SDK
+resources. Not a production SIP call or RTP implementation.

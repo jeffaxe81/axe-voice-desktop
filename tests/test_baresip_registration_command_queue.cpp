@@ -42,6 +42,17 @@ int main() {
     auto d=q.begin_generation();
     if(!d || d<=c || !q.submit(d,120000)) return 14;
     if(q.drain(c).generation || q.drain(d).size!=1) return 15;
+    // A drained command is invalidated by a later UI cancellation.
+    auto valid_generation=q.begin_generation(); // d remains open: must fail.
+    if(valid_generation) return 17;
+    if(!q.submit(d,1000)) return 18;
+    auto drained=q.drain(d);
+    if(drained.size!=1 || !q.still_admitted(drained)) return 19;
+    if(!q.cancel(d) || q.still_admitted(drained)) return 20;
+    auto cancellation=q.drain(d);
+    if(cancellation.size!=1 ||
+       cancellation.commands[0].kind!=RegistrationCommandKind::Cancel)
+       return 21;
     q.invalidate();
     if(q.submit(d,1000) || q.cancel(d)) return 16;
     return 0;
