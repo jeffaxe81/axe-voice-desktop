@@ -101,7 +101,13 @@ int wmain(int argc,wchar_t** argv) {
     if(checked!=100) return fail(14);
     if(!SetWindowTextW(number,L"1234")) return fail(15);
     SendMessageW(number,EM_SETSEL,2,2);
-    if(!clicked(window,kDigit+4) || text(number)!=L"12534") return fail(16);
+    const bool inserted=clicked(window,kDigit+4);
+    const auto actual=text(number);
+    if(!inserted || actual!=L"12534") {
+        std::fwprintf(stderr,L"UI_BLACKBOX_STAGE16 clicked=%d len=%zu actual='%ls' expected='12534'\n",
+                      inserted?1:0,actual.size(),actual.c_str());
+        return fail(16);
+    }
     SendMessageW(number,EM_SETSEL,1,4);
     if(!clicked(window,kBackspace) || text(number)!=L"14") return fail(17);
     if(!clicked(window,kClear) || !text(number).empty()) return fail(18);
