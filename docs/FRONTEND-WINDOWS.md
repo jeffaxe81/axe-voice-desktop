@@ -126,3 +126,11 @@ A validação de contraste percebido, leitores de tela e escala DPI **ainda exig
 - Cartões, teclado telefônico, indicadores e botões owner-draw acompanham o DPI. MINI/MAX preserva proporções, incluindo 150% e 200%.
 - O smoke test Win32 verifica coordenadas do campo, troca de página e MINI nas escalas 150% e 200%, sem alterar as configurações reais do Windows. Novo teste unitário cobre a matemática do escalonamento.
 - Seguem pendentes os testes manuais em monitores físicos de DPI distintos, leitores de tela, truncamento de textos e resoluções pequenas. Registro SIP e áudio de chamada continuam não homologados.
+
+
+## v0.50 — Teste de toque real via WASAPI (sem SIP)
+
+- O botão **Testar toque**, na aba Áudio, envia um sinal sintético breve (duas notas suaves de 660 Hz, abaixo de 11% do nível digital, total máximo de 380 ms) **somente** ao endpoint de reprodução explicitamente selecionado para toque. Não usa o endpoint de voz nem dispara chamadas.
+- A execução é feita em uma thread separada usando Windows WASAPI em modo compartilhado, com validação de endpoint ativo e formato nativo (float32 ou PCM16). Falhas não redirecionam silenciosamente o toque a outros alto-falantes. Nenhum número SIP ou segredo é acessado pelo teste.
+- A tela oferece feedback do envio do teste, bloqueio de cliques concorrentes e encerramento supervisionado da thread. O teste unitário `ringtone_preview` valida duração, amplitude, pausas, canais e limites da síntese; o smoke testa que não reproduz áudio no runner da CI.
+- Isso comprova apenas que o aplicativo **tenta reproduzir** áudio local no dispositivo escolhido; não confirma percepção acústica, acesso físico ao headset ou áudio da chamada. Continua faltando encaminhar o toque de chamadas recebidas e o RTP/SRTP do motor Baresip.
