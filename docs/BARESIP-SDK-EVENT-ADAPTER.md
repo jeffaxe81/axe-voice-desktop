@@ -203,3 +203,33 @@ deadline remains pending and the owner can stop afterward. The
 
 No native event-loop is launched here. This still is an experimental
 adapter not linked into the GUI, not a SIP call implementation.
+
+
+## Cross-thread command mailbox and owner-only dispatcher (lab)
+
+The GUI-side producer can enqueue `SubmitSelectedAccount` (bounded timeout)
+or `Cancel` using a monotonically increasing command generation. Commands
+contain **no UA pointers, account secrets, phone numbers or SIP URLs**. The
+native-loop owner alone resolves a selected `ua*`, constructs
+`BaresipSdkRegistrationGateway` on its own thread and calls
+`BaresipRegistrationCommandDispatcher::tick()` with a monotonic clock.
+The mailbox is a bounded 16-command queue: overflow discards the ENTIRE
+pending batch, closes admission and directs the owner to stop SIP safely.
+Cancel supersedes queued registrations, closes the generation and prevents
+further submissions; a new generation cannot begin until cancellation or
+overflow is drained.
+
+The dispatcher rejects execution on a foreign thread, calls the native
+registration gateway on the owner thread only, arms its deadline after
+a successful local submission, and polls the deadline every loop iteration
+(including iterations with no new commands). Expired, clock-regressed or
+revoked generations force stop and command invalidation. A normal callback
+confirmation is still required; a locally successful `ua_register` does
+NOT grant `VerifiedNativeApi` or authorize a call.
+
+This is still a **laboratory control-plane seam**, not a running Baresip
+loop or a wired UI component. The owner must externally guarantee SDK
+callback lifetime and serial event-loop operations. The fake-SDK tests
+exercise cross-thread enqueue, wrong-thread execution, expiry, native
+confirmation, cancellation, restart and overflow. Production SIP, TLS/SRTP
+and audio remain intentionally disabled.

@@ -115,6 +115,18 @@ if(BUILD_TESTING)
   add_executable(test_baresip_native_thread_guard tests/test_baresip_native_thread_guard.cpp)
   target_compile_features(test_baresip_native_thread_guard PRIVATE cxx_std_17)
   add_test(NAME baresip_native_thread_guard COMMAND test_baresip_native_thread_guard)
+  add_executable(test_baresip_registration_command_queue
+    tests/test_baresip_registration_command_queue.cpp)
+  target_compile_features(test_baresip_registration_command_queue PRIVATE cxx_std_17)
+  add_test(NAME baresip_registration_command_queue COMMAND test_baresip_registration_command_queue)
+  add_executable(test_baresip_registration_command_dispatcher
+    tests/test_baresip_registration_command_dispatcher.cpp
+    src/baresip_sdk_event_adapter.cpp)
+  target_include_directories(test_baresip_registration_command_dispatcher PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fakes")
+  target_compile_features(test_baresip_registration_command_dispatcher PRIVATE cxx_std_17)
+  add_test(NAME baresip_registration_command_dispatcher COMMAND test_baresip_registration_command_dispatcher)
+  set_tests_properties(baresip_registration_command_dispatcher PROPERTIES TIMEOUT 15)
   set_tests_properties(baresip_sdk_registration_gateway PROPERTIES TIMEOUT 15)
   set_tests_properties(baresip_sdk_event_adapter PROPERTIES TIMEOUT 15)
   add_executable(test_baresip_sdk_callback_epochs
