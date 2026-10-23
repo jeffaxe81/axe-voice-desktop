@@ -6,6 +6,7 @@
 #include "baresip_callback_lifecycle.h"
 #include <cstddef>
 #include <cstdint>
+#include <atomic>
 #include <limits>
 #include <memory>
 #include <vector>
@@ -29,8 +30,18 @@ public:
     // Caller MUST await all in-flight callbacks before stop() and destruction.
     bool start(struct ua* owned_ua) {
         if (registered_ || !owned_ua || contexts_.size() >= kMaxContexts) return false;
+        // Baresip's global bevent_register() first calls
+        // bevent_unregister(handler): two instances using this static callback
+        // would silently replace each other's subscription. Claim ownership
+        // BEFORE touching the Baresip event registry or lifecycle.
+        BaresipSdkEventAdapter* expected = nullptr;
+        if (!process_owner_.compare_exchange_strong(expected, this))
+            return false;
         const auto session = lifecycle_.begin();
-        if (!session) return false;
+        if (!session) {
+            release_owner();
+            return false;
+        }
         owner_ = owned_ua;
         captured_ = session;
         native_key_ = 0;
@@ -47,6 +58,7 @@ public:
             lifecycle_.revoke_and_wait();
             owner_ = nullptr;
             captured_ = {};
+            release_owner();
             return false;
         }
         return true;
@@ -62,6 +74,9 @@ public:
         native_key_ = 0;
         active_call_ = nullptr;
         seen_calls_.clear();
+        // Only release the process-wide claim AFTER native unregistration
+        // and callback admission quiescence, never while subscribed.
+        release_owner();
     }
     bool active() const {
         return registered_ && captured_ && lifecycle_.is_live(captured_);
@@ -71,6 +86,14 @@ public:
     }
 
 private:
+    // One owner for this SDK event-handler entry point. The upstream native
+    // registry is keyed by the FUNCTION POINTER, not its context argument.
+    static inline std::atomic<BaresipSdkEventAdapter*> process_owner_{nullptr};
+    void release_owner() {
+        BaresipSdkEventAdapter* expected = this;
+        (void)process_owner_.compare_exchange_strong(expected, nullptr);
+    }
+
     struct CallbackContext {
         BaresipSdkEventAdapter* owner;
         BaresipCallbackLifecycle::CapturedSession captured;
