@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AXEVoiceDesktop VERSION 0.50.0 LANGUAGES CXX)
+project(AXEVoiceDesktop VERSION 0.51.0 LANGUAGES CXX)
 if(NOT WIN32)
   message(FATAL_ERROR "This bootstrap currently supports Windows only")
 endif()
@@ -138,6 +138,10 @@ if(BUILD_TESTING)
   target_compile_features(test_sip_command_executor PRIVATE cxx_std_17)
   target_link_libraries(test_sip_command_executor PRIVATE axv_sip_address)
   add_test(NAME sip_command_executor COMMAND test_sip_command_executor)
+  add_executable(test_sip_command_watchdog tests/test_sip_command_watchdog.cpp)
+  target_compile_features(test_sip_command_watchdog PRIVATE cxx_std_17)
+  target_link_libraries(test_sip_command_watchdog PRIVATE axv_sip_address)
+  add_test(NAME sip_command_watchdog COMMAND test_sip_command_watchdog)
   add_executable(test_baresip_event_reducer tests/test_baresip_event_reducer.cpp)
   target_compile_features(test_baresip_event_reducer PRIVATE cxx_std_17)
   add_test(NAME baresip_event_reducer COMMAND test_baresip_event_reducer)
@@ -251,5 +255,5 @@ set_tests_properties(integration_sip_safety baresip_sdk_abi_probe windows_proces
   sip_event_projection baresip_event_mailbox baresip_callback_ingress
   baresip_callback_lifecycle baresip_sdk_event_adapter baresip_sdk_single_owner
   baresip_sdk_call_port baresip_sdk_epochs
-  call_command_authorization sip_command_executor PROPERTIES LABELS "integration")
+  call_command_authorization sip_command_executor sip_command_watchdog PROPERTIES LABELS "integration")
 set_target_properties(AXEVoice PROPERTIES OUTPUT_NAME "AXE-Voice")
