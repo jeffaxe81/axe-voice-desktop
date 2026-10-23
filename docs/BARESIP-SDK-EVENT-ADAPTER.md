@@ -49,6 +49,36 @@ Sources (reconfirm against the pinned SDK tag before production):
 - https://github.com/baresip/baresip/blob/main/src/ua.c
 - https://github.com/baresip/baresip/blob/main/include/baresip.h
 
+## v0.49 — exclusive owner of Baresip event handler registration
+
+The upstream `src/bevent.c` `bevent_register(handler, arg)` calls
+`bevent_unregister(handler)` first; the registry keys its subscription
+by the **callback function pointer**, not by its `void* arg` context.
+All AXE Voice adapters use one static callback function. Starting a
+second instance could silently remove the first instance's subscription.
+
+The optional adapter now uses an atomic single-owner claim before entering
+the native SDK registration path. A second active instance is rejected
+without touching the Baresip event registry. The claim remains held after
+a callback rejects a session until the owning management thread invokes
+`stop()`, unregisters the native handler and waits for the callback
+lifecycle to become quiescent. SDK registration failure releases the claim,
+allowing another instance to start. Stopping an instance that never owned
+the subscription cannot release the actual owner's claim.
+
+This is **not** a native callback resource-lifetime guarantee: the
+Baresip event-loop owner still must serialize registration, callbacks
+and shutdown, establish quiescence before destroying SDK resources, and
+keep the adapter alive through that barrier. No actual Baresip runtime
+or SIP account is started by the default Windows CI.
+
+`baresip_sdk_single_owner` uses a fake registry with unique handlers
+and tests duplicate startup, foreign `stop()`, fail-closed termination,
+failed registration, recovery, and 64 alternating owner restarts.
+
+Upstream implementation:
+https://github.com/baresip/baresip/blob/main/src/bevent.c
+
 ## Deliberate limitations
 
 - **Not linked into the AXEVoice GUI.** Its default engine remains
