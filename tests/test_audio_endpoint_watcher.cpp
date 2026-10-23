@@ -9,13 +9,13 @@ int test_fail(int stage, int count = -1) {
     return stage;
 }
 constexpr UINT kAudioSignal = WM_APP + 55;
-LRESULT CALLBACK Proc(HWND window, UINT message, WPARAM, LPARAM) {
+LRESULT CALLBACK Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     if (message == kAudioSignal) {
         auto* count = reinterpret_cast<int*>(GetWindowLongPtrW(window, GWLP_USERDATA));
         if (count) ++*count;
         return 0;
     }
-    return DefWindowProcW(window, message, 0, 0);
+    return DefWindowProcW(window, message, wparam, lparam);
 }
 void drain(HWND window) {
     MSG message{};
