@@ -8,6 +8,7 @@ static bool callback_failure = false;
 static bool submission_failure = false;
 static unsigned callback_added = 0, callback_removed = 0;
 static unsigned submissions = 0, unregistrations = 0;
+static bool g_selected_registered = false;
 
 extern "C" int bevent_register(bevent_h* fn,void* ctx) {
     if (callback_failure || callback) return 17;
@@ -24,9 +25,13 @@ extern "C" ua* bevent_get_ua(const bevent* event) {
 extern "C" call* bevent_get_call(const bevent* event) {
     return event ? event->active_call : nullptr;
 }
+extern "C" bool ua_isregistered(const ua* selected) {
+    return selected && selected->test_id == 1 && g_selected_registered;
+}
 extern "C" int ua_register(ua* selected) {
     if (!selected) return 18;
     ++submissions;
+    g_selected_registered = false; // Submission does not register.
     bevent event{selected,nullptr};
     if (callback) callback(BEVENT_REGISTERING,&event,context);
     return submission_failure ? 19 : 0;
@@ -34,6 +39,7 @@ extern "C" int ua_register(ua* selected) {
 extern "C" void ua_unregister(ua* selected) {
     if (!selected) return;
     ++unregistrations;
+    g_selected_registered = false;
     bevent event{selected,nullptr};
     if (callback) callback(BEVENT_UNREGISTERING,&event,context);
 }
@@ -77,6 +83,7 @@ int main() {
 
     bevent registered{&selected,nullptr};
     if (!callback) return 8;
+    g_selected_registered = true; // Fake registrar accepted credentials.
     callback(BEVENT_REGISTER_OK,&registered,context);
     state = projection.observe(RuntimeProcess::Running,
                                SipEvidence::VerifiedNativeApi,mailbox.drain());
@@ -93,5 +100,19 @@ int main() {
     if (callback || unregistrations!=2 || submissions!=3 ||
         callback_added!=callback_removed) return 13;
     if (mailbox.enqueue({BaresipEventKind::RegisterOk,first})) return 14;
+
+    // A forged/stale REGISTER_OK cannot register a UA still marked down
+    // by the SDK itself. The entire bridge generation is invalidated.
+    if (gateway.submit(&selected) != NativeRegistrationSubmission::Submitted) return 15;
+    const auto pending = mailbox.drain();
+    if (pending.size != 1 || pending.events[0].kind != BaresipEventKind::Registering ||
+        ua_isregistered(&selected)) return 16;
+    bevent unconfirmed{&selected,nullptr};
+    callback(BEVENT_REGISTER_OK,&unconfirmed,context);
+    if (adapter.active() || gateway.submitted() || gateway.session() ||
+        mailbox.drain().session != 0) return 17;
+    gateway.stop();
+    if (callback || callback_added != callback_removed ||
+        unregistrations != 3) return 18;
     return 0;
 }

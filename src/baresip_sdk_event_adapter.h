@@ -143,7 +143,11 @@ private:
                 fail_closed();
             return;
         case BEVENT_REGISTER_OK:
-            if (!lifecycle_.registration(epoch, BaresipEventKind::RegisterOk))
+            // A callback alone is insufficient. Cross-check the selected
+            // native UA state before projecting a confirmed registration.
+            // A mismatch revokes the entire epoch, not merely the event.
+            if (!ua_isregistered(owner_) ||
+                !lifecycle_.registration(epoch, BaresipEventKind::RegisterOk))
                 fail_closed();
             return;
         case BEVENT_REGISTER_FAIL:
@@ -156,6 +160,12 @@ private:
             return;
         case BEVENT_CALL_INCOMING:
         case BEVENT_CALL_OUTGOING: {
+            // MVP requires a still-registered native account before a call
+            // can enter the call-state pipeline; process-up alone is not proof.
+            if (!ua_isregistered(owner_)) {
+                fail_closed();
+                return;
+            }
             const struct call* call = bevent_get_call(event);
             // Never accept pointer reuse in the same session. Otherwise a late
             // callback could confuse a new call with a previously closed one.

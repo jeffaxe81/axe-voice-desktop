@@ -117,3 +117,20 @@ the bridge and pending events. `stop()` submits `ua_unregister` and
 removes the callback. The fake-SDK unit test checks rejected submissions,
 register-pending vs. confirmed, duplicate attempts, logout and restarts.
 Neither this gateway nor its SDK fake is linked into the GUI.
+
+ 
+## Native registration confirmation cross-check
+
+The experimental adapter additionally calls the Baresip public
+`ua_isregistered(selected_ua)` on `BEVENT_REGISTER_OK`, and before
+accepting `BEVENT_CALL_INCOMING/OUTGOING`. An event claiming success
+while the selected UA is not registered is **not** accepted as proof:
+the callback epoch is revoked and all queued events are invalidated.
+A locally successful `ua_register()` submission still leaves the
+account pending until a valid native callback arrives.
+
+Fake-SDK regression tests deliberately emit a success event while
+`ua_isregistered()` is false, and attempt a call after simulated native
+registration loss. Both fail closed. No claim of actual registrar
+authentication, media readiness, TLS/SRTP, or working native Baresip
+SDK linkage is made; the Windows UI remains unchanged.

@@ -20,6 +20,7 @@ struct ua* bevent_get_ua(const struct bevent* event);
 struct call* bevent_get_call(const struct bevent* event);
 int ua_register(struct ua* selected);
 void ua_unregister(struct ua* selected);
+bool ua_isregistered(const struct ua* selected);
 #ifdef __cplusplus
 }
 #endif
