@@ -593,6 +593,7 @@ void request_audio_refresh(bool show_waiting = false) {
         }
     } else if (show_waiting) {
         g_audio_manual_refresh.defer();
+        g_audio_force_update = true;
         SetWindowTextW(g_headset_status,
             L"Consulta em andamento; atualizacao manual pendente.");
     }
