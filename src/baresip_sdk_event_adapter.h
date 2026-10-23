@@ -64,8 +64,11 @@ public:
     void stop() {
         // Event-loop contract: no concurrent/in-flight SDK callbacks here.
         if (registered_) bevent_unregister(&BaresipSdkEventAdapter::callback);
-        registered_ = false;
+        // Keep registered_ and native owner/context stable until every callback
+        // which already entered has released its outer lease. Otherwise a
+        // concurrent active() read may race against this state change.
         lifecycle_.revoke_and_wait();
+        registered_ = false;
         owner_ = nullptr;
         captured_ = {};
         native_key_ = 0;
@@ -96,8 +99,12 @@ private:
 
     static void callback(enum bevent_ev type, struct bevent* event, void* arg) {
         auto* context = static_cast<CallbackContext*>(arg);
-        if (context && context->owner)
-            context->owner->on_event(context->epoch, type, event);
+        if (!context || !context->owner) return;
+        // Every dispatched callback holds its epoch alive through on_event().
+        // stop() must not release account/call state while this lease exists.
+        auto lease = context->owner->lifecycle_.hold_native_callback(context->epoch);
+        if (!lease) return;
+        context->owner->on_event(context->epoch, type, event);
     }
 
     void fail_closed() {
