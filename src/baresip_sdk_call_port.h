@@ -47,14 +47,20 @@ public:
 
     bool answer(std::uint64_t call_token) override {
         struct call* owned = resolve(call_token);
-        if (!owned) return false;
+        if (!owned || !adapter_.active_incoming_ ||
+            adapter_.call_established_ || adapter_.answer_sent_ ||
+            adapter_.hangup_sent_) return false;
+        // Record the one-time action BEFORE native reentrant callbacks.
+        adapter_.answer_sent_ = true;
         // Answer may synchronously establish or close this native call.
         return ua_answer(adapter_.owner_, owned, VIDMODE_OFF) == 0;
     }
 
     bool hangup(std::uint64_t call_token) override {
         struct call* owned = resolve(call_token);
-        if (!owned) return false;
+        if (!owned || adapter_.hangup_sent_) return false;
+        // Reentrant CALL_CLOSED may clear this flag before returning.
+        adapter_.hangup_sent_ = true;
         // ua_hangup() can synchronously close and free the call object.
         // Do not access 'owned' or adapter state after invoking it.
         ua_hangup(adapter_.owner_, owned, 0, nullptr);
