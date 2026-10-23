@@ -102,3 +102,10 @@
 - Bloqueio de chamadas originadas, sessões antigas, fonte não comprovada, endpoint ausente e evidência revogada.
 - Unit tests e pipeline sintético mailbox/reducer/projection, com falha fechada em overflow.
 - Execução de toque automático continua bloqueada (backend de chamada SIP não integrado); sem mudança de volume ou dispositivos do Windows.
+
+### v0.54.0 — Ringtone endpoint fencing
+
+- Rota de toque vinculada ao identificador do endpoint na sessão de chamada autenticada.
+- Alteração/desconexão força Stop antes de Start da nova saída, sem dados sensíveis em logs.
+- Reavaliação imediata de inversão e seleção manual; regressões de unidade e integração sintética.
+- Nenhum toque de chamada automático foi ativado no executável laboratório.

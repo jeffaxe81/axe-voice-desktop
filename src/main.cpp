@@ -563,6 +563,8 @@ void refresh_audio_panel() {
     const auto voice = fill_audio_combo(
         g_output_audio_combo, g_audio_outputs, g_selected_output_id);
     g_selected_ringtone_id = route.ring.selected_id;
+    // Hotplug may switch the ringtone endpoint. A future player must process
+    // Stop before accepting the new route on the next verified observation.
     const auto ring = fill_audio_combo(
         g_ringtone_audio_combo, g_audio_outputs, g_selected_ringtone_id);
     // The two dropdowns never automatically control the Baresip runtime.
@@ -602,7 +604,7 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
                         return device.id == g_selected_ringtone_id;
                     });
     const auto ring_intent = g_incoming_ring_gate.observe(
-        observed, current_session, ring_device_active);
+        observed, current_session, g_selected_ringtone_id, ring_device_active);
     // Deliberately NO sound dispatch: UnavailableSipEngine provides no verified
     // native call. A future audited adapter must consume Start/Stop on the GUI
     // owner thread, with a cancellable ring worker distinct from the local
@@ -858,6 +860,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                     fill_audio_combo(g_ringtone_audio_combo, g_audio_outputs, g_selected_ringtone_id);
                     SetWindowTextW(g_headset_status,
                         L"Toque e voz invertidos localmente. Baresip nao configurado.");
+                    refresh_runtime_banner(g_baresip_process.poll());
                 }
                 return 0;
             }
@@ -1024,6 +1027,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                                  route.voice.available() && !g_audio_preview.busy());
                     SetWindowTextW(g_headset_status,
                         L"Rotas escolhidas nesta sessao. Audio de chamada ainda indisponivel.");
+                    if (id == kRingtoneAudioCombo)
+                        refresh_runtime_banner(g_baresip_process.poll());
                 }
                 return 0;
             }
@@ -1318,7 +1323,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.53",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.54",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
