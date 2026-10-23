@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.51.0 — watchdog de comandos SIP pendentes (laboratório)
+- `SipCommandExecutor` exige relógio monotônico e bloqueia novas operações após 10 segundos sem confirmação de mudança de estado.
+- `watchdog()` permite detectar timeout mesmo quando o usuário não envia novos comandos; falha de prova SIP e retrocesso do relógio também invalidam a sessão.
+- Nova suíte de testes sintéticos de timeout, progresso, reinício e impossibilidade de repetir comandos antigos; integração real ainda não habilitada na GUI.
+- Documento `docs/SIP-COMMAND-WATCHDOG.md` registra comportamento, limites e integração futura.
+
+
 ## v0.50.0 — teste de toque no dispositivo Windows selecionado
 - Botão explícito TESTAR TOQUE na aba ÁUDIO. Renderiza sinal local de 660 Hz com volume baixo e duração limitada via WASAPI na saída de toque escolhida, em thread separada.
 - Escolha da saída de conversa e do microfone permanece independente; não há roteamento SIP/RTP ou reprodução de chamadas reais.
