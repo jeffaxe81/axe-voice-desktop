@@ -20,7 +20,8 @@ public:
             state_ = {process, SipStatus::Unavailable, SipEvidence::None, 0};
             return state_;
         }
-        if (batch.overflow) {
+        // Batch is a public value type. Refuse inconsistent/corrupted lengths before indexing.
+        if (batch.overflow || batch.size > batch.events.size()) {
             reject(batch.session, process);
             return state_;
         }
