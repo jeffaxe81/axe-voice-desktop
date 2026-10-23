@@ -23,6 +23,7 @@
 #include "audio_devices.h"
 #include "audio_selection_feedback.h"
 #include "audio_routing_policy.h"
+#include "audio_preview.h"
 #include "audio_hotplug_debounce.h"
 #include "audio_endpoint_watcher.h"
 #include "windows_process.h"
@@ -73,6 +74,8 @@ constexpr int kInputAudioCombo = 2401;
 constexpr int kOutputAudioCombo = 2402; // voice audio output
 constexpr int kRingtoneAudioCombo = 2403;
 constexpr int kSwapRingtoneVoice = 2404;
+constexpr int kTestRingtoneOutput = 2405;
+constexpr int kTestVoiceOutput = 2406;
 constexpr int kWindowWidth = 438;
 unsigned g_dpi = axv::kBaseDpi;
 constexpr int kFullHeight = 842;
@@ -111,6 +114,8 @@ std::wstring g_selected_output_id;
 std::wstring g_selected_ringtone_id;
 axv::AudioHotplugDebounce g_audio_hotplug;
 axv::AudioEndpointWatcher g_audio_endpoint_watcher;
+axv::AudioPreviewWorker g_audio_preview;
+bool g_audio_preview_pending = false;
 axv::WindowsProcess g_baresip_process;
 axv::ProcessStatus g_last_process_state = axv::ProcessStatus::Stopped;
 axv::ShutdownDeadline g_shutdown;
@@ -533,7 +538,10 @@ void refresh_audio_panel() {
         fill_audio_combo(g_input_audio_combo, g_audio_inputs, g_selected_input_id);
         fill_audio_combo(g_output_audio_combo, g_audio_outputs, g_selected_output_id);
         fill_audio_combo(g_ringtone_audio_combo, g_audio_outputs, g_selected_ringtone_id);
-        EnableWindow(GetDlgItem(GetParent(g_ringtone_audio_combo), kSwapRingtoneVoice), FALSE);
+        HWND root = GetParent(g_ringtone_audio_combo);
+        EnableWindow(GetDlgItem(root, kSwapRingtoneVoice), FALSE);
+        EnableWindow(GetDlgItem(root, kTestRingtoneOutput), FALSE);
+        EnableWindow(GetDlgItem(root, kTestVoiceOutput), FALSE);
         SetWindowTextW(g_headset_status, L"Falha ao consultar os dispositivos do Windows.");
         return;
     }
@@ -549,8 +557,13 @@ void refresh_audio_panel() {
     const auto ring = fill_audio_combo(
         g_ringtone_audio_combo, g_audio_outputs, g_selected_ringtone_id);
     // The two dropdowns never automatically control the Baresip runtime.
-    EnableWindow(GetDlgItem(GetParent(g_ringtone_audio_combo), kSwapRingtoneVoice),
+    HWND root = GetParent(g_ringtone_audio_combo);
+    EnableWindow(GetDlgItem(root, kSwapRingtoneVoice),
                  axv::can_swap_audio_outputs(route));
+    EnableWindow(GetDlgItem(root, kTestRingtoneOutput),
+                 route.ring.available() && !g_audio_preview.busy());
+    EnableWindow(GetDlgItem(root, kTestVoiceOutput),
+                 route.voice.available() && !g_audio_preview.busy());
     SetWindowTextW(g_headset_status, axv::audio_routing_feedback(microphone, route));
     (void)voice;
     (void)ring;
@@ -710,13 +723,17 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
             39, 471, 350, 230, kRingtoneAudioCombo, 2);
         make_button(window, L"INVERTER TOQUE / VOZ", kSwapRingtoneVoice,
-                    39, 532, 170, 42, 2);
+                    39, 527, 170, 38, 2);
         make_button(window, L"ATUALIZAR AUDIO", kRefreshHeadsetsButton,
-                    218, 532, 171, 42, 2);
-        make_label(window, L"Escolha PC ou headset em cada lista. Aplicacao ao Baresip: pendente.",
-                   39, 585, 350, 42, 2, g_font_small);
+                    218, 527, 171, 38, 2);
+        make_button(window, L"TESTAR TOQUE", kTestRingtoneOutput,
+                    39, 573, 170, 38, 2);
+        make_button(window, L"TESTAR VOZ", kTestVoiceOutput,
+                    218, 573, 171, 38, 2);
+        make_label(window, L"Teste local de saida. Toque e voz SIP ainda indisponiveis.",
+                   39, 620, 350, 31, 2, g_font_small);
         g_headset_status = make_label(window, L"Abra AUDIO para consultar o Windows.",
-                                     39, 633, 350, 55, 2, g_font_small);
+                                     39, 657, 350, 39, 2, g_font_small);
         make_button(window, L"PRONTIDAO DE CHAMADAS (F2)",
                     kReadinessButton, 39, 699, 350, 42, 2);
         g_status = make_label(window, L"Digite um ramal ou endereço SIP.",
@@ -727,6 +744,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         EnableWindow(g_output_audio_combo, FALSE);
         EnableWindow(g_ringtone_audio_combo, FALSE);
         EnableWindow(GetDlgItem(window,kSwapRingtoneVoice), FALSE);
+        EnableWindow(GetDlgItem(window,kTestRingtoneOutput), FALSE);
+        EnableWindow(GetDlgItem(window,kTestVoiceOutput), FALSE);
         // A clear disabled affordance: no real SIP engine has been connected yet.
         for (int id : {kCallButton, kMuteFuture, kHoldFuture,
                        kTransferFuture, kHangupFuture}) {
@@ -772,6 +791,25 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 if (g_smoke_mode) g_help_requested_smoke = true;
                 else MessageBoxW(window, axv::frontend_help_text(),
                                  L"Ajuda - AXE Voice (LAB)", MB_OK | MB_ICONINFORMATION);
+                return 0;
+            }
+            if ((control == kTestRingtoneOutput || control == kTestVoiceOutput) &&
+                g_page == 2) {
+                if (g_smoke_mode) return 0; // CI never produces sound.
+                const std::wstring& endpoint = control == kTestRingtoneOutput
+                    ? g_selected_ringtone_id : g_selected_output_id;
+                if (endpoint.empty()) {
+                    SetWindowTextW(g_headset_status, L"Selecione primeiro um dispositivo.");
+                } else if (g_audio_preview.start(endpoint)) {
+                    g_audio_preview_pending = true;
+                    EnableWindow(GetDlgItem(window,kTestRingtoneOutput), FALSE);
+                    EnableWindow(GetDlgItem(window,kTestVoiceOutput), FALSE);
+                    SetWindowTextW(g_headset_status,
+                        L"Reproduzindo som local no dispositivo escolhido...");
+                } else {
+                    SetWindowTextW(g_headset_status,
+                        L"Teste em andamento ou falha ao iniciar reproducao.");
+                }
                 return 0;
             }
             if (control == kSwapRingtoneVoice && g_page == 2) {
@@ -938,6 +976,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                         g_audio_outputs, g_selected_output_id, g_selected_ringtone_id);
                     EnableWindow(GetDlgItem(window, kSwapRingtoneVoice),
                                  axv::can_swap_audio_outputs(route));
+                    EnableWindow(GetDlgItem(window,kTestRingtoneOutput),
+                                 route.ring.available() && !g_audio_preview.busy());
+                    EnableWindow(GetDlgItem(window,kTestVoiceOutput),
+                                 route.voice.available() && !g_audio_preview.busy());
                     SetWindowTextW(g_headset_status,
                         L"Rotas escolhidas nesta sessao. Audio de chamada ainda indisponivel.");
                 }
@@ -1127,6 +1169,17 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
     }
     case WM_TIMER:
         if (wparam == kProcessTimer) {
+            if (g_audio_preview_pending && !g_audio_preview.busy()) {
+                g_audio_preview_pending = false;
+                SetWindowTextW(g_headset_status,
+                    axv::audio_preview_diagnostic(g_audio_preview.result()));
+                if (!g_smoke_mode) {
+                    EnableWindow(GetDlgItem(window,kTestRingtoneOutput),
+                                 !g_selected_ringtone_id.empty());
+                    EnableWindow(GetDlgItem(window,kTestVoiceOutput),
+                                 !g_selected_output_id.empty());
+                }
+            }
             if (g_audio_hotplug.consume_if_due(GetTickCount64(), g_page == 2) &&
                 !g_smoke_mode) refresh_audio_panel();
             refresh_runtime_banner(g_baresip_process.poll());
@@ -1188,6 +1241,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         return 0;
     case WM_DESTROY:
         g_audio_endpoint_watcher.stop();
+        g_audio_preview.wait(); // Short bounded test sound; no SIP media thread.
         g_sip_session_guard.revoke(axv::RuntimeProcess::Stopped, g_native_event_mailbox, g_sip_projection);
         KillTimer(window, kProcessTimer);
         remove_tray(window);
@@ -1221,7 +1275,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.48",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.49",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
@@ -1333,7 +1387,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             !IsWindowEnabled(GetDlgItem(window, kCallButton)) &&
             !IsWindowEnabled(g_input_audio_combo) &&
             !IsWindowEnabled(g_ringtone_audio_combo) &&
-            !IsWindowEnabled(GetDlgItem(window,kSwapRingtoneVoice));
+            !IsWindowEnabled(GetDlgItem(window,kSwapRingtoneVoice)) &&
+            !IsWindowEnabled(GetDlgItem(window,kTestRingtoneOutput)) &&
+            !IsWindowEnabled(GetDlgItem(window,kTestVoiceOutput));
         // Deterministic, in-process UI test of BOTH requested route directions.
         // Fake devices exist only in --ui-smoke, never inside regular runtime.
         g_audio_outputs = {{L"test-pc",L"PC",false},{L"test-headset",L"Headset",true}};
