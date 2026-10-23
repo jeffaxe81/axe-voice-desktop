@@ -89,3 +89,9 @@ Novos botões **TESTAR TOQUE** e **TESTAR VOZ** na aba ÁUDIO reproduzem, após 
 ## v0.52 — Volumes independentes para prévia de toque e voz
 
 Na aba ÁUDIO, as listas **VOLUME TESTE — TOQUE** e **VOLUME TESTE — VOZ** oferecem 25/50/75/100% do tom de laboratório. Cada escolha vale apenas para o botão de teste correspondente e dura somente até encerrar o aplicativo. É uma fração da amplitude já limitada do tom local (máximo aproximado 11% PCM), não é o volume do sistema Windows, não modifica microfone, nem altera volume ou rota das chamadas SIP. Os valores são copiados ao iniciar o worker WASAPI e validados antes de renderizar. Testes unitários verificam níveis e clipping; o smoke da interface não reproduz som no runner.
+
+## v0.53 — Proteção da campainha para chamada recebida (sem reprodução automática)
+
+Preparada a máquina de estado `IncomingRingtoneGate`: somente uma **chamada entrante** com registro validado por eventos **nativos autenticados**, sessão vigente, ID de chamada coerente e saída de toque ativa pode autorizar **Start**. O gate emite **Stop** ao atender, encerrar, perder o transporte, trocar a sessão, revogar a prova SIP ou desconectar a saída. Uma chamada originada não ativa campainha de entrada. Os eventos passam pelo redutor e projeção do protótipo; nenhuma informação de telefone/conta entra nos sinais.
+
+**Importante:** as decisões Start/Stop não são ligadas à reprodução na versão atual. Nenhuma campainha SIP é tocada automaticamente: o executável continua usando `UnavailableSipEngine`. A ligação futura exigirá adaptador nativo autenticado e reprodução local cancelável, com teste em ambiente real e confirmação de comportamento do Baresip. Em particular, **não presumir que `audio_alert` equivale ao toque de chamada recebida em todas as versões**: a documentação oficial o descreve como alerta de mensagens SIP e as interações de tons dependem da versão/módulo. Isso exige homologação específica.
