@@ -12,7 +12,7 @@
 #include "baresip_event_mailbox.h"
 #include "sip_event_projection.h"
 #include "sip_runtime_session_guard.h"
-#include "incoming_ringtone_gate.h"
+#include "incoming_ringtone_coordinator.h"
 #include "dial_authorization.h"
 #include "call_policy.h"
 #include "sip_diagnostics.h"
@@ -134,7 +134,8 @@ axv::EngineSelection g_sip_selection = axv::create_sip_engine();
 axv::BaresipEventMailbox g_native_event_mailbox;
 axv::SipEventProjection g_sip_projection;
 axv::SipRuntimeSessionGuard g_sip_session_guard;
-axv::IncomingRingtoneGate g_incoming_ring_gate;
+axv::IncomingRingtoneCoordinator g_incoming_ring_coordinator;
+axv::DisabledIncomingRingtoneSink g_incoming_ring_sink;
 
 
 bool g_dark = true;
@@ -603,13 +604,13 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
                     [](const axv::AudioEndpoint& device) {
                         return device.id == g_selected_ringtone_id;
                     });
-    const auto ring_intent = g_incoming_ring_gate.observe(
-        observed, current_session, g_selected_ringtone_id, ring_device_active);
-    // Deliberately NO sound dispatch: UnavailableSipEngine provides no verified
-    // native call. A future audited adapter must consume Start/Stop on the GUI
-    // owner thread, with a cancellable ring worker distinct from the local
-    // button-driven preview. Log text or bare process state must NEVER ring.
-    (void)ring_intent;
+    // The owning thread coordinates STOP acknowledgements before allowing
+    // START on a different endpoint. A disabled sink is deliberately bound
+    // until an audited Baresip call and cancellable ringtone renderer exist.
+    const auto ring_outcome = g_incoming_ring_coordinator.update(
+        observed, current_session, g_selected_ringtone_id,
+        ring_device_active, g_incoming_ring_sink);
+    (void)ring_outcome;
     // No audited native producer is linked; process state never implies SIP proof.
     // Without a native verified producer the UI cannot claim SIP registration.
     const wchar_t* banner = axv::runtime_status_banner(observed, current_session);
@@ -1287,7 +1288,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         DestroyWindow(window);
         return 0;
     case WM_DESTROY:
-        g_incoming_ring_gate.revoke();
+        g_incoming_ring_coordinator.revoke(g_incoming_ring_sink);
         g_audio_endpoint_watcher.stop();
         g_audio_preview.wait(); // Short bounded test sound; no SIP media thread.
         g_sip_session_guard.revoke(axv::RuntimeProcess::Stopped, g_native_event_mailbox, g_sip_projection);
@@ -1323,7 +1324,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.54",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.55",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);

@@ -101,3 +101,9 @@ Preparada a máquina de estado `IncomingRingtoneGate`: somente uma **chamada ent
 O gate de autorização da futura campainha de chamada recebida passa a **fixar a identidade do endpoint Windows escolhido** em memória, além de sessão e token de chamada. Se o operador inverter toque/voz, escolher outra saída ou remover o dispositivo, o gate primeiro retorna **Stop**, descartando a rota antiga; uma eventual autorização **Start** para a nova saída só pode ocorrer em uma observação posterior, ainda com evidência nativa válida. A tela reavalia imediatamente ao selecionar ou inverter a saída. Nenhum ID é persistido, exibido no log ou incluído na projeção SIP.
 
 **Limite:** o gate continua sendo decisão de controle, sem reprodução automática de chamada. Os botões locais TESTAR TOQUE/TESTAR VOZ continuam independentes e o motor Baresip ainda não está integrado ao processo Win32. Testes unitários e de integração sintética verificam Stop-antes-de-Start ao trocar os destinos.
+
+## v0.55 — Confirmação de parada antes de reencaminhar a campainha
+
+Foi criado o coordenador `IncomingRingtoneCoordinator`, que consome o gate de eventos SIP verificados e exige confirmação do reprodutor de toque antes de permitir outra saída. Se o comando de parada falhar, o controlador mantém o estado **StopPending** e não permite começar toque em outro dispositivo; tenta finalizar na observação seguinte. Se iniciar falhar, exige parada e bloqueia tentativas repetidas na mesma chamada/sessão para evitar tempestade de áudio. Testes simulam toques PC→headset, conexão atendida, perda de prova SIP, falhas de start/stop e encerramento.
+
+O aplicativo ainda vincula explicitamente um `DisabledIncomingRingtoneSink`: **nenhuma campainha automática será reproduzida** sem o motor SIP nativo comprovado e um player de campainha cancelável. Os botões manuais TESTAR TOQUE e TESTAR VOZ e seus volumes independentes continuam disponíveis.

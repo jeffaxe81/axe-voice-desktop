@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AXEVoiceDesktop VERSION 0.54.0 LANGUAGES CXX)
+project(AXEVoiceDesktop VERSION 0.55.0 LANGUAGES CXX)
 if(NOT WIN32)
   message(FATAL_ERROR "This bootstrap currently supports Windows only")
 endif()
@@ -173,6 +173,12 @@ if(BUILD_TESTING)
     target_compile_options(test_audio_inventory PRIVATE /utf-8 /W4)
   endif()
   add_test(NAME audio_inventory COMMAND test_audio_inventory)
+  add_executable(test_incoming_ringtone_coordinator tests/test_incoming_ringtone_coordinator.cpp)
+  target_compile_features(test_incoming_ringtone_coordinator PRIVATE cxx_std_17)
+  add_test(NAME incoming_ringtone_coordinator COMMAND test_incoming_ringtone_coordinator)
+  add_executable(test_integration_ringtone_playback_control tests/test_integration_ringtone_playback_control.cpp)
+  target_compile_features(test_integration_ringtone_playback_control PRIVATE cxx_std_17)
+  add_test(NAME integration_ringtone_playback_control COMMAND test_integration_ringtone_playback_control)
   add_executable(test_incoming_ringtone_gate tests/test_incoming_ringtone_gate.cpp)
   target_compile_features(test_incoming_ringtone_gate PRIVATE cxx_std_17)
   add_test(NAME incoming_ringtone_gate COMMAND test_incoming_ringtone_gate)
@@ -218,7 +224,7 @@ foreach(axv_test IN LISTS axv_registered_tests)
   set_tests_properties("${axv_test}" PROPERTIES LABELS "unit")
 endforeach()
 set_tests_properties(ui_smoke ui_blackbox PROPERTIES LABELS "blackbox")
-set_tests_properties(integration_sip_safety integration_incoming_ringtone windows_process sip_runtime_session_guard
+set_tests_properties(integration_sip_safety integration_incoming_ringtone integration_ringtone_playback_control windows_process sip_runtime_session_guard
   baresip_sdk_provenance
   sip_event_projection baresip_event_mailbox baresip_callback_ingress
   baresip_callback_lifecycle baresip_sdk_event_adapter baresip_sdk_epochs
