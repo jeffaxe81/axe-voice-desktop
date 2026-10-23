@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.49.0 — posse exclusiva do callback Baresip (laboratório)
+- Impede que duas instâncias do adaptador disputem o registro global de eventos da API Baresip.
+- A posse permanece protegida durante falha e encerramento; só é liberada depois de desregistrar e aguardar callbacks.
+- Teste com registro SDK simulado verifica concorrência lógica, tentativas indevidas, recuperação e 64 reinícios alternados.
+- Continua sem Baresip real, credenciais, chamadas SIP ou mídia integrada no aplicativo Windows.
+
+
 ## v0.48.0 — isolamento de origem dos eventos Baresip (laboratório)
 - `BEVENT_SIPSESS_FAILED/CONN` são eventos de mensagem SIP, não evidência de falha da UA selecionada.
 - Allowlist valida o tipo nativo antes de consultar `bevent_get_ua`; eventos desconhecidos, de RTP e criptografia são ignorados sem comprovar mídia segura.
