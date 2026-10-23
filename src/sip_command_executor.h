@@ -28,7 +28,8 @@ public:
 
 enum class SipCommandDisposition {
     Submitted, InvalidRequest, StaleSession, DuplicateRequest,
-    PendingTransition, DuplicateCallAction, Denied, NativeRejected, Fenced
+    PendingTransition, DuplicateCallAction, Denied, NativeRejected,
+    CommandTimedOut, ClockRollback, Fenced
 };
 struct SipCommandResult {
     SipCommandDisposition disposition = SipCommandDisposition::InvalidRequest;
@@ -41,12 +42,17 @@ struct SipCommandResult {
 // serializes this method with callbacks and with native port execution.
 class SipCommandExecutor {
 public:
+    // 'now_ms' MUST come from a monotonic clock on the serialized SIP owner
+    // thread, sampled just before dispatch. No wall-clock timestamps.
+    static constexpr std::uint64_t kPendingTimeoutMs = 10000;
     SipCommandResult dispatch(const SipCommandRequest& r,
                               const SipRuntimeObservation& live,
                               std::uint64_t active_session,
                               const EngineSelection& selected,
-                              SipNativeCommandPort& native) {
-        if (!r.session || !r.sequence) return {SipCommandDisposition::InvalidRequest};
+                              SipNativeCommandPort& native,
+                              std::uint64_t now_ms) {
+        if (!r.session || !r.sequence || !now_ms)
+            return {SipCommandDisposition::InvalidRequest};
         if (r.session < session_) return {SipCommandDisposition::StaleSession};
         if (session_ && r.session == session_ && fenced_)
             return {SipCommandDisposition::Fenced};
@@ -56,6 +62,13 @@ public:
             return {SipCommandDisposition::StaleSession};
         }
         if (r.session > session_) begin_new_session(r.session);
+        if (last_now_ms_ && now_ms < last_now_ms_) {
+            // A rollback invalidates deadline calculations. Never authorize a
+            // native retry while the monotonic time source is untrustworthy.
+            fenced_ = true;
+            return {SipCommandDisposition::ClockRollback};
+        }
+        last_now_ms_ = now_ms;
         if (r.sequence <= last_sequence_)
             return {SipCommandDisposition::DuplicateRequest};
         // Consume even denied request IDs. A previously denied command cannot
@@ -64,8 +77,15 @@ public:
         if (pending_) {
             if (live.sip == pending_status_ &&
                 live.call_id == pending_call_ &&
-                live.last_call_id == pending_last_call_)
+                live.last_call_id == pending_last_call_) {
+                if (now_ms - pending_started_ms_ >= kPendingTimeoutMs) {
+                    // A native success without an observed state change can
+                    // conceal a lost callback. Require a new SDK generation.
+                    fenced_ = true;
+                    return {SipCommandDisposition::CommandTimedOut};
+                }
                 return {SipCommandDisposition::PendingTransition};
+            }
             pending_ = false;
         }
         const auto permission = authorize_call_command(
@@ -109,6 +129,7 @@ public:
         case CallAction::Hangup: last_hangup_id_ = r.call_id; break;
         }
         pending_ = true;
+        pending_started_ms_ = now_ms;
         pending_status_ = live.sip;
         pending_call_ = live.call_id;
         pending_last_call_ = live.last_call_id;
@@ -125,6 +146,8 @@ private:
         pending_call_ = 0;
         pending_last_call_ = 0;
         pending_status_ = SipStatus::Unavailable;
+        pending_started_ms_ = 0;
+        last_now_ms_ = 0;
         pending_ = false;
         sent_dial_ = false;
         fenced_ = false;
@@ -132,6 +155,7 @@ private:
     std::uint64_t session_ = 0, last_sequence_ = 0;
     std::uint64_t last_answer_id_ = 0, last_hangup_id_ = 0, last_dial_call_ = 0;
     std::uint64_t pending_call_ = 0, pending_last_call_ = 0;
+    std::uint64_t pending_started_ms_ = 0, last_now_ms_ = 0;
     SipStatus pending_status_ = SipStatus::Unavailable;
     bool pending_ = false, sent_dial_ = false, fenced_ = false;
 };
