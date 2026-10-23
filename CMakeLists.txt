@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AXEVoiceDesktop VERSION 0.66.0 LANGUAGES CXX)
+project(AXEVoiceDesktop VERSION 0.67.0 LANGUAGES CXX)
 if(NOT WIN32)
   message(FATAL_ERROR "This bootstrap currently supports Windows only")
 endif()
@@ -85,6 +85,11 @@ if(BUILD_TESTING)
   add_test(NAME libre_registration_owner_integration
     COMMAND test_libre_registration_owner_integration)
   set_tests_properties(libre_registration_owner_integration PROPERTIES TIMEOUT 15)
+  # Distinct integration scenario: private native UA is provisioned and
+  # destroyed exactly once on the libre owner thread; tests rejection too.
+  add_test(NAME libre_registration_owned_ua_lifecycle
+    COMMAND test_libre_registration_owner_integration --owned-ua)
+  set_tests_properties(libre_registration_owned_ua_lifecycle PROPERTIES TIMEOUT 15)
 
   add_executable(test_baresip_registration_command_queue
     tests/test_baresip_registration_command_queue.cpp)
@@ -353,7 +358,8 @@ set_tests_properties(integration_sip_safety baresip_sdk_abi_probe windows_proces
   integration_ringtone_playback_control integration_ringtone_worker integration_ring_fencing_matrix
   lab_artifact_manifest lab_artifact_manifest_negative
   lab_artifact_hash_verifier libre_owner_reactor
-  libre_registration_owner_integration PROPERTIES LABELS "integration")
+  libre_registration_owner_integration
+  libre_registration_owned_ua_lifecycle PROPERTIES LABELS "integration")
 set_target_properties(AXEVoice PROPERTIES OUTPUT_NAME "AXE-Voice")
 add_custom_command(TARGET AXEVoice POST_BUILD
   COMMAND "${CMAKE_COMMAND}" -E copy_if_different
