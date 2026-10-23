@@ -19,6 +19,7 @@ namespace axv {
 // No passwords, SIP URIs, raw pointers, or IDs derived from pointers enter events.
 // This does not issue VerifiedNativeApi and does not implement SipEngine.
 class BaresipSdkEventAdapter {
+    friend class BaresipSdkCallPort; // Native calls only inside audited SDK owner.
 public:
     explicit BaresipSdkEventAdapter(BaresipCallbackLifecycle& lifecycle)
         : lifecycle_(lifecycle) {}
@@ -46,6 +47,7 @@ public:
         captured_ = session;
         native_key_ = 0;
         active_call_ = nullptr;
+        active_token_ = 0;
         seen_calls_.clear();
         // Each native registration receives a *distinct immutable epoch*.
         // Contexts remain allocated until owner-proven callback quiescence.
@@ -85,6 +87,7 @@ public:
         captured_ = {};
         native_key_ = 0;
         active_call_ = nullptr;
+        active_token_ = 0;
         seen_calls_.clear();
         // Only release the process-wide claim AFTER native unregistration
         // and callback admission quiescence, never while subscribed.
@@ -128,6 +131,7 @@ private:
         lifecycle_.reject_current();
         captured_ = {}; // explicit stop() required before restart
         active_call_ = nullptr;
+        active_token_ = 0;
     }
 
     void on_event(BaresipCallbackLifecycle::CapturedSession callback_session,
@@ -200,12 +204,16 @@ private:
             const std::uint64_t new_key = native_key_ + 1;
             const auto kind = type == BEVENT_CALL_INCOMING
                 ? BaresipEventKind::CallIncoming : BaresipEventKind::CallOutgoing;
-            if (!lifecycle_.call_started(callback_session, new_key, kind)) {
+            std::uint64_t minted_token = 0;
+            if (!lifecycle_.call_started(
+                    callback_session, new_key, kind, &minted_token) ||
+                minted_token == 0) {
                 fail_closed();
                 return;
             }
             native_key_ = new_key;
             active_call_ = call;
+            active_token_ = minted_token;
             seen_calls_.insert(call); // never queued, logged or persisted
             return;
         }
@@ -222,7 +230,10 @@ private:
                 fail_closed();
                 return;
             }
-            if (type == BEVENT_CALL_CLOSED) active_call_ = nullptr;
+            if (type == BEVENT_CALL_CLOSED) {
+                active_call_ = nullptr;
+                active_token_ = 0;
+            }
             return;
         }
         default:
@@ -241,6 +252,8 @@ private:
     // The containing owner must ensure SDK callback quiescence before destruction.
     std::vector<std::unique_ptr<CallbackContext>> contexts_;
     std::uint64_t native_key_ = 0;
+    // The actual mailbox token (NOT assumed to equal native_key_).
+    std::uint64_t active_token_ = 0;
     bool registered_ = false;
 };
 } // namespace axv
