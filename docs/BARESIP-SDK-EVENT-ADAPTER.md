@@ -258,3 +258,24 @@ instantaneous inter-thread cancellation of a blocking SDK function.
 Cancel requests arriving after the final checkpoint are processed by the
 next event-loop tick; an external loop still must run and own native SDK
 resources. Not a production SIP call or RTP implementation.
+
+
+## Laboratory worker with dedicated SIP owner thread
+
+`BaresipRegistrationLabWorker` now creates the experimental adapter,
+lifecycle, gateway and dispatcher **inside a dedicated C++ thread**, and
+joins only after native callback unregistration and queue invalidation.
+Its public `submit()` and `cancel()` contain no UA pointers, credentials
+or SIP URIs. A mutex-protected snapshot publishes the latest significant
+state and a monotonic generation to external observers.
+
+The test-only pump, UA resolver and optional virtual clock run exclusively
+on the worker thread. The fake-SDK test checks thread identity, successful
+callback confirmation, cancellation, timeout, Baresip shutdown and restart
+with a fresh generation.
+
+**Important:** this is a lab-thread scaffold, not an actual libre
+`re_main()` event loop, audited SDK initialization, account provisioning,
+real SIP registration, GUI integration or voice media transport. The caller
+must serialize start/stop, keep the UA alive through shutdown and establish
+native callback quiescence before destroying the real SDK.
