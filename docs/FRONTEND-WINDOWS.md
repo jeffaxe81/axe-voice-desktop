@@ -152,3 +152,9 @@ Seletores independentes de 25%, 50%, 75% e 100% do **som de teste** de toque/voz
 O novo gate aceita um toque automático somente quando `SipRuntimeObservation` comprova processo em execução, `VerifiedNativeApi`, sessão válida, estado `Ringing`, token opaco da chamada compatível com `last_call_id` e saída de toque ativa. A transição para chamada atendida, falha, expiração da sessão, remoção da saída e reinício exige Stop. Não há sobreposição de sessões: se a chamada muda, primeiro se interrompe a anterior. Testes de unidade e de integração com mailbox/projeção sintéticos cobrem esses cenários, além de overflow fail-closed.
 
 **Entrega apenas de segurança/estado, não som automático.** O aplicativo ainda não recebe callbacks SIP reais e não possui um player de campainha conectado a essas decisões. Os botões manuais TESTAR TOQUE/TESTAR VOZ seguem funcionando independentemente. O campo `audio_alert` não pode ser tomado isoladamente como mapeamento comprovado de chamadas entrantes; requer comprovação com versão e módulos do Baresip.
+
+## v0.54 — Fence de endpoint do toque por sessão e chamada
+
+O gate `IncomingRingtoneGate` mantém internamente o endpoint Windows autorizado, sem persistência. Se a seleção mudar de PC para headset (ou vice-versa), ou se a saída ficar indisponível, o estado cancela a autorização e exige um ciclo Stop antes de uma futura autorização Start. Inversão de toque/voz e seleção manual forçam reavaliação no loop UI. A observação normal por timer também verifica hotplug. Os testes cobrem troca durante chamada recebida sintética, desconexão do endpoint, reautorização, revogação da evidência e overflow da fila nativa.
+
+A saída ainda não é controlada por eventos reais do Baresip neste executável: somente a intenção segura foi implementada, sem campainha SIP real.
