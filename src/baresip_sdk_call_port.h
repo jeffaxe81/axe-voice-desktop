@@ -3,6 +3,7 @@
 #include "sip_command_executor.h"
 #include <cstdint>
 #include <string>
+#include <thread>
 
 namespace axv {
 
@@ -14,7 +15,8 @@ namespace axv {
 class BaresipSdkCallPort final : public SipNativeCommandPort {
 public:
     explicit BaresipSdkCallPort(BaresipSdkEventAdapter& adapter)
-        : adapter_(adapter), captured_session_(adapter.session()) {}
+        : adapter_(adapter), captured_session_(adapter.session()),
+          owner_thread_(std::this_thread::get_id()) {}
     BaresipSdkCallPort(const BaresipSdkCallPort&) = delete;
     BaresipSdkCallPort& operator=(const BaresipSdkCallPort&) = delete;
 
@@ -61,9 +63,10 @@ public:
 
 private:
     bool owns_session() const {
-        return captured_session_ != 0 && adapter_.active() &&
+        return std::this_thread::get_id() == owner_thread_ &&
+               captured_session_ != 0 && adapter_.active() &&
                adapter_.captured_.mailbox_session == captured_session_ &&
-               adapter_.owner_ != nullptr;
+               adapter_.owner_ != nullptr && adapter_.sip_registered_;
     }
     struct call* resolve(std::uint64_t token) const {
         if (!owns_session() || !token ||
@@ -76,5 +79,6 @@ private:
 
     BaresipSdkEventAdapter& adapter_;
     const std::uint64_t captured_session_;
+    const std::thread::id owner_thread_;
 };
 } // namespace axv
