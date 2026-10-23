@@ -130,3 +130,11 @@ A validação de contraste percebido, leitores de tela e escala DPI **ainda exig
 ## v0.47 — Notificações oficiais do Core Audio
 
 A aba ÁUDIO passa a receber eventos do `IMMNotificationClient` para troca do dispositivo padrão de comunicações, inserção/remoção, estado ou propriedades de endpoint. O callback COM apenas agenda uma mensagem sem IDs para a fila da janela; o inventário acontece após debounce de 400 ms no loop Win32. A subscrição é liberada no `WM_DESTROY`, antes de destruir a janela. Se COM não puder inicializar, a atualização manual e a sinalização `WM_DEVICECHANGE` continuam ativas. O teste de callback usa janela message-only e eventos sintéticos, sem hardware. O Baresip ainda não recebe seleção de dispositivos nem realiza chamadas.
+
+## v0.48 — Seletor duplo de toque e voz
+
+A aba ÁUDIO possui 3 seletores: microfone, saída para **voz remota** e saída para **toque da chamada**. A ação INVERTER TOQUE/VOZ troca apenas as duas saídas, sem tocar o microfone. Exemplos: computador toca e headset reproduz a voz, ou headset toca e computador reproduz a voz. Também é possível escolher a mesma saída em ambos.
+
+A primeira seleção escolhe a saída padrão de comunicação para voz e, quando possível, outra saída para toque. Mudanças são mantidas em memória e reconciliadas ao desconectar dispositivos, sem gravar identificadores no Windows Registry. Testes: política de papéis e fallback, UI smoke com dois endpoints sintéticos em direções opostas e caixa-preta confirmando presença dos controles mesmo sem hardware.
+
+**Não há implementação de toque ou áudio SIP** no Baresip da aplicação; isso é um contrato de UX e estado local para integração posterior. O Baresip oferece opções documentadas `audio_player` e `audio_alert` com limitações de versão/módulo, cuja compatibilidade terá de ser testada em uma instância de telefonia real. O botao Chamar continua bloqueado.

@@ -73,3 +73,9 @@ O painel ÁUDIO reage a eventos `WM_DEVICECHANGE`, agrupa notificações com deb
 ## v0.47.0 — Notificações Core Audio de dispositivos padrão
 
 O painel ÁUDIO agora registra um `IMMNotificationClient` oficial do Windows para detectar mudanças no dispositivo padrão de comunicação, além de adição, remoção, estado e propriedades de endpoints. O callback apenas envia uma mensagem interna à interface; o timer existente agrupa alterações e atualiza o inventário do Windows, sem acessar o Core Audio no callback. A subscrição é encerrada ao destruir a janela; falhas no registro não impedem atualização manual ou via `WM_DEVICECHANGE`. Não utiliza dados dos endpoints fora da memória, não configura áudio do Baresip nem habilita chamadas.
+
+## v0.48 — Toque e voz em dispositivos distintos (preparação de rotas)
+
+Na aba **ÁUDIO**, o usuário escolhe separadamente **VOZ DA CHAMADA** e **TOQUE DA CHAMADA** dentre saídas reais do Windows. O botão **INVERTER TOQUE/VOZ** alterna instantaneamente as escolhas: toque no computador e voz no headset, ou toque no headset e voz no computador. O campo **MICROFONE** continua independente. A interface não tenta deduzir o tipo do dispositivo a partir do nome, e ao desconectar um headset volta a uma saída disponível, preferindo separar os papéis quando existirem duas. IDs de endpoints e escolhas não são persistidos.
+
+**Limite funcional:** as opções representam preferências de roteamento para futura integração; o backend Baresip ainda não está conectado. **Nenhum som de chamada ou voz é encaminhado a esses dispositivos neste protótipo.** No futuro, o adaptador deverá mapear explicitamente `audio_alert` (toque) e `audio_player` (voz) ao módulo de áudio do Baresip, verificar dispositivos reais e testar chamadas/alertas; nunca escrever automaticamente endpoints Windows não verificados no arquivo de configuração SIP.
