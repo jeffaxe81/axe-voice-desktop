@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AXEVoiceDesktop VERSION 0.63.0 LANGUAGES CXX)
+project(AXEVoiceDesktop VERSION 0.64.0 LANGUAGES CXX)
 if(NOT WIN32)
   message(FATAL_ERROR "This bootstrap currently supports Windows only")
 endif()
@@ -61,6 +61,35 @@ endif()
 target_link_libraries(AXEVoice PRIVATE user32 gdi32 advapi32 shell32 axv_sip_address axv_audio_devices axv_windows_process axv_ringtone_preview)
 include(CTest)
 if(BUILD_TESTING)
+  # Native libre event-loop owner and pointer-free registration primitives
+  # imported from the isolated SIP track. These tests use only fake SDK APIs;
+  # AXEVoice.exe remains intentionally disconnected from native SIP/RTP.
+  add_executable(test_libre_owner_reactor
+    tests/test_libre_owner_reactor.cpp
+    src/baresip_native_libre_reactor.cpp)
+  target_include_directories(test_libre_owner_reactor PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fakes")
+  target_compile_features(test_libre_owner_reactor PRIVATE cxx_std_17)
+  add_test(NAME libre_owner_reactor COMMAND test_libre_owner_reactor)
+  set_tests_properties(libre_owner_reactor PROPERTIES TIMEOUT 15)
+
+  add_executable(test_baresip_registration_command_queue
+    tests/test_baresip_registration_command_queue.cpp)
+  target_compile_features(test_baresip_registration_command_queue PRIVATE cxx_std_17)
+  add_test(NAME baresip_registration_command_queue
+    COMMAND test_baresip_registration_command_queue)
+
+  add_executable(test_baresip_registration_watchdog
+    tests/test_baresip_registration_watchdog.cpp)
+  target_compile_features(test_baresip_registration_watchdog PRIVATE cxx_std_17)
+  add_test(NAME baresip_registration_watchdog
+    COMMAND test_baresip_registration_watchdog)
+
+  add_executable(test_baresip_native_thread_guard
+    tests/test_baresip_native_thread_guard.cpp)
+  target_compile_features(test_baresip_native_thread_guard PRIVATE cxx_std_17)
+  add_test(NAME baresip_native_thread_guard
+    COMMAND test_baresip_native_thread_guard)
   add_executable(test_baresip_sdk_abi_probe
     tests/baresip_sdk_abi_probe.cpp
     tests/fakes/baresip_sdk_stub.cpp)
@@ -300,7 +329,7 @@ set_tests_properties(integration_sip_safety baresip_sdk_abi_probe windows_proces
   call_command_authorization sip_command_executor integration_incoming_ringtone
   integration_ringtone_playback_control integration_ringtone_worker integration_ring_fencing_matrix
   lab_artifact_manifest lab_artifact_manifest_negative
-  lab_artifact_hash_verifier PROPERTIES LABELS "integration")
+  lab_artifact_hash_verifier libre_owner_reactor PROPERTIES LABELS "integration")
 set_target_properties(AXEVoice PROPERTIES OUTPUT_NAME "AXE-Voice")
 add_custom_command(TARGET AXEVoice POST_BUILD
   COMMAND "${CMAKE_COMMAND}" -E copy_if_different
