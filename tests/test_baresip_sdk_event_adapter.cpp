@@ -12,6 +12,9 @@ static void* g_context = nullptr;
 static bool g_fail_registration = false;
 static int g_registered = 0;
 static int g_unregistered = 0;
+// Fake registrar status, distinct from the callback delivery itself.
+static bool g_native_registered[8]{};
+static bool g_withhold_registration_confirmation = false;
 // Deterministic fake-SDK callback pause inside bevent_get_ua().
 static std::mutex g_pause_mutex;
 static std::condition_variable g_pause_cv;
@@ -48,7 +51,19 @@ extern "C" struct ua* bevent_get_ua(const struct bevent* event) {
 extern "C" struct call* bevent_get_call(const struct bevent* event) {
     return event ? event->active_call : nullptr;
 }
+extern "C" bool ua_isregistered(const struct ua* selected) {
+    return selected && selected->test_id < 8 && g_native_registered[selected->test_id];
+}
 static void emit(bevent_ev kind, bevent* event) {
+    // A faithful fake allows the SDK's registrar state and the emitted
+    // BEVENT_REGISTER_OK to be deliberately inconsistent in negative tests.
+    if (event && event->owner && event->owner->test_id < 8) {
+        const auto id = event->owner->test_id;
+        if (kind == BEVENT_REGISTERING || kind == BEVENT_REGISTER_FAIL ||
+            kind == BEVENT_UNREGISTERING) g_native_registered[id] = false;
+        if (kind == BEVENT_REGISTER_OK && !g_withhold_registration_confirmation)
+            g_native_registered[id] = true;
+    }
     if (g_callback) g_callback(kind, event, g_context);
 }
 
@@ -220,5 +235,27 @@ int main() {
     if (!adapter.start(&account) || !adapter.active()) return 40;
     adapter.stop();
     if (g_callback || g_registered != g_unregistered) return 41;
+
+    // A bare success event without native UA registration must fail closed.
+    if (!adapter.start(&account)) return 42;
+    emit(BEVENT_REGISTERING, &ua_event);
+    g_withhold_registration_confirmation = true;
+    emit(BEVENT_REGISTER_OK, &ua_event);
+    g_withhold_registration_confirmation = false;
+    if (adapter.active() || mailbox.drain().session) return 43;
+    adapter.stop();
+    if (g_callback || g_registered != g_unregistered) return 44;
+
+    // Even if an earlier event confirmed registration, a native deregister
+    // that has not yet emitted its event must not authorize a new call.
+    if (!adapter.start(&account)) return 45;
+    emit(BEVENT_REGISTERING, &ua_event);
+    emit(BEVENT_REGISTER_OK, &ua_event);
+    if (!adapter.active() || !ua_isregistered(&account)) return 46;
+    g_native_registered[account.test_id] = false;
+    emit(BEVENT_CALL_OUTGOING, &one);
+    if (adapter.active() || mailbox.drain().session) return 47;
+    adapter.stop();
+    if (g_callback || g_registered != g_unregistered) return 48;
     return 0;
 }
