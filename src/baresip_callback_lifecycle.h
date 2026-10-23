@@ -118,6 +118,13 @@ public:
         return current_;
     }
 
+    // Lease spanning the entire native C callback, including SDK argument
+    // reads; shutdown waits for this lease after handler unregistration.
+    BaresipCallbackFence::Lease hold_native_callback(CapturedSession captured) {
+        return captured ? fence_.admit(captured.fence_generation)
+                        : BaresipCallbackFence::Lease{};
+    }
+
     bool registration(CapturedSession captured, BaresipEventKind event) {
         auto lease = fence_.admit(captured.fence_generation);
         return lease && ingress_.registration(captured.mailbox_session, event);
