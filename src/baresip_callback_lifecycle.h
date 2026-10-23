@@ -123,9 +123,11 @@ public:
         return lease && ingress_.registration(captured.mailbox_session, event);
     }
     bool call_started(CapturedSession captured, std::uint64_t native_key,
-                      BaresipEventKind event) {
+                      BaresipEventKind event, std::uint64_t* emitted_token = nullptr) {
+        if (emitted_token) *emitted_token = 0;
         auto lease = fence_.admit(captured.fence_generation);
-        return lease && ingress_.call_started(captured.mailbox_session, native_key, event);
+        return lease && ingress_.call_started(
+            captured.mailbox_session, native_key, event, emitted_token);
     }
     bool call_changed(CapturedSession captured, std::uint64_t native_key,
                       BaresipEventKind event) {
