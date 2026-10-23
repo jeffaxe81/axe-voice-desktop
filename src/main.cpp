@@ -71,6 +71,9 @@ constexpr int kReadinessButton = 2008;
 constexpr int kInputAudioCombo = 2401;
 constexpr int kOutputAudioCombo = 2402;
 constexpr int kRingtoneAudioCombo = 2403;
+// Stable Win32 UI Automation IDs for real status labels.
+constexpr int kFeedbackLabel = 2501;
+constexpr int kRuntimeStatusLabel = 2502;
 constexpr int kWindowWidth = 438;
 unsigned g_dpi = axv::kBaseDpi;
 constexpr int kFullHeight = 842;
@@ -321,9 +324,9 @@ HWND make_control(HWND root, LPCWSTR type, LPCWSTR title, DWORD style,
     return child;
 }
 HWND make_label(HWND root, LPCWSTR text, int x, int y, int w, int h,
-                int page = -1, HFONT font = nullptr) {
+                int page = -1, HFONT font = nullptr, int automation_id = 0) {
     return make_control(root, L"STATIC", text, SS_LEFT | SS_NOPREFIX,
-                        x, y, w, h, 0, page, font);
+                        x, y, w, h, automation_id, page, font);
 }
 HWND make_button(HWND root, LPCWSTR text, int id, int x, int y, int w, int h,
                  int page = -1, HFONT font = nullptr) {
@@ -641,7 +644,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_button(window, L"AJUSTES", kShowSettings, 153, 103, 123, 42);
         make_button(window, L"AUDIO", kShowAudio, 283, 103, 131, 42);
         g_runtime_banner = make_label(window, L"MOTOR PARADO  |  SIP NAO REGISTRADO",
-                                     42, 164, 347, 25, -1, g_font_regular);
+                                     42, 164, 347, 25, -1, g_font_regular, kRuntimeStatusLabel);
 
         make_label(window, L"DISCAGEM", 39, 220, 290, 23, 0, g_font_small);
         g_number_label = make_label(window, L"Número ou endereço SIP", 39, 246, 320, 20, 0, g_font_regular);
@@ -715,7 +718,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_button(window, L"PRONTIDAO DE CHAMADAS (F2)",
                     kReadinessButton, 39, 690, 350, 42, 2);
         g_status = make_label(window, L"Digite um ramal ou endereço SIP.",
-                              24, 762, 390, 30, -1, g_font_small);
+                              24, 762, 390, 30, -1, g_font_small, kFeedbackLabel);
         refresh_destination_feedback();
 
         EnableWindow(g_input_audio_combo, FALSE);
