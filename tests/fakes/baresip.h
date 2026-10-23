@@ -19,6 +19,12 @@ int bevent_register(bevent_h* handler, void* argument);
 void bevent_unregister(bevent_h* handler);
 struct ua* bevent_get_ua(const struct bevent* event);
 struct call* bevent_get_call(const struct bevent* event);
+enum vidmode { VIDMODE_OFF = 0, VIDMODE_ON = 1 };
+int ua_connect(struct ua* ua, struct call** callp, const char* from_uri,
+               const char* req_uri, enum vidmode vmode);
+int ua_answer(struct ua* ua, struct call* call, enum vidmode vmode);
+void ua_hangup(struct ua* ua, struct call* call, unsigned short scode,
+               const char* reason);
 #ifdef __cplusplus
 }
 #endif
