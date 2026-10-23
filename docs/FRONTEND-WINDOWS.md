@@ -146,3 +146,9 @@ Os dois seletores de saída agora permitem reproduzir um tom curto no endpoint e
 ## v0.52 — Volume separado para testes dos dois destinos
 
 Seletores independentes de 25%, 50%, 75% e 100% do **som de teste** de toque/voz. Implementação sobre o tom local existente, multiplicando amostras PCM16 ou float32 pela fração escolhida. A UI não modifica volume mestre do Windows nem controle de áudio do Baresip. Default 75% do tom seguro. Unit test cobrindo níveis válidos/inválidos, ambos formatos e saída mono/estéreo; smoke Windows cobre seleção sem dispositivo físico. Toda mídia de chamada SIP permanece bloqueada até integração nativa.
+
+## v0.53 — Admissão segura de campainha para chamada entrante
+
+O novo gate aceita um toque automático somente quando `SipRuntimeObservation` comprova processo em execução, `VerifiedNativeApi`, sessão válida, estado `Ringing`, token opaco da chamada compatível com `last_call_id` e saída de toque ativa. A transição para chamada atendida, falha, expiração da sessão, remoção da saída e reinício exige Stop. Não há sobreposição de sessões: se a chamada muda, primeiro se interrompe a anterior. Testes de unidade e de integração com mailbox/projeção sintéticos cobrem esses cenários, além de overflow fail-closed.
+
+**Entrega apenas de segurança/estado, não som automático.** O aplicativo ainda não recebe callbacks SIP reais e não possui um player de campainha conectado a essas decisões. Os botões manuais TESTAR TOQUE/TESTAR VOZ seguem funcionando independentemente. O campo `audio_alert` não pode ser tomado isoladamente como mapeamento comprovado de chamadas entrantes; requer comprovação com versão e módulos do Baresip.

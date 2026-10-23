@@ -95,3 +95,10 @@
 - Botão INVERTER TOQUE/VOZ prepara dois modos sem inferir se o endpoint é PC ou headset.
 - Recuperação isolada das duas saídas em caso de desconexão, com estado somente em memória.
 - Novos testes puros de roteamento, UI smoke com saídas simuladas e teste de caixa-preta sem hardware; não há reprodução SIP.
+
+### v0.53.0 — Segurança do acionamento futuro da campainha
+
+- Gate de eventos verificados para Start/Stop de ring somente em chamada entrante autenticada e sessão/call ID coerentes.
+- Bloqueio de chamadas originadas, sessões antigas, fonte não comprovada, endpoint ausente e evidência revogada.
+- Unit tests e pipeline sintético mailbox/reducer/projection, com falha fechada em overflow.
+- Execução de toque automático continua bloqueada (backend de chamada SIP não integrado); sem mudança de volume ou dispositivos do Windows.
