@@ -126,3 +126,11 @@ A validação de contraste percebido, leitores de tela e escala DPI **ainda exig
 - Cartões, teclado telefônico, indicadores e botões owner-draw acompanham o DPI. MINI/MAX preserva proporções, incluindo 150% e 200%.
 - O smoke test Win32 verifica coordenadas do campo, troca de página e MINI nas escalas 150% e 200%, sem alterar as configurações reais do Windows. Novo teste unitário cobre a matemática do escalonamento.
 - Seguem pendentes os testes manuais em monitores físicos de DPI distintos, leitores de tela, truncamento de textos e resoluções pequenas. Registro SIP e áudio de chamada continuam não homologados.
+
+
+## v0.49 — Saídas independentes de toque e voz (pré-visualização)
+
+- A aba **Áudio** agora distingue **Microfone (entrada)**, **Voz da chamada (saída)** e **Toque da chamada (saída)**. É possível selecionar computador/headset de modo independente, conforme dispositivos ativos do Windows, ou usar **Inverter voz/toque** para alternar os dois destinos.
+- Na primeira inspeção, a voz privilegia o dispositivo padrão de comunicação; o toque prefere outra saída ativa quando disponível. Se existe apenas uma saída, ambos podem usar a mesma. Preferências são mantidas apenas em memória e reavaliadas após perda de dispositivo.
+- Os identificadores internos e nomes de dispositivos nunca são incluídos em mensagens ou logs. O CTest `audio_split_route` cobre seleção inicial, inversão em ambos os sentidos, fallback, mesmo dispositivo e nenhuma saída. O smoke Windows valida a existência e o bloqueio dos novos controles sem abrir hardware no runner.
+- **Não há roteamento acústico real**: esta é a preparação de UX para aplicar os dois fluxos a um futuro backend. O `UnavailableSipEngine` não toca ringtone, não transporta voz e não registra SIP. Para a função operar de fato, é necessário integrar e homologar o renderer de ringtone do Windows e o RTP/SRTP do Baresip com os dispositivos escolhidos.
