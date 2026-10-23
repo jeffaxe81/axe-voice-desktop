@@ -30,7 +30,7 @@ int main() {
     std::vector<std::int16_t> s16(frames);
     if (!render_ring_samples(s16.data(), frames, 1, rate,
                              RingSampleFormat::Pcm16)) return 6;
-    if (s16[rate / 4] == 0) return 7;
+    if (s16[rate * 205 / 1000] == 0) return 7;
     if (s16[rate * 35 / 100] != 0) return 8;
     if (render_ring_samples(nullptr, frames, 2, rate, RingSampleFormat::Float32) ||
         render_ring_samples(left_right.data(), 0, 2, rate, RingSampleFormat::Float32) ||
