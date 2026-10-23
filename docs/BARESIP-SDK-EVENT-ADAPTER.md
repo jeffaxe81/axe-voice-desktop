@@ -99,3 +99,21 @@ falhas internas ate que stop() descarte o registro nativo.
 Teste: duas instancias independentes, disputa, falha de registro e
 reutilizacao segura apos stop(). A reserva nao substitui o loop nativo
 serializado, nao garante SIP real nem autoriza a interface para chamadas.
+
+
+## Experimental native UA registration submission
+
+The isolated `src/baresip_sdk_registration_gateway.h` installs the native
+event bridge **before** invoking `ua_register(selected_ua)`. A zero return
+means only *submitted to the Baresip SDK*, NOT authenticated or registered.
+The application must wait for a trustworthy `BEVENT_REGISTER_OK`, bound to
+the selected UA and current callback generation, before considering the SIP
+account registered. This gateway does not issue `VerifiedNativeApi`.
+
+The selected UA must be securely provisioned beforehand by the serialized
+Baresip event-loop owner, and must remain alive until `stop()` completes.
+On errors from `bevent_register` or `ua_register`, the gateway revokes
+the bridge and pending events. `stop()` submits `ua_unregister` and
+removes the callback. The fake-SDK unit test checks rejected submissions,
+register-pending vs. confirmed, duplicate attempts, logout and restarts.
+Neither this gateway nor its SDK fake is linked into the GUI.
