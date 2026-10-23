@@ -138,3 +138,7 @@ A aba ÁUDIO possui 3 seletores: microfone, saída para **voz remota** e saída 
 A primeira seleção escolhe a saída padrão de comunicação para voz e, quando possível, outra saída para toque. Mudanças são mantidas em memória e reconciliadas ao desconectar dispositivos, sem gravar identificadores no Windows Registry. Testes: política de papéis e fallback, UI smoke com dois endpoints sintéticos em direções opostas e caixa-preta confirmando presença dos controles mesmo sem hardware.
 
 **Não há implementação de toque ou áudio SIP** no Baresip da aplicação; isso é um contrato de UX e estado local para integração posterior. O Baresip oferece opções documentadas `audio_player` e `audio_alert` com limitações de versão/módulo, cuja compatibilidade terá de ser testada em uma instância de telefonia real. O botao Chamar continua bloqueado.
+
+## v0.49 — Botões TESTAR TOQUE e TESTAR VOZ
+
+Os dois seletores de saída agora permitem reproduzir um tom curto no endpoint escolhido via renderização WASAPI (modo compartilhado do Windows). Não muda a saída padrão do sistema, não grava IDs, não acessa o microfone e não envia comandos ao Baresip. A execução ocorre em worker limitado e só após clique explícito, com erro local caso não haja dispositivo suportado. Teste de geração de amostras mono/estéreo, limites de volume e silêncio fora do sinal somado à suíte. O áudio ouvido comprova somente a seleção do endpoint Windows; chamadas SIP e áudio remoto não estão implementados.
