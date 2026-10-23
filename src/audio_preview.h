@@ -3,6 +3,7 @@
 #error AXE Voice preview audio is Windows-only
 #endif
 #include <atomic>
+#include <cstdint>
 #include <string>
 #include <thread>
 
@@ -12,7 +13,8 @@ enum class AudioPreviewResult {
     NotRun, Completed, NoEndpoint, WindowsAudioUnavailable,
     UnsupportedFormat, PlaybackFailed
 };
-AudioPreviewResult play_preview_tone_on_endpoint(const std::wstring& endpoint_id);
+AudioPreviewResult play_preview_tone_on_endpoint(
+    const std::wstring& endpoint_id, std::uint8_t level_percent = 100);
 
 class AudioPreviewWorker final {
 public:
@@ -20,7 +22,7 @@ public:
     AudioPreviewWorker(const AudioPreviewWorker&) = delete;
     AudioPreviewWorker& operator=(const AudioPreviewWorker&) = delete;
     ~AudioPreviewWorker() { wait(); }
-    bool start(const std::wstring& endpoint_id);
+    bool start(const std::wstring& endpoint_id, std::uint8_t level_percent = 100);
     bool busy() const noexcept { return busy_.load(std::memory_order_acquire); }
     AudioPreviewResult result() const noexcept { return result_.load(std::memory_order_acquire); }
     void wait();
