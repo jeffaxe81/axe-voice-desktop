@@ -68,9 +68,9 @@ int main() {
     if(another.update(call,7,L"headset",true,bad)!=IncomingRingtoneOutcome::Idle ||
        bad.starts!=1) return 16; // No infinite reattempt storm.
     call.call_id=13; call.last_call_id=13;
-    if(another.update(call,7,L"headset",true,bad)!=IncomingRingtoneOutcome::StopPending ||
-       bad.starts!=2) return 17; // Another attempted Start, still fails.
-    if(another.revoke(bad)!=IncomingRingtoneOutcome::Idle &&
+    if(another.update(call,7,L"headset",true,bad)!=IncomingRingtoneOutcome::StartRejected ||
+       bad.starts!=2 || bad.stops!=3) return 17; // New call may attempt once.
+    if(another.revoke(bad)!=IncomingRingtoneOutcome::Idle ||
        another.stop_pending()) return 18;
 
     // Closing a window must await stop ACK if a sink refuses to stop.
