@@ -1,5 +1,7 @@
 #include "../src/baresip_sdk_event_adapter.h"
 #include <cstdint>
+#include <atomic>
+#include <thread>
 
 // This SDK fake intentionally models the upstream bevent registry's
 // handler-pointer uniqueness: replacing a handler would steal callbacks.
@@ -89,5 +91,31 @@ int main() {
     }
     if (g_handler || g_context || g_registered != g_unregistered)
         return 16;
+
+    // Parallel contenders exercise the atomic claim before touching the
+    // process-level event registry. The SDK fake is reached by the winner only.
+    std::atomic<unsigned> ready{0};
+    std::atomic<bool> go{false};
+    bool first_won = false, second_won = false;
+    std::thread t1([&] {
+        ++ready;
+        while (!go.load()) std::this_thread::yield();
+        first_won = first.start(&account);
+    });
+    std::thread t2([&] {
+        ++ready;
+        while (!go.load()) std::this_thread::yield();
+        second_won = second.start(&account);
+    });
+    while (ready.load() != 2) std::this_thread::yield();
+    go.store(true);
+    t1.join();
+    t2.join();
+    if (first_won == second_won) return 17;
+    if (!g_handler || g_registered != g_unregistered + 1) return 18;
+    if (first_won) first.stop();
+    else second.stop();
+    if (g_handler || g_context || g_registered != g_unregistered)
+        return 19;
     return 0;
 }
