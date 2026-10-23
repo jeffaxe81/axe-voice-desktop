@@ -134,3 +134,24 @@ Fake-SDK regression tests deliberately emit a success event while
 registration loss. Both fail closed. No claim of actual registrar
 authentication, media readiness, TLS/SRTP, or working native Baresip
 SDK linkage is made; the Windows UI remains unchanged.
+
+
+## Revoked native registration during synchronous submission
+
+The isolated gateway now checks `bridge.active()` immediately after
+`ua_register()` returns, even if that function returns zero. Some callbacks
+can synchronously revoke the native generation while the submission is in
+progress. The gateway returns `NativeSessionRevoked` rather than retaining
+a selected UA which may have been destroyed, or claiming an active request.
+
+`stop()` skips `ua_unregister()` if native callback ownership has been
+revoked, because a terminal UA shutdown may already have released that
+native object. A second account cannot be submitted until the gateway is
+explicitly stopped to clear its stale pointer. In the normal live path,
+`ua_unregister()` still runs before the callback bridge is removed.
+
+The fake-SDK tests cover synchronous UA shutdown, global exit, unverified
+register-success, later shutdown, blocked reuse and successful recovery.
+This protects local lifecycle assumptions but is **not a substitute** for
+ownership, callback quiescence and UA lifetime guarantees from a real,
+version-pinned Baresip event loop. Production SIP and audio remain disabled.

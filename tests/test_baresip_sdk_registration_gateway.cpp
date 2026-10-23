@@ -6,6 +6,9 @@ static bevent_h* callback = nullptr;
 static void* context = nullptr;
 static bool callback_failure = false;
 static bool submission_failure = false;
+// Test-only forced callback during ua_register(): 1=UA shutdown,
+// 2=global exit, 3=fake success without native registrar confirmation.
+static unsigned terminal_during_submission = 0;
 static unsigned callback_added = 0, callback_removed = 0;
 static unsigned submissions = 0, unregistrations = 0;
 static bool g_selected_registered = false;
@@ -34,6 +37,12 @@ extern "C" int ua_register(ua* selected) {
     g_selected_registered = false; // Submission does not register.
     bevent event{selected,nullptr};
     if (callback) callback(BEVENT_REGISTERING,&event,context);
+    if (callback && terminal_during_submission == 1)
+        callback(BEVENT_SHUTDOWN,&event,context);
+    if (callback && terminal_during_submission == 2)
+        callback(BEVENT_EXIT,nullptr,context);
+    if (callback && terminal_during_submission == 3)
+        callback(BEVENT_REGISTER_OK,&event,context);
     return submission_failure ? 19 : 0;
 }
 extern "C" void ua_unregister(ua* selected) {
@@ -111,8 +120,43 @@ int main() {
     callback(BEVENT_REGISTER_OK,&unconfirmed,context);
     if (adapter.active() || gateway.submitted() || gateway.session() ||
         mailbox.drain().session != 0) return 17;
+    // A revoked native UA may already be destroyed. stop() must not
+    // attempt ua_unregister() when the bridge is no longer live.
     gateway.stop();
     if (callback || callback_added != callback_removed ||
-        unregistrations != 3) return 18;
+        unregistrations != 2) return 18;
+
+    // A terminal event DURING a successful ua_register() call must not
+    // be reported as an active registration submission.
+    for (unsigned terminal = 1; terminal <= 3; ++terminal) {
+        terminal_during_submission = terminal;
+        if (gateway.submit(&selected) !=
+                NativeRegistrationSubmission::NativeSessionRevoked ||
+            adapter.active() || gateway.submitted() || gateway.session() ||
+            mailbox.drain().session || callback ||
+            callback_added != callback_removed || unregistrations != 2)
+            return 18 + static_cast<int>(terminal);
+    }
+    terminal_during_submission = 0;
+
+    // An asynchronous shutdown after a normal submit requires cleanup
+    // before another account can start. Cleanup must not touch the dead UA.
+    if (gateway.submit(&selected) != NativeRegistrationSubmission::Submitted)
+        return 22;
+    bevent stopping{&selected,nullptr};
+    callback(BEVENT_SHUTDOWN,&stopping,context);
+    if (adapter.active() || gateway.submitted() ||
+        gateway.submit(&another) != NativeRegistrationSubmission::NativeSessionRevoked)
+        return 23;
+    gateway.stop();
+    if (callback || gateway.session() || unregistrations != 2)
+        return 24;
+
+    // Fresh generation can recover after explicit cleanup.
+    if (gateway.submit(&selected) != NativeRegistrationSubmission::Submitted)
+        return 25;
+    gateway.stop();
+    if (callback || unregistrations != 3 ||
+        callback_added != callback_removed) return 26;
     return 0;
 }

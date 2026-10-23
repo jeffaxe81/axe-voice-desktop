@@ -5,7 +5,7 @@
 namespace axv {
 enum class NativeRegistrationSubmission {
     InvalidAccount, BridgeUnavailable, SubmissionRejected,
-    Submitted, AlreadySubmitted
+    Submitted, AlreadySubmitted, NativeSessionRevoked
 };
 
 // Experimental native-event-loop-thread-only registration submission.
@@ -20,7 +20,12 @@ public:
     // before releasing this gateway or destroying its selected UA.
 
     NativeRegistrationSubmission submit(struct ua* selected) {
-        if (owner_) return NativeRegistrationSubmission::AlreadySubmitted;
+        if (owner_) {
+            // A shutdown may already have invalidated/destroyed the UA.
+            // Require explicit stop() to clear the stale non-owning pointer.
+            return bridge_.active() ? NativeRegistrationSubmission::AlreadySubmitted
+                                    : NativeRegistrationSubmission::NativeSessionRevoked;
+        }
         if (!selected) return NativeRegistrationSubmission::InvalidAccount;
         if (!bridge_.start(selected))
             return NativeRegistrationSubmission::BridgeUnavailable;
@@ -30,14 +35,23 @@ public:
             bridge_.stop(); // Fail closed and invalidate pending events.
             return NativeRegistrationSubmission::SubmissionRejected;
         }
+        // ua_register() may synchronously emit an error, shutdown or global
+        // exit callback and STILL return zero. Do not retain an invalid UA
+        // or claim a live submission after its callback generation was revoked.
+        if (!bridge_.active()) {
+            bridge_.stop();
+            return NativeRegistrationSubmission::NativeSessionRevoked;
+        }
         owner_ = selected;
         return NativeRegistrationSubmission::Submitted;
     }
 
     void stop() {
         if (owner_) {
-            // Must remain alive during ua_unregister's native callbacks.
-            ua_unregister(owner_);
+            // Terminal events can invalidate/destroy the selected UA.
+            // Skip native dereference when the owning epoch is revoked.
+            // An event-loop owner MUST guarantee UA lifetime while active.
+            if (bridge_.active()) ua_unregister(owner_);
             owner_ = nullptr;
         }
         bridge_.stop(); // Revoke events and unregister the callback.
