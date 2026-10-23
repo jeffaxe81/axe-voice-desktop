@@ -1,5 +1,6 @@
 #pragma once
 #include "baresip_sdk_event_adapter.h"
+#include "baresip_registration_watchdog.h"
 #include <cstdint>
 
 namespace axv {
@@ -43,10 +44,36 @@ public:
             return NativeRegistrationSubmission::NativeSessionRevoked;
         }
         owner_ = selected;
+        deadline_.clear(); // Never inherit a previous registration's deadline.
         return NativeRegistrationSubmission::Submitted;
     }
 
+    // Opt-in watchdog. The native event-loop owner supplies monotonic
+    // milliseconds and calls poll_registration_deadline() on the SAME thread.
+    // It does not run automatically, start a timer, or enable GUI dialing.
+    bool arm_registration_deadline(std::uint64_t now_ms,
+                                   std::uint64_t max_wait_ms) {
+        return submitted() && deadline_.arm(session(), now_ms, max_wait_ms);
+    }
+    RegistrationDeadlineVerdict poll_registration_deadline(std::uint64_t now_ms) {
+        const auto decision = deadline_.check(bridge_.session(), now_ms,
+                                             bridge_.native_register_ok_seen());
+        switch (decision) {
+        case RegistrationDeadlineVerdict::CallbackConfirmed:
+            deadline_.clear();
+            break;
+        case RegistrationDeadlineVerdict::Expired:
+        case RegistrationDeadlineVerdict::ClockRegressed:
+        case RegistrationDeadlineVerdict::SessionRevoked:
+            stop(); // Fail closed: unregister only while UA still live.
+            break;
+        default:
+            break;
+        }
+        return decision;
+    }
     void stop() {
+        deadline_.clear();
         if (owner_) {
             // Terminal events can invalidate/destroy the selected UA.
             // Skip native dereference when the owning epoch is revoked.
@@ -63,5 +90,6 @@ public:
 private:
     BaresipSdkEventAdapter& bridge_;
     struct ua* owner_ = nullptr;
+    RegistrationDeadline deadline_{};
 };
 } // namespace axv
