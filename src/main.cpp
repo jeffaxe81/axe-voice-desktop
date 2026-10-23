@@ -26,6 +26,7 @@
 #include "audio_role_swap.h"
 #include "audio_preview_target.h"
 #include "audio_preview_cancel_policy.h"
+#include "audio_preview_levels.h"
 #include "windows_process.h"
 #include "shutdown_policy.h"
 #include <string>
@@ -79,6 +80,8 @@ constexpr int kOutputAudioCombo = 2402;
 constexpr int kRingtoneAudioCombo = 2403;
 constexpr int kTestRingtoneButton = 2404;
 constexpr int kTestVoiceButton = 2405;
+constexpr int kVoicePreviewLevel = 2406;
+constexpr int kRingPreviewLevel = 2407;
 constexpr int kWindowWidth = 438;
 unsigned g_dpi = axv::kBaseDpi;
 constexpr int kFullHeight = 842;
@@ -108,6 +111,8 @@ HWND g_runtime_banner = nullptr;
 HWND g_input_audio_combo = nullptr;
 HWND g_output_audio_combo = nullptr;
 HWND g_ringtone_audio_combo = nullptr;
+HWND g_voice_level_combo = nullptr;
+HWND g_ring_level_combo = nullptr;
 HWND g_headset_status = nullptr;
 std::vector<axv::AudioEndpoint> g_audio_inputs;
 std::vector<axv::AudioEndpoint> g_audio_outputs;
@@ -120,6 +125,8 @@ std::atomic<bool> g_preview_cancel{false};
 std::atomic<int> g_preview_result{0};
 bool g_preview_pending = false;
 axv::AudioPreviewRole g_preview_role = axv::AudioPreviewRole::Ringtone;
+std::uint8_t g_voice_level = axv::kPreviewDefaultLevel;
+std::uint8_t g_ring_level = axv::kPreviewDefaultLevel;
 axv::WindowsProcess g_baresip_process;
 axv::ProcessStatus g_last_process_state = axv::ProcessStatus::Stopped;
 axv::ShutdownDeadline g_shutdown;
@@ -769,12 +776,24 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                     39, 559, 170, 43, 2);
         make_button(window, L"TESTAR TOQUE", kTestRingtoneButton,
                     218, 559, 171, 43, 2);
-        make_label(window, L"Teste local das saidas, nao e chamada SIP.",
-                   39, 609, 350, 24, 2, g_font_small);
-        g_headset_status = make_label(window, L"Abra AUDIO para consultar o Windows.",
-                                     39, 640, 350, 41, 2, g_font_small);
+        make_label(window, L"VOLUME TESTE - VOZ", 39, 606, 170, 20, 2, g_font_small);
+        make_label(window, L"VOLUME TESTE - TOQUE", 218, 606, 171, 20, 2, g_font_small);
+        g_voice_level_combo = make_control(window, L"COMBOBOX", L"",
+            WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
+            39, 630, 170, 145, kVoicePreviewLevel, 2);
+        g_ring_level_combo = make_control(window, L"COMBOBOX", L"",
+            WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
+            218, 630, 171, 145, kRingPreviewLevel, 2);
+        for (HWND combo : {g_voice_level_combo, g_ring_level_combo}) {
+            for (const wchar_t* item : {L"25%", L"50%", L"75%", L"100%"})
+                SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(item));
+            SendMessageW(combo, CB_SETCURSEL,
+                static_cast<WPARAM>(axv::preview_level_index(axv::kPreviewDefaultLevel)), 0);
+        }
+        g_headset_status = make_label(window, L"Volumes do teste local. Sem chamada SIP.",
+                                     39, 669, 350, 38, 2, g_font_small);
         make_button(window, L"PRONTIDAO DE CHAMADAS (F2)",
-                    kReadinessButton, 39, 690, 350, 42, 2);
+                    kReadinessButton, 39, 710, 350, 38, 2);
         g_status = make_label(window, L"Digite um ramal ou endereço SIP.",
                               24, 762, 390, 30, -1, g_font_small);
         refresh_destination_feedback();
@@ -1008,8 +1027,11 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 update_audio_preview_buttons(window);
                 try {
                     std::wstring id = target.endpoint_id;
-                    g_preview_worker = std::thread([id = std::move(id)] {
-                        const auto result = axv::play_selected_ringtone_preview(id, &g_preview_cancel);
+                    const auto level = role == axv::AudioPreviewRole::Voice
+                        ? g_voice_level : g_ring_level; // Snapshot at click.
+                    g_preview_worker = std::thread([id = std::move(id), level] {
+                        const auto result = axv::play_selected_ringtone_preview(
+                            id, &g_preview_cancel, level);
                         g_preview_result.store(static_cast<int>(result));
                         g_preview_running.store(false);
                     });
@@ -1028,6 +1050,17 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         }
         if (HIWORD(wparam) == CBN_SELCHANGE) {
             const int id = LOWORD(wparam);
+            if (id == kVoicePreviewLevel || id == kRingPreviewLevel) {
+                HWND combo = id == kVoicePreviewLevel ? g_voice_level_combo :
+                             g_ring_level_combo;
+                std::uint8_t& level = id == kVoicePreviewLevel ?
+                                     g_voice_level : g_ring_level;
+                const int selected = static_cast<int>(SendMessageW(combo, CB_GETCURSEL, 0, 0));
+                level = axv::preview_level_for_index(selected, level);
+                SetWindowTextW(g_headset_status,
+                    L"Volume do proximo teste atualizado. Sem alterar Windows ou SIP.");
+                return 0;
+            }
             if (id == kInputAudioCombo || id == kOutputAudioCombo ||
                 id == kRingtoneAudioCombo) {
                 HWND combo = id == kInputAudioCombo ? g_input_audio_combo :
@@ -1325,7 +1358,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.53",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.54",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
@@ -1438,12 +1471,25 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             !IsWindowEnabled(g_ringtone_audio_combo) &&
             GetDlgItem(window, kTestRingtoneButton) &&
             GetDlgItem(window, kTestVoiceButton) &&
+            g_voice_level_combo && g_ring_level_combo &&
+            (GetWindowLongW(g_voice_level_combo, GWL_STYLE) & WS_VISIBLE) &&
+            (GetWindowLongW(g_ring_level_combo, GWL_STYLE) & WS_VISIBLE) &&
             !IsWindowEnabled(GetDlgItem(window, kTestRingtoneButton)) &&
             !IsWindowEnabled(GetDlgItem(window, kTestVoiceButton)) &&
             !g_preview_worker.joinable() &&
             GetDlgItem(window, kSwapAudioRolesButton) &&
             (GetWindowLongW(GetDlgItem(window, kSwapAudioRolesButton), GWL_STYLE) & WS_VISIBLE) &&
             !IsWindowEnabled(GetDlgItem(window, kSwapAudioRolesButton)); // No hardware inspected in smoke.
+        // Test independent role gain selection without touching Windows mixer or audio.
+        SendMessageW(g_voice_level_combo, CB_SETCURSEL, 0, 0);
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(kVoicePreviewLevel, CBN_SELCHANGE),
+                     reinterpret_cast<LPARAM>(g_voice_level_combo));
+        SendMessageW(g_ring_level_combo, CB_SETCURSEL, 3, 0);
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(kRingPreviewLevel, CBN_SELCHANGE),
+                     reinterpret_cast<LPARAM>(g_ring_level_combo));
+        const bool gain_ok = g_voice_level == 25 && g_ring_level == 100 &&
+            !g_preview_running.load() &&
+            !IsWindowEnabled(GetDlgItem(window, kCallButton));
         // Exercise real Win32 controls with synthetic outputs, never probing devices or SIP.
         g_audio_outputs = {
             {L"test-headset", L"Headset", true, false},
@@ -1487,7 +1533,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         fill_audio_combo(g_output_audio_combo, g_audio_outputs, g_selected_output_id);
         fill_audio_combo(g_ringtone_audio_combo, g_audio_outputs, g_selected_ringtone_id, true);
         update_swap_button();
-        ok = ok && swapped_in_smoke &&
+        ok = ok && gain_ok && swapped_in_smoke &&
+             g_voice_level == 25 && g_ring_level == 100 &&
              !IsWindowEnabled(GetDlgItem(window, kSwapAudioRolesButton)) &&
              !IsWindowEnabled(GetDlgItem(window, kTestVoiceButton)) &&
              !IsWindowEnabled(GetDlgItem(window, kTestRingtoneButton));
