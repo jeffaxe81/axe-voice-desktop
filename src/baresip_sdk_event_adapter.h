@@ -64,8 +64,11 @@ public:
     void stop() {
         // Event-loop contract: no concurrent/in-flight SDK callbacks here.
         if (registered_) bevent_unregister(&BaresipSdkEventAdapter::callback);
-        registered_ = false;
+        // Keep registered_ and native owner/context stable until every callback
+        // which already entered has released its outer lease. Otherwise a
+        // concurrent active() read may race against this state change.
         lifecycle_.revoke_and_wait();
+        registered_ = false;
         owner_ = nullptr;
         captured_ = {};
         native_key_ = 0;
