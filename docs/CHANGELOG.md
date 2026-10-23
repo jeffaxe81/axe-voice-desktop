@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.47.0 — executor SIP com isolamento de comandos repetidos (laboratório)
+- Executor opcional de comandos originar/atender/desligar, usado somente no teste, preparado para worker SIP nativo serializado.
+- Revalida estado, geração e ID opaco da chamada; rejeita sequências duplicadas, ações repetidas e comandos antes de transição SIP.
+- Falhas e exceções na chamada ao port nativo isolam a sessão, impedindo nova tentativa com resultado incerto.
+- Teste simulado de 100 tentativas repetidas; GUI segue sem registro SIP, chamadas ou RTP/SRTP.
+
+
 ## v0.46.0 — link/ABI smoke test do SDK Baresip (laboratório)
 - Opcional `axv_native_baresip_sdk_abi_probe` verifica, no link de um executável, símbolos do SDK real aprovado pelo gate SHA256. É build-only e exige o SDK real fornecido externamente.
 - `baresip_sdk_abi_probe` exercita no CI a verificação com SDK simulado; não atesta compatibilidade com Baresip real.

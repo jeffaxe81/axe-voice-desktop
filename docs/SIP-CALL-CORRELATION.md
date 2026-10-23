@@ -62,3 +62,26 @@ e ID de chamada idêntico ao identificador ativo e último ID observado.
 eventos exclusivamente sintéticos, incluindo 100 IDs obsoletos. O app ainda
 não dispõe do método nativo de atendimento/hangup nem de mídia; nenhum comando
 real foi habilitado.
+
+## v0.47 — Executor de comandos do futuro worker SIP
+
+`src/sip_command_executor.h` acrescenta uma fronteira opcional de despacho
+`SipNativeCommandPort`, que **não é conectada à GUI nem ao SDK Baresip real**.
+Exige solicitação identificada por sessão SIP, sequência estritamente crescente,
+ação e token opaco de chamada. A autorização é reavaliada imediatamente antes
+de cada invocação do port com o estado que o event loop nativo possui.
+
+- Não repetir comandos de uma sessão anterior, sequências antigas ou ações
+  atendidas/desligadas para o mesmo ID de chamada.
+- Enquanto aguarda mudança do estado/projeção após um despacho, bloquear nova
+  ação, mesmo que um botão seja acionado repetidamente.
+- A sequência de uma tentativa rejeitada também é consumida, impedindo replay
+  posterior. Exceção/falha nativa bloqueia a sessão pelo restante da geração.
+- Retorno "Submitted" significa aceito pelo port, **não prova sinalização
+  transmitida, registro SIP nem chamada estabelecida**.
+
+O teste `sip_command_executor` usa apenas um engine e port falsos para cobrir
+troca de sessão, chamadas consecutivas, falhas, autorização e 100 reenvios.
+Antes de integrar, o mesmo worker Baresip precisará serializar callbacks,
+estados e comandos, vincular token à chamada nativa, provar procedência,
+revisar credenciais e validar mídia/segurança em PABX de testes.
