@@ -145,3 +145,13 @@ A validação de contraste percebido, leitores de tela e escala DPI **ainda exig
 - Uma nova consulta invalida resultados anteriores não consumidos, evitando exibir um diagnóstico obsoleto.
 - O teste `ui_smoke` exercita o botão sem enumerar hardware. O CTest `audio_inventory_async` cobre resultado antigo descartado, reconsulta e falhas.
 - O relatório continua sem credenciais, números SIP ou IDs de headset, e **não confirma áudio RTP/SRTP real**. Testes manuais Windows/driver permanecem necessários.
+
+## v0.44 — Headset: reação acelerada a eventos do Windows
+
+- A aba Áudio recebe `WM_DEVICECHANGE` para mudanças da árvore de dispositivos, chegada, remoção e reconfiguração. O sinal agenda nova **consulta assíncrona** após 250 ms, em vez de esperar até 3 segundos.
+- Eventos sucessivos são agrupados por debounce; se o worker estiver ocupado, a consulta nova é tentada após ele liberar, sem atualizar combos diretamente da callback Win32.
+- Um snapshot de antes do evento é invalidado; a escolha de headset e seu fallback/restauração permanecem protegidos pela política v0.39.
+- Sair da aba ou fechar a janela cancela o timer e invalida resultados atrasados. O teste smoke não consulta hardware.
+- A verificação periódica de 3 segundos permanece **obrigatória**: `WM_DEVICECHANGE` é só um indício e não cobre necessariamente mudanças do dispositivo padrão.
+- O CTest `audio_device_change_policy` verifica categorias válidas, filtros de página/CI smoke e descarte de eventos não aplicáveis.
+- **Limites:** esta entrega não prova headset real, permissão de microfone, ligação Baresip, registro SIP ou RTP/SRTP. Os testes com USB/Bluetooth físicos e Windows 10/11 continuam pendentes.

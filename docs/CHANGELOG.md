@@ -1,3 +1,9 @@
+## v0.44.0 — 2026-10-22 (laboratório)
+
+- Eventos Windows de conexão/remoção passam a antecipar a consulta assíncrona de headset com debounce.
+- Snapshots anteriores ao evento são descartados e a atualização periódica é mantida como fallback.
+- Novo teste determinístico `audio_device_change_policy`; sem SIP ou mídia real.
+
 ## v0.43.0 — 2026-10-22 — diagnóstico local de áudio (laboratório)
 
 - Consulta de dispositivos em Ajustes movida para um worker independente, sem bloquear a UI.

@@ -22,6 +22,7 @@
 #include "audio_devices.h"
 #include "audio_selection_feedback.h"
 #include "audio_hotplug_refresh.h"
+#include "audio_device_change_policy.h"
 #include "audio_preference_state.h"
 #include "audio_inventory_async.h"
 #include "windows_process.h"
@@ -62,6 +63,8 @@ constexpr int kStopBaresipButton = 1011;
 constexpr UINT_PTR kProcessTimer = 1012;
 constexpr UINT_PTR kAudioInventoryTimer = 1014;
 constexpr UINT kAudioInventoryIntervalMs = 3000;
+constexpr UINT_PTR kAudioDeviceChangeTimer = 1015;
+constexpr UINT kAudioDeviceChangeDebounceMs = 250;
 constexpr int kShowDial = 2001;
 constexpr int kShowSettings = 2002;
 constexpr int kTheme = 2003;
@@ -381,6 +384,7 @@ void show_page(HWND root, int page) {
         SetTimer(root, kAudioInventoryTimer, kAudioInventoryIntervalMs, nullptr);
     else {
         KillTimer(root, kAudioInventoryTimer);
+        KillTimer(root, kAudioDeviceChangeTimer);
         g_audio_worker.invalidate();
         g_audio_force_update = false;
     }
@@ -1094,7 +1098,35 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         EndPaint(window, &paint);
         return 0;
     }
+    case WM_DEVICECHANGE:
+        // Windows broadcasts coarse device-tree changes to top-level windows.
+        // This is a hint only: defaults/mixer state may change without a
+        // broadcast, so the 3-second inventory poll stays enabled.
+        if (axv::should_schedule_audio_device_refresh(
+                static_cast<unsigned int>(wparam),
+                g_page == 2 && IsWindowVisible(window), g_smoke_mode)) {
+            // Drop an in-flight/pre-change snapshot. The dedicated timer will
+            // retry until a fresh scan can start; it never scans on the UI thread.
+            g_audio_worker.invalidate();
+            g_audio_force_update = true;
+            SetTimer(window, kAudioDeviceChangeTimer,
+                     kAudioDeviceChangeDebounceMs, nullptr);
+            return TRUE;
+        }
+        break;
     case WM_TIMER:
+        if (wparam == kAudioDeviceChangeTimer) {
+            if (g_smoke_mode || g_page != 2 || !IsWindowVisible(window)) {
+                KillTimer(window, kAudioDeviceChangeTimer);
+                return 0;
+            }
+            // Coalesce bursts and retry while an earlier worker is busy,
+            // rather than losing a disconnect/reconnect during enumeration.
+            if (g_audio_worker.busy()) return 0;
+            request_audio_refresh();
+            KillTimer(window, kAudioDeviceChangeTimer);
+            return 0;
+        }
         if (wparam == kAudioInventoryTimer) {
             // Never call Windows device enumeration on the UI timer.
             if (g_page == 2 && !g_smoke_mode && IsWindowVisible(window) &&
@@ -1184,6 +1216,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_sip_session_guard.revoke(axv::RuntimeProcess::Stopped, g_native_event_mailbox, g_sip_projection);
         KillTimer(window, kProcessTimer);
         KillTimer(window, kAudioInventoryTimer);
+        KillTimer(window, kAudioDeviceChangeTimer);
         g_audio_worker.invalidate();
         g_settings_audio_worker.invalidate();
         remove_tray(window);
@@ -1216,7 +1249,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && std::wcscmp(command_line, L"--ui-smoke") == 0;
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.43",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.44",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
@@ -1328,7 +1361,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             (GetWindowLongW(g_output_audio_combo, GWL_STYLE) & WS_VISIBLE) &&
             !IsWindowEnabled(GetDlgItem(window, kCallButton)) &&
             !IsWindowEnabled(g_input_audio_combo) &&
-            !g_audio_worker.busy(); // No hardware inspected in smoke.
+            !g_audio_worker.busy() &&
+            !axv::should_schedule_audio_device_refresh(
+                DBT_DEVNODES_CHANGED, true, true); // Smoke never scans.
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(kReadinessButton, 1), 0);
         const bool readiness_ok = g_readiness_requested_smoke &&
             GetDlgItem(window, kReadinessButton) &&
