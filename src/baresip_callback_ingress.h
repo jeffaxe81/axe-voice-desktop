@@ -54,7 +54,9 @@ public:
     }
 
     bool call_started(std::uint64_t callback_session,
-                      std::uint64_t native_call_key, BaresipEventKind kind) {
+                      std::uint64_t native_call_key, BaresipEventKind kind,
+                      std::uint64_t* emitted_token = nullptr) {
+        if (emitted_token) *emitted_token = 0;
         std::lock_guard<std::mutex> lock(mutex_);
         if (!is_current_locked(callback_session)) return false;
         if ((kind != BaresipEventKind::CallIncoming &&
@@ -71,6 +73,7 @@ public:
         active_token_ = token;
         last_native_key_ = native_call_key;
         last_token_ = token;
+        if (emitted_token) *emitted_token = token;
         return true;
     }
 
