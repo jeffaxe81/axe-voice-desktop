@@ -49,7 +49,19 @@ public:
         seen_calls_.clear();
         // Each native registration receives a *distinct immutable epoch*.
         // Contexts remain allocated until owner-proven callback quiescence.
-        contexts_.emplace_back(new CallbackContext{this, session});
+        // A failed allocation must not leak its context or monopolize the
+        // process-wide bevent registration claim.
+        try {
+            auto context = std::unique_ptr<CallbackContext>(
+                new CallbackContext{this, session});
+            contexts_.push_back(std::move(context));
+        } catch (...) {
+            lifecycle_.revoke_and_wait();
+            owner_ = nullptr;
+            captured_ = {};
+            release_owner();
+            return false;
+        }
         registered_ = true;
         const int error = bevent_register(&BaresipSdkEventAdapter::callback,
                                           contexts_.back().get());
