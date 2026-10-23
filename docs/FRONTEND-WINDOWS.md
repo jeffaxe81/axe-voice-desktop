@@ -158,3 +158,7 @@ O novo gate aceita um toque automático somente quando `SipRuntimeObservation` c
 O gate `IncomingRingtoneGate` mantém internamente o endpoint Windows autorizado, sem persistência. Se a seleção mudar de PC para headset (ou vice-versa), ou se a saída ficar indisponível, o estado cancela a autorização e exige um ciclo Stop antes de uma futura autorização Start. Inversão de toque/voz e seleção manual forçam reavaliação no loop UI. A observação normal por timer também verifica hotplug. Os testes cobrem troca durante chamada recebida sintética, desconexão do endpoint, reautorização, revogação da evidência e overflow da fila nativa.
 
 A saída ainda não é controlada por eventos reais do Baresip neste executável: somente a intenção segura foi implementada, sem campainha SIP real.
+
+## v0.55 — Contrato de parada confirmada de campainha
+
+O novo coordenador separa a autorização de toque de sua reprodução. O destino não pode ser alterado se o reprodutor da rota antiga não confirmar a parada. Falha ao iniciar também aciona parada obrigatória antes de qualquer outra tentativa; a mesma chamada não dispara retries automáticos. A implementação suporta injeção de reprodutor de teste para testes sem dispositivo físico. No build principal, o reprodutor está **desabilitado**, porque ainda não existe callback SIP nativo auditado integrado. A UI preserva o comportamento de testes locais, sem campainha de telefonia.
