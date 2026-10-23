@@ -42,3 +42,23 @@ de registro SIP, PABX, headset, RTP/SRTP ou chamada real.
    ida e volta, hotplug e falhas/reconexão em Windows 10/11.
 5. Manter `UnavailableSipEngine` e a PR Draft até essas etapas estarem
    comprovadas por teste e homologação real.
+
+## v0.45 — Autorizações de comandos vinculadas à identidade da chamada
+
+`src/call_command_authorization.h` complementa `authorize_dial` com o
+contrato de `Answer` e `Hangup`. Exige prova de sessão nativa atual,
+motor Baresip integrado, estado do motor coincidente com o estado da projeção
+e ID de chamada idêntico ao identificador ativo e último ID observado.
+
+- `Dial`: permitido somente sem chamada ativa e com destino normalizado;
+  não aceita ID de chamada para a ação de originar.
+- `Answer`: requer estado `Ringing`, token opaco não zero e sessão correta.
+- `Hangup`: requer `Ringing`, `Calling` ou `InCall` e o mesmo token ativo.
+- Botões e mensagens do protótipo não são prova de permissão. **O backend deverá
+  repetir esta verificação no mesmo contexto/worker que envia o comando à API
+  nativa**, pois uma chamada pode ser encerrada entre clique e execução.
+
+`call_command_authorization` integra redutor, projeção e autorização com
+eventos exclusivamente sintéticos, incluindo 100 IDs obsoletos. O app ainda
+não dispõe do método nativo de atendimento/hangup nem de mídia; nenhum comando
+real foi habilitado.

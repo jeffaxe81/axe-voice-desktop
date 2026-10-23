@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.45.0 — autorização de atender e desligar por sessão/chamada
+- Novo controle puro de comandos Dial/Answer/Hangup com sessão SIP válida e identificador opaco de chamada.
+- Impede atender/desligar chamadas já encerradas, identificadores de outra chamada, divergência de estado entre backend e UI, e discagem com chamada ativa.
+- Teste de integração sintética registra/recebe/estabelece/encerra/chama novamente, e nega 100 tokens antigos.
+- O softphone continua com `UnavailableSipEngine`: não executa chamadas, atendimentos nem áudio reais.
+
+
 ## v0.44.0 — isolamento de gerações do adaptador SDK (laboratório)
 - Callback nativo captura geração e sessão imutáveis; evento antigo não contamina reinício.
 - `BaresipCallbackLifecycle` agora gerencia revogação e espera no adaptador isolado.
