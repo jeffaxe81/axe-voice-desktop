@@ -107,3 +107,9 @@ O gate de autorização da futura campainha de chamada recebida passa a **fixar 
 Foi criado o coordenador `IncomingRingtoneCoordinator`, que consome o gate de eventos SIP verificados e exige confirmação do reprodutor de toque antes de permitir outra saída. Se o comando de parada falhar, o controlador mantém o estado **StopPending** e não permite começar toque em outro dispositivo; tenta finalizar na observação seguinte. Se iniciar falhar, exige parada e bloqueia tentativas repetidas na mesma chamada/sessão para evitar tempestade de áudio. Testes simulam toques PC→headset, conexão atendida, perda de prova SIP, falhas de start/stop e encerramento.
 
 O aplicativo ainda vincula explicitamente um `DisabledIncomingRingtoneSink`: **nenhuma campainha automática será reproduzida** sem o motor SIP nativo comprovado e um player de campainha cancelável. Os botões manuais TESTAR TOQUE e TESTAR VOZ e seus volumes independentes continuam disponíveis.
+
+## v0.56 — Reprodutor de campainha cancelável, isolado da telefonia
+
+Nova biblioteca `axv_incoming_ring_worker`: reutiliza um tom local WASAPI curto com intervalo silencioso de 1,1 s cancelável. O comando `stop()` **só confirma a parada quando a thread realmente finalizou**, impedindo iniciar outra saída enquanto a anterior poderia emitir som. Falha do reprodutor revoga a autorização e evita tentativas repetidas para a mesma chamada. Há testes determinísticos de cancelamento, falha e troca PC/headset.
+
+**O executável principal ainda usa `DisabledIncomingRingtoneSink`**: nenhuma campainha automática ou áudio SIP real foi habilitado. A biblioteca nova está compilada e testada, mas a ativação requer proveniência nativa de chamada Baresip e testes em headset real. Uma reprodução WASAPI em andamento pode levar aproximadamente 310 ms para finalizar o buffer; a coordenação espera a parada antes de nova saída.
