@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.50.0 — teste de toque no dispositivo Windows selecionado
+- Botão explícito TESTAR TOQUE na aba ÁUDIO. Renderiza sinal local de 660 Hz com volume baixo e duração limitada via WASAPI na saída de toque escolhida, em thread separada.
+- Escolha da saída de conversa e do microfone permanece independente; não há roteamento SIP/RTP ou reprodução de chamadas reais.
+- Teste unitário de formatos PCM16/PCM32/Float32, limites de buffer, envelope de volume e dispositivo inválido, além de validação de presença e desabilitação do botão no teste de interface sem hardware.
+- A confirmação física do áudio e testes de hotplug no computador permanecem como homologação manual.
+
+
 ## v0.49.0 — posse exclusiva do callback Baresip (laboratório)
 - Impede que duas instâncias do adaptador disputem o registro global de eventos da API Baresip.
 - A posse permanece protegida durante falha e encerramento; só é liberada depois de desregistrar e aguardar callbacks.
