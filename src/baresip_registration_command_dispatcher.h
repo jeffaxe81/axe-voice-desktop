@@ -11,7 +11,8 @@ namespace axv {
 // clock reading. GUI threads may only submit pointer-free requests to queue.
 enum class RegistrationDispatchKind {
     Idle, Submitted, Cancelled, DeadlineExpired, Confirmed,
-    Failed, OverflowStopped, WrongOwnerThread, StaleGeneration, Pending
+    Failed, OverflowStopped, WrongOwnerThread, StaleGeneration, Pending,
+    SupersededDuringDispatch
 };
 struct RegistrationDispatchOutcome {
     RegistrationDispatchKind kind=RegistrationDispatchKind::Idle;
@@ -51,13 +52,31 @@ public:
                 queue_.invalidate();
                 return {RegistrationDispatchKind::Cancelled,{}};
             }
+            if (!queue_.still_admitted(batch)) {
+                gateway_.stop();
+                queue_.invalidate();
+                return {RegistrationDispatchKind::SupersededDuringDispatch,{}};
+            }
             const auto submitted=gateway_.submit(owner_selected_ua);
+            // The SDK may dispatch events synchronously while a UI thread
+            // cancels or overflows the queue. Detect that invalidation BEFORE
+            // claiming submission success or arming a deadline.
+            if (!queue_.still_admitted(batch)) {
+                gateway_.stop();
+                queue_.invalidate();
+                return {RegistrationDispatchKind::SupersededDuringDispatch,submitted};
+            }
             if (submitted!=NativeRegistrationSubmission::Submitted ||
                 !gateway_.arm_registration_deadline(
                     monotonic_ms,command.timeout_ms)) {
                 gateway_.stop();
                 queue_.invalidate();
                 return {RegistrationDispatchKind::Failed,submitted};
+            }
+            if (!queue_.still_admitted(batch)) {
+                gateway_.stop();
+                queue_.invalidate();
+                return {RegistrationDispatchKind::SupersededDuringDispatch,submitted};
             }
             result={RegistrationDispatchKind::Submitted,submitted};
         }

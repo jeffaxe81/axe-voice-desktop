@@ -25,6 +25,7 @@ public:
         std::array<RegistrationCommand,kCapacity> commands{};
         std::size_t size = 0;
         std::uint64_t generation = 0;
+        std::uint64_t revision = 0;
         bool overflow = false;
     };
 
@@ -59,6 +60,7 @@ public:
             return batch;
         if (!open_ && !size_ && !overflow_) return batch;
         batch.generation = generation_;
+        batch.revision = revision_;
         batch.overflow = overflow_;
         if (!overflow_) {
             batch.size = size_;
@@ -69,6 +71,16 @@ public:
         return batch;
     }
 
+    // Native SDK calls can synchronously invoke callbacks while a user
+    // cancels on another thread. A drained Submit is executable only while
+    // its generation AND revocation revision remain current. Observe both
+    // before and after every native call; never hold this mutex across SDK.
+    bool still_admitted(const Batch& batch) const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return batch.generation != 0 && batch.generation == generation_ &&
+               batch.revision == revision_ && open_ && !overflow_;
+    }
+
     // Owner-thread only. A stop/timeout revokes all future requests on
     // this generation. A new generation requires an explicit begin().
     void invalidate() {
@@ -76,6 +88,7 @@ public:
         open_=false;
         size_=0;
         overflow_=false;
+        ++revision_;
     }
 
 private:
@@ -89,6 +102,7 @@ private:
             entries_[0]=command;
             size_=1;
             open_=false;
+            ++revision_;
             return true;
         }
         if (size_ == kCapacity) {
@@ -96,17 +110,19 @@ private:
             size_=0;
             open_=false;
             overflow_=true;
+            ++revision_;
             return false;
         }
         entries_[size_++]=command;
         return true;
     }
 
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::array<RegistrationCommand,kCapacity> entries_{};
     std::size_t size_=0;
     std::uint64_t generation_=0;
     std::uint64_t last_generation_=0;
+    std::uint64_t revision_=0;
     bool open_=false;
     bool overflow_=false;
 };
