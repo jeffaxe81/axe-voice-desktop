@@ -49,6 +49,10 @@ public:
         active_call_ = nullptr;
         active_token_ = 0;
         sip_registered_ = false;
+        active_incoming_ = false;
+        call_established_ = false;
+        hangup_sent_ = false;
+        answer_sent_ = false;
         seen_calls_.clear();
         // Each native registration receives a *distinct immutable epoch*.
         // Contexts remain allocated until owner-proven callback quiescence.
@@ -135,6 +139,10 @@ private:
         active_call_ = nullptr;
         active_token_ = 0;
         sip_registered_ = false;
+        active_incoming_ = false;
+        call_established_ = false;
+        hangup_sent_ = false;
+        answer_sent_ = false;
     }
 
     void on_event(BaresipCallbackLifecycle::CapturedSession callback_session,
@@ -221,6 +229,10 @@ private:
             native_key_ = new_key;
             active_call_ = call;
             active_token_ = minted_token;
+            active_incoming_ = type == BEVENT_CALL_INCOMING;
+            call_established_ = false;
+            hangup_sent_ = false;
+            answer_sent_ = false;
             seen_calls_.insert(call); // never queued, logged or persisted
             return;
         }
@@ -240,6 +252,12 @@ private:
             if (type == BEVENT_CALL_CLOSED) {
                 active_call_ = nullptr;
                 active_token_ = 0;
+                active_incoming_ = false;
+                call_established_ = false;
+                answer_sent_ = false;
+                hangup_sent_ = false;
+            } else {
+                call_established_ = true;
             }
             return;
         }
@@ -265,5 +283,9 @@ private:
     // SDK callbacks, not process heuristics. This flag alone never grants
     // VerifiedNativeApi or permission to show a registered UI state.
     bool sip_registered_ = false;
+    bool active_incoming_ = false;
+    bool call_established_ = false;
+    bool hangup_sent_ = false;
+    bool answer_sent_ = false;
 };
 } // namespace axv
