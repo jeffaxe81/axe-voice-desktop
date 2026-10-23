@@ -13,6 +13,9 @@ jobs:
       - name: Build and test with project script
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-windows.ps1
+      - name: Verify quality gates (unit, blackbox, integration)
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/test-quality-gates.ps1
       - name: Publish executable
         uses: actions/upload-artifact@v4
         with:
