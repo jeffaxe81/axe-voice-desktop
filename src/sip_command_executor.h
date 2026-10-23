@@ -27,9 +27,9 @@ public:
 };
 
 enum class SipCommandDisposition {
-    Submitted, InvalidRequest, StaleSession, DuplicateRequest,
-    PendingTransition, DuplicateCallAction, Denied, NativeRejected,
-    CommandTimedOut, ClockRollback, Fenced
+    Idle, ProgressObserved, Submitted, InvalidRequest, StaleSession,
+    DuplicateRequest, PendingTransition, DuplicateCallAction, Denied,
+    NativeRejected, CommandTimedOut, ClockRollback, Fenced
 };
 struct SipCommandResult {
     SipCommandDisposition disposition = SipCommandDisposition::InvalidRequest;
@@ -45,6 +45,38 @@ public:
     // 'now_ms' MUST come from a monotonic clock on the serialized SIP owner
     // thread, sampled just before dispatch. No wall-clock timestamps.
     static constexpr std::uint64_t kPendingTimeoutMs = 10000;
+
+    // Called periodically by the serialized SIP owner even if no new user
+    // command arrives. Missing callback/progress fails closed at the deadline.
+    // This never retries, cancels or manipulates a native call pointer.
+    SipCommandDisposition watchdog(const SipRuntimeObservation& live,
+                                    std::uint64_t active_session,
+                                    std::uint64_t now_ms) {
+        if (fenced_) return SipCommandDisposition::Fenced;
+        if (!session_ || !pending_) return SipCommandDisposition::Idle;
+        if (!now_ms || !sip_proof_is_current(live, active_session) ||
+            active_session != session_) {
+            fenced_ = true;
+            return SipCommandDisposition::StaleSession;
+        }
+        if (last_now_ms_ && now_ms < last_now_ms_) {
+            fenced_ = true;
+            return SipCommandDisposition::ClockRollback;
+        }
+        last_now_ms_ = now_ms;
+        if (live.sip != pending_status_ ||
+            live.call_id != pending_call_ ||
+            live.last_call_id != pending_last_call_) {
+            pending_ = false;
+            return SipCommandDisposition::ProgressObserved;
+        }
+        if (now_ms - pending_started_ms_ >= kPendingTimeoutMs) {
+            fenced_ = true;
+            return SipCommandDisposition::CommandTimedOut;
+        }
+        return SipCommandDisposition::PendingTransition;
+    }
+
     SipCommandResult dispatch(const SipCommandRequest& r,
                               const SipRuntimeObservation& live,
                               std::uint64_t active_session,
