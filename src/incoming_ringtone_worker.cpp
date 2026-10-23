@@ -30,7 +30,7 @@ bool CancellableIncomingRingtoneSink::start(const std::wstring& endpoint) {
 void CancellableIncomingRingtoneSink::loop(std::wstring endpoint) noexcept {
     try {
         while (!cancel_.load(std::memory_order_acquire)) {
-            if (!render_(endpoint,level_)) {
+            if (!render_(endpoint,level_,cancel_)) {
                 failed_.store(true,std::memory_order_release);
                 break;
             }
@@ -53,7 +53,8 @@ bool CancellableIncomingRingtoneSink::stop() {
 bool CancellableIncomingRingtoneSink::operational() const {
     return !failed_.load(std::memory_order_acquire);
 }
-bool windows_incoming_ring_tone_once(const std::wstring& id,std::uint8_t level) {
-    return play_selected_ringtone_preview(id, nullptr, level)==RingPreviewResult::Played;
+bool windows_incoming_ring_tone_once(const std::wstring& id,std::uint8_t level,
+                                    const std::atomic<bool>& stop) {
+    return play_selected_ringtone_preview(id, &stop, level)==RingPreviewResult::Played;
 }
 } // namespace axv
