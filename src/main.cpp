@@ -545,14 +545,15 @@ void refresh_audio_panel() {
         g_audio_outputs, g_selected_output_id, g_selected_ringtone_id);
     const auto voice = fill_audio_combo(
         g_output_audio_combo, g_audio_outputs, g_selected_output_id);
+    g_selected_ringtone_id = route.ring.selected_id;
     const auto ring = fill_audio_combo(
-        g_ringtone_audio_combo, g_audio_outputs, route.ring.selected_id);
+        g_ringtone_audio_combo, g_audio_outputs, g_selected_ringtone_id);
     // The two dropdowns never automatically control the Baresip runtime.
-    g_selected_ringtone_id = ring.selected_id;
     EnableWindow(GetDlgItem(GetParent(g_ringtone_audio_combo), kSwapRingtoneVoice),
                  axv::can_swap_audio_outputs(route));
     SetWindowTextW(g_headset_status, axv::audio_routing_feedback(microphone, route));
     (void)voice;
+    (void)ring;
 }
 
 axv::RuntimeProcess observed_process(axv::ProcessStatus status, bool stopping) {
