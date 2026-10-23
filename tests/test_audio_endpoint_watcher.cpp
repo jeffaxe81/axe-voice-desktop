@@ -33,7 +33,7 @@ int main() {
     wc.lpfnWndProc = Proc;
     if (!RegisterClassW(&wc)) return test_fail(1);
     HWND window = CreateWindowExW(0, wc.lpszClassName, L"",
-        0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, instance, nullptr);
+        WS_OVERLAPPED, 0, 0, 1, 1, nullptr, nullptr, instance, nullptr);
     if (!window) return test_fail(2);
     int notices = 0;
     SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&notices));
