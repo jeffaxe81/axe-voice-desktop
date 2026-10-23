@@ -39,6 +39,30 @@ selecionado, atualize e confira o fallback. A CI cobre os dois sentidos da
 seleção, o caso de mesma saída, padrões de comunicação/multimídia e hotplug
 simulado sem depender de hardware físico.
 
+## Teste audível do toque (v0.50)
+
+Na aba ÁUDIO, selecione **Toque de chamada** e pressione **TESTAR TOQUE**.
+O aplicativo envia um sinal senoidal de 660 Hz, com volume limitado a 8%
+da amplitude digital, duração de 250 ms e rampas suaves de início/fim
+para o endpoint de saída selecionado, pela API Windows WASAPI em modo
+compartilhado. O teste roda numa thread local para não bloquear a interface.
+
+- Confirme com um headset e alto-falantes ativos que o som aparece
+  **somente no dispositivo selecionado para o toque**.
+- Inverta toque e saída da conversa, sem modificar o microfone, e repita.
+- Remova o dispositivo do toque, clique **ATUALIZAR** e confirme o fallback
+  para o padrão de multimídia; em seguida, repita o teste.
+- Se o Windows negar acesso, houver endpoint removido ou formato não
+  suportado, a interface deve mostrar a falha sem iniciar chamada SIP.
+- O botão só fica habilitado depois de consultar e selecionar uma saída.
+  Nenhum som é produzido automaticamente, nem durante CI ou testes de tela.
+
+A chamada de teste é **local**, não é toque de uma chamada recebida;
+não demonstra que Baresip reproduz RTP, SRTP ou que a voz segue a seleção
+de conversa. Os IDs dos dispositivos continuam em memória e não são
+enviados a serviços externos. Uma confirmação de áudio físico requer
+teste manual em Windows 10/11 com hardware real.
+
 ## Teste manual
 
 1. Execute o script scripts/build-windows.ps1 com o parâmetro -Run.
