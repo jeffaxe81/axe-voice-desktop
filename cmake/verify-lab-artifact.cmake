@@ -21,7 +21,9 @@ endif()
 # The DOS MZ marker alone is insufficient: refuse random payloads
 # beginning with "MZ". The x64 GUI must carry PE\0\0 and PE32+ headers.
 file(READ "${AXV_EXE}" _offset_bytes OFFSET 60 LIMIT 4 HEX)
-if(NOT _offset_bytes MATCHES "^[0-9a-f]{8}$")
+string(LENGTH "${_offset_bytes}" _offset_bytes_length)
+if(NOT _offset_bytes_length EQUAL 8 OR
+   NOT _offset_bytes MATCHES "^[0-9a-fA-F]+$")
   message(FATAL_ERROR "Invalid DOS-to-PE header offset")
 endif()
 string(SUBSTRING "${_offset_bytes}" 0 2 _offset0)
