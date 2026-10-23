@@ -44,8 +44,10 @@ int main() {
                 std::uint64_t call=0,std::wstring destination={}) {
         return SipCommandRequest{session,seq,action,call,destination};
     };
+    std::uint64_t now_ms=1000;
     auto send=[&](SipCommandRequest r) {
-        return executor.dispatch(r,live,live.session,engine,port).disposition;
+        now_ms+=10; // monotonic worker time; all normal transitions are prompt
+        return executor.dispatch(r,live,live.session,engine,port,now_ms).disposition;
     };
     if(send(req(0,1,CallAction::Dial,0,L"1001"))!=SipCommandDisposition::InvalidRequest) return 1;
     if(send(req(41,0,CallAction::Dial,0,L"1001"))!=SipCommandDisposition::InvalidRequest) return 2;
@@ -115,7 +117,7 @@ int main() {
     EngineSelection unavailable=create_sip_engine();
     SipCommandExecutor isolated;
     if(isolated.dispatch(req(45,1,CallAction::Dial,0,L"1001"),
-                         live,live.session,unavailable,port).disposition !=
+                         live,live.session,unavailable,port,now_ms+10).disposition !=
        SipCommandDisposition::Denied || port.dial!=count) return 28;
     return 0;
 }
