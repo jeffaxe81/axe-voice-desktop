@@ -15,6 +15,7 @@ struct AudioEndpoint {
     std::wstring id;     // Ephemeral Core Audio identifier.
     std::wstring name;   // Windows-provided label.
     bool default_communications = false;
+    bool default_multimedia = false; // Windows eMultimedia role for ringtone preview.
 };
 
 // Deterministic hotplug fallback: keep a valid selection, else use default.
