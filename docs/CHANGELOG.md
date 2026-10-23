@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.48.0 — isolamento de origem dos eventos Baresip (laboratório)
+- `BEVENT_SIPSESS_FAILED/CONN` são eventos de mensagem SIP, não evidência de falha da UA selecionada.
+- Allowlist valida o tipo nativo antes de consultar `bevent_get_ua`; eventos desconhecidos, de RTP e criptografia são ignorados sem comprovar mídia segura.
+- Testes simulados cobrem ausência de alteração de estado após eventos sem vínculo confiável com a UA.
+- Sem registro SIP e chamadas reais no executável.
+
+
 ## v0.47.0 — executor SIP com isolamento de comandos repetidos (laboratório)
 - Executor opcional de comandos originar/atender/desligar, usado somente no teste, preparado para worker SIP nativo serializado.
 - Revalida estado, geração e ID opaco da chamada; rejeita sequências duplicadas, ações repetidas e comandos antes de transição SIP.
