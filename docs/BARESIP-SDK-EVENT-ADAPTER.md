@@ -179,3 +179,27 @@ revocation and recovery.
 native event-loop providing a monotonic clock and polling, nothing expires.
 This experimental code is not linked to AXEVoice and does not register with
 a real PBX, confirm TLS/SRTP, or start audio media.
+
+
+## Native event-loop thread ownership enforcement
+
+The registration gateway now captures its owner thread on construction
+(`BaresipNativeThreadGuard`). Calls to `submit`, `stop`,
+`arm_registration_deadline` and `poll_registration_deadline` from
+another thread are **rejected before touching the Baresip C SDK**.
+The `submitted`/`session` queries also return false/zero off-owner
+without reading the mutable native UA state. `stop()` now returns a bool:
+false on wrong thread, true after owner-thread cleanup.
+
+An unauthorized call never silently marshals to a worker, changes the
+watchdog, unregisters callbacks, or retains an unknown UA. The owning
+native event-loop must explicitly perform controlled shutdown; this guard
+does not replace the lifecycle fence for callbacks or establish SIP proof.
+
+Tests use a real C++ worker thread against the gateway, verify the
+SDK-fake register/unregister counts stay unchanged, and confirm that the
+deadline remains pending and the owner can stop afterward. The
+`baresip_native_thread_guard` test checks thread affinity in isolation.
+
+No native event-loop is launched here. This still is an experimental
+adapter not linked into the GUI, not a SIP call implementation.

@@ -1,6 +1,8 @@
 #include "../src/baresip_sdk_registration_gateway.h"
 #include "../src/sip_event_projection.h"
 #include <cstdint>
+#include <atomic>
+#include <thread>
 
 static bevent_h* callback = nullptr;
 static void* context = nullptr;
@@ -207,5 +209,42 @@ int main() {
     gateway.stop();
     if (callback || unregistrations!=7 ||
         callback_added!=callback_removed) return 40;
+
+    // Thread ownership test: worker must not invoke ANY native SDK API.
+    // There is a live callback and pending deadline to make unauthorized
+    // cleanup observable without a data race in fake-SDK globals.
+    if (gateway.submit(&selected) != NativeRegistrationSubmission::Submitted ||
+        !gateway.arm_registration_deadline(7000,200)) return 41;
+    const auto session_before = gateway.session();
+    const auto register_before = submissions;
+    const auto unregister_before = unregistrations;
+    std::atomic<int> rejected{0};
+    std::thread foreign([&] {
+        if (gateway.submit(&another) ==
+            NativeRegistrationSubmission::WrongEventLoopThread) ++rejected;
+        if (!gateway.stop()) ++rejected;
+        if (!gateway.arm_registration_deadline(7100,100)) ++rejected;
+        if (gateway.poll_registration_deadline(7300) ==
+            RegistrationDeadlineVerdict::WrongEventLoopThread) ++rejected;
+        if (!gateway.submitted() && gateway.session() == 0) ++rejected;
+    });
+    foreign.join();
+    if (rejected != 5 || submissions != register_before ||
+        unregistrations != unregister_before ||
+        gateway.session() != session_before ||
+        gateway.poll_registration_deadline(7199) != RegistrationDeadlineVerdict::Pending)
+        return 42;
+    if (!gateway.stop() || gateway.session() || callback ||
+        unregistrations != unregister_before + 1 ||
+        callback_added != callback_removed) return 43;
+
+    // Even an idle gateway cannot be started from a foreign thread.
+    std::atomic<bool> foreign_start_blocked{false};
+    std::thread foreign_start([&] {
+        foreign_start_blocked =
+            gateway.submit(&selected) == NativeRegistrationSubmission::WrongEventLoopThread;
+    });
+    foreign_start.join();
+    if (!foreign_start_blocked || submissions != register_before) return 44;
     return 0;
 }
