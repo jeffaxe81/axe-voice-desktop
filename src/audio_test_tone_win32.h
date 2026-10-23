@@ -6,12 +6,14 @@
 namespace axv {
 
 enum class TonePreviewState {
-    Idle, Playing, Played, MissingDevice, UnsupportedFormat, Failed
+    Idle, Playing, Played, MissingDevice, UnsupportedFormat, Failed, Cancelled
 };
 
 // A short, user-initiated local Windows WASAPI test. No microphone capture,
 // SIP account, RTP, background ringtone, or Baresip engine is involved.
-TonePreviewState play_windows_tone_on_endpoint(const std::wstring& endpoint_id);
+TonePreviewState play_windows_tone_on_endpoint(
+    const std::wstring& endpoint_id,
+    const std::atomic<bool>* cancel_requested = nullptr);
 
 class TonePreviewPlayer {
 public:
@@ -22,10 +24,13 @@ public:
 
     // Returns false for empty endpoints, a concurrent preview or thread error.
     bool start(const std::wstring& endpoint_id);
+    bool cancel(); // non-blocking, cooperative WASAPI stop
+    void cancel_and_join(); // safe cleanup before window destruction
     TonePreviewState state() const { return state_.load(); }
 
 private:
     std::thread worker_;
+    std::atomic<bool> cancel_requested_{false};
     std::atomic<TonePreviewState> state_{TonePreviewState::Idle};
 };
 
