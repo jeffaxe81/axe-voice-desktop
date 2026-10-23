@@ -7,6 +7,7 @@ static void* g_context = nullptr;
 static bool g_fail_registration = false;
 static int g_registered = 0;
 static int g_unregistered = 0;
+static int g_ua_lookups = 0;
 extern "C" int bevent_register(bevent_h* handler, void* arg) {
     if (g_fail_registration) return 22;
     g_callback = handler; g_context = arg;
@@ -18,6 +19,7 @@ extern "C" void bevent_unregister(bevent_h* handler) {
     ++g_unregistered;
 }
 extern "C" struct ua* bevent_get_ua(const struct bevent* event) {
+    ++g_ua_lookups;
     return event ? event->owner : nullptr;
 }
 extern "C" struct call* bevent_get_call(const struct bevent* event) {
@@ -104,10 +106,21 @@ int main() {
     adapter.stop();
 
     if (!adapter.start(&account)) return 21;
+    // These events originate from the global SIP-message/media paths; Baresip
+    // does not authenticate them as the selected UA's registration/call.
+    const auto looked_up_before = g_ua_lookups;
     emit(BEVENT_SIPSESS_FAILED, &other_event);
-    if (!adapter.active()) return 22;
-    emit(BEVENT_SIPSESS_FAILED, &ua_event);
-    if (adapter.active()) return 23;
+    emit(BEVENT_SIPSESS_FAILED, &ua_event); // forged UA-like fake payload
+    emit(BEVENT_SIPSESS_FAILED, nullptr);
+    emit(BEVENT_SIPSESS_CONN, &ua_event);
+    emit(BEVENT_CALL_RTPESTAB, &ua_event);
+    emit(BEVENT_CALL_MENC, &ua_event);
+    emit(BEVENT_CALL_PROGRESS, &ua_event);
+    if (!adapter.active() || g_ua_lookups != looked_up_before ||
+        mailbox.drain().size != 0) return 22;
+    emit(BEVENT_REGISTERING, &ua_event);
+    emit(BEVENT_REGISTER_OK, &ua_event);
+    if (!adapter.active() || mailbox.drain().size != 2) return 23;
     adapter.stop();
 
     // BEVENT_EXIT is a global event and requires no associated UA.
