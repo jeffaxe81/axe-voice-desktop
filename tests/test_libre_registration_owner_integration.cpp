@@ -5,6 +5,9 @@
 #include <deque>
 #include <mutex>
 #include <thread>
+#include <stdexcept>
+#include <string>
+#include <utility>
 using namespace std::chrono_literals;
 
 // An isolated libre + Baresip double. The AXE GUI remains disconnected.
@@ -25,6 +28,7 @@ static void* event_context=nullptr;
 static bool sdk_registered=false;
 static std::atomic<bool> wrong_owner{false},emit_ok{false},emit_shutdown{false};
 static std::atomic<bool> deny_init{false},deny_push{false};
+static std::atomic<bool> confirm_on_register{false};
 static std::atomic<unsigned> native_register{0},native_unregister{0},
                              callbacks_added{0},callbacks_removed{0},
                              libre_started{0},libre_closed{0},queues_freed{0};
@@ -118,6 +122,10 @@ extern "C" int ua_register(ua* account) {
     sdk_registered=false;
     bevent e{account,nullptr};
     if(event_handler) event_handler(BEVENT_REGISTERING,&e,event_context);
+    if(confirm_on_register) {
+        sdk_registered=true;
+        if(event_handler) event_handler(BEVENT_REGISTER_OK,&e,event_context);
+    }
     return 0;
 }
 extern "C" void ua_unregister(ua* account) {
@@ -139,7 +147,82 @@ static bool await_event(axv::BaresipNativeRegistrationHost& host,
     return false;
 }
 
-int main() {
+// Dedicated CTest mode: real C++ owner/GUI threads and fake native SDK.
+static int test_owned_ua_lifecycle() {
+    using namespace axv;
+    using Hooks = BaresipNativeRegistrationHost::NativeUaLifecycleHooks;
+    std::atomic<unsigned> created{0}, destroyed{0};
+    std::atomic<bool> deny{false}, throw_create{false};
+
+    Hooks hooks;
+    hooks.create = [&]() -> ua* {
+        if (std::this_thread::get_id()!=owner_thread) wrong_owner=true;
+        if (throw_create) throw std::runtime_error("fake provider failure");
+        if (deny) return nullptr;
+        ++created;
+        return &selected;
+    };
+    hooks.destroy = [&](ua* ptr) {
+        if (std::this_thread::get_id()!=owner_thread ||
+            ptr!=&selected || event_handler != nullptr) wrong_owner=true;
+        ++destroyed;
+    };
+    BaresipNativeRegistrationHost owned(std::move(hooks), {}, 5ms);
+    if (owned.snapshot().account_provisioned || !owned.start() ||
+        !owned.snapshot().running || !owned.snapshot().account_provisioned ||
+        created!=1 || destroyed!=0) return 101;
+
+    const auto generation=owned.generation();
+    confirm_on_register=true;
+    std::thread gui([&] {
+        if (!owned.submit_for_generation(generation,2000)) wrong_owner=true;
+    });
+    gui.join();
+    if (!await_event(owned, RegistrationDispatchKind::Confirmed) ||
+        native_register!=1 || !owned.snapshot().account_provisioned)
+        return 102;
+    if (!owned.stop() || owned.snapshot().running ||
+        owned.snapshot().account_provisioned || owned.generation()!=0 ||
+        created!=1 || destroyed!=1 || event_handler) return 103;
+    confirm_on_register=false;
+
+    deny=true;
+    if (owned.start() || owned.snapshot().running ||
+        owned.snapshot().account_provisioned ||
+        owned.snapshot().reactor_fault!=LibreReactorFault::HookFailed ||
+        created!=1 || destroyed!=1) return 104;
+    deny=false;
+
+    throw_create=true;
+    if (owned.start() || owned.snapshot().reactor_fault!=LibreReactorFault::HookFailed ||
+        owned.snapshot().account_provisioned ||
+        created!=1 || destroyed!=1) return 105;
+    throw_create=false;
+
+    if (!owned.start() || !owned.snapshot().account_provisioned ||
+        created!=2 || owned.generation()<=generation ||
+        owned.submit_for_generation(generation, 2000)) return 106;
+    if (!owned.stop() || owned.snapshot().account_provisioned ||
+        destroyed!=2 || wrong_owner ||
+        callbacks_added!=callbacks_removed ||
+        native_register!=1 || native_unregister!=1) return 107;
+
+    // Missing destroy is a configuration failure, not permission to leak UA.
+    Hooks invalid;
+    invalid.create=[&]() -> ua* { ++created; return &selected; };
+    BaresipNativeRegistrationHost broken(std::move(invalid),{},5ms);
+    if (broken.start() || broken.snapshot().running ||
+        broken.snapshot().account_provisioned ||
+        broken.snapshot().reactor_fault!=LibreReactorFault::HookFailed ||
+        created!=2 || destroyed!=2) return 108;
+    if (libre_started!=libre_closed || queues_freed!=libre_closed ||
+        callbacks_added!=callbacks_removed) return 109;
+    return 0;
+}
+
+int main(int argc, char** argv) {
+    if (argc==2 && std::string(argv[1])=="--owned-ua")
+        return test_owned_ua_lifecycle();
     using namespace axv;
     std::atomic<std::uint64_t> virtual_ms{1000};
     BaresipNativeRegistrationHost host(
