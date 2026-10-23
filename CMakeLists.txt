@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AXEVoiceDesktop VERSION 0.45.0 LANGUAGES CXX)
+project(AXEVoiceDesktop VERSION 0.46.0 LANGUAGES CXX)
 if(NOT WIN32)
   message(FATAL_ERROR "This bootstrap currently supports Windows only")
 endif()
@@ -29,6 +29,16 @@ if(AXV_BUILD_NATIVE_BARESIP_ADAPTER)
   target_include_directories(axv_native_baresip_adapter PRIVATE "${AXV_BARESIP_INCLUDE_DIR}")
   target_link_libraries(axv_native_baresip_adapter PUBLIC "${AXV_BARESIP_LIBRARY}")
   target_compile_features(axv_native_baresip_adapter PRIVATE cxx_std_17)
+  # An executable forces resolution of native bevent symbols. A static library
+  # by itself may build even when the SDK ABI or import libraries are wrong.
+  # This artifact is BUILD-ONLY; never run against an uninitialized SDK.
+  add_executable(axv_native_baresip_sdk_abi_probe
+    tests/baresip_sdk_abi_probe.cpp)
+  target_include_directories(axv_native_baresip_sdk_abi_probe PRIVATE
+    "${AXV_BARESIP_INCLUDE_DIR}")
+  target_compile_features(axv_native_baresip_sdk_abi_probe PRIVATE cxx_std_17)
+  target_link_libraries(axv_native_baresip_sdk_abi_probe PRIVATE
+    axv_native_baresip_adapter "${AXV_BARESIP_LIBRARY}")
 endif()
 add_executable(AXEVoice WIN32 src/main.cpp)
 target_compile_features(AXEVoice PRIVATE cxx_std_17)
@@ -39,6 +49,15 @@ endif()
 target_link_libraries(AXEVoice PRIVATE user32 gdi32 advapi32 shell32 axv_sip_address axv_audio_devices axv_windows_process)
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(test_baresip_sdk_abi_probe
+    tests/baresip_sdk_abi_probe.cpp
+    tests/fakes/baresip_sdk_stub.cpp)
+  target_include_directories(test_baresip_sdk_abi_probe PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fakes")
+  target_compile_features(test_baresip_sdk_abi_probe PRIVATE cxx_std_17)
+  target_compile_definitions(test_baresip_sdk_abi_probe PRIVATE
+    AXV_FAKE_SDK_ABI_TEST)
+  add_test(NAME baresip_sdk_abi_probe COMMAND test_baresip_sdk_abi_probe)
   add_test(NAME baresip_sdk_provenance
     COMMAND "${CMAKE_COMMAND}"
       "-DAXV_GATE_SCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/cmake/verify-baresip-sdk.cmake"
@@ -184,7 +203,7 @@ foreach(axv_test IN LISTS axv_registered_tests)
   set_tests_properties("${axv_test}" PROPERTIES LABELS "unit")
 endforeach()
 set_tests_properties(ui_smoke ui_blackbox PROPERTIES LABELS "blackbox")
-set_tests_properties(integration_sip_safety windows_process sip_runtime_session_guard
+set_tests_properties(integration_sip_safety baresip_sdk_abi_probe windows_process sip_runtime_session_guard
   baresip_sdk_provenance
   sip_event_projection baresip_event_mailbox baresip_callback_ingress
   baresip_callback_lifecycle baresip_sdk_event_adapter baresip_sdk_epochs
