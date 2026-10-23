@@ -19,9 +19,13 @@ static auto volatile probe_register = &bevent_register;
 static auto volatile probe_unregister = &bevent_unregister;
 static auto volatile probe_get_ua = &bevent_get_ua;
 static auto volatile probe_get_call = &bevent_get_call;
+static auto volatile probe_connect = &ua_connect;
+static auto volatile probe_answer = &ua_answer;
+static auto volatile probe_hangup = &ua_hangup;
 
 int main() {
-    if (!probe_register || !probe_unregister || !probe_get_ua || !probe_get_call)
+    if (!probe_register || !probe_unregister || !probe_get_ua || !probe_get_call ||
+        !probe_connect || !probe_answer || !probe_hangup)
         return 1;
 
     axv::BaresipEventMailbox mailbox;
