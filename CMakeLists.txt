@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AXEVoiceDesktop VERSION 0.45.0 LANGUAGES CXX)
+project(AXEVoiceDesktop VERSION 0.46.0 LANGUAGES CXX)
 if(NOT WIN32)
   message(FATAL_ERROR "This bootstrap currently supports Windows only")
 endif()
@@ -45,6 +45,9 @@ if(BUILD_TESTING)
       "-DAXV_FIXTURE_HEADER=${CMAKE_CURRENT_SOURCE_DIR}/tests/fakes/baresip.h"
       "-DAXV_GATE_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/sdk-provenance-fixture"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_baresip_sdk_provenance.cmake")
+  add_executable(test_audio_hotplug_debounce tests/test_audio_hotplug_debounce.cpp)
+  target_compile_features(test_audio_hotplug_debounce PRIVATE cxx_std_17)
+  add_test(NAME audio_hotplug_debounce COMMAND test_audio_hotplug_debounce)
   add_executable(test_ui_dpi_policy tests/test_ui_dpi_policy.cpp)
   target_compile_features(test_ui_dpi_policy PRIVATE cxx_std_17)
   add_test(NAME ui_dpi_policy COMMAND test_ui_dpi_policy)
