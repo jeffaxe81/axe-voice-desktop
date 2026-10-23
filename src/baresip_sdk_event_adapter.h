@@ -96,8 +96,12 @@ private:
 
     static void callback(enum bevent_ev type, struct bevent* event, void* arg) {
         auto* context = static_cast<CallbackContext*>(arg);
-        if (context && context->owner)
-            context->owner->on_event(context->epoch, type, event);
+        if (!context || !context->owner) return;
+        // Every dispatched callback holds its epoch alive through on_event().
+        // stop() must not release account/call state while this lease exists.
+        auto lease = context->owner->lifecycle_.hold_native_callback(context->epoch);
+        if (!lease) return;
+        context->owner->on_event(context->epoch, type, event);
     }
 
     void fail_closed() {
