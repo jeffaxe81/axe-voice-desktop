@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AXEVoiceDesktop VERSION 0.61.0 LANGUAGES CXX)
+project(AXEVoiceDesktop VERSION 0.62.0 LANGUAGES CXX)
 if(NOT WIN32)
   message(FATAL_ERROR "This bootstrap currently supports Windows only")
 endif()
@@ -161,6 +161,12 @@ if(BUILD_TESTING)
     "-DAXV_EXE=$<TARGET_FILE:AXEVoice>"
     "-DAXV_OUTPUT=$<TARGET_FILE_DIR:AXEVoice>/AXE-Voice-LAB.sha256"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/verify-lab-artifact.cmake")
+  add_test(NAME lab_artifact_hash_verifier COMMAND pwsh
+    -NoProfile -NonInteractive -File
+    "${CMAKE_CURRENT_SOURCE_DIR}/scripts/test-lab-hash-verifier.ps1"
+    -SourceDir "$<TARGET_FILE_DIR:AXEVoice>"
+    -Verifier "$<TARGET_FILE_DIR:AXEVoice>/verify-axe-voice-lab.ps1")
+  set_tests_properties(lab_artifact_hash_verifier PROPERTIES DEPENDS lab_artifact_manifest)
   add_test(NAME lab_artifact_manifest_negative COMMAND "${CMAKE_COMMAND}"
     "-DAXV_NEGATIVE_DIR=$<TARGET_FILE_DIR:AXEVoice>/manifest-negative-test"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/test-lab-artifact-negative.cmake")
@@ -290,5 +296,11 @@ set_tests_properties(integration_sip_safety baresip_sdk_abi_probe windows_proces
   baresip_callback_lifecycle baresip_sdk_event_adapter baresip_sdk_single_owner baresip_sdk_epochs
   call_command_authorization sip_command_executor integration_incoming_ringtone
   integration_ringtone_playback_control integration_ringtone_worker integration_ring_fencing_matrix
-  lab_artifact_manifest lab_artifact_manifest_negative PROPERTIES LABELS "integration")
+  lab_artifact_manifest lab_artifact_manifest_negative
+  lab_artifact_hash_verifier PROPERTIES LABELS "integration")
 set_target_properties(AXEVoice PROPERTIES OUTPUT_NAME "AXE-Voice")
+add_custom_command(TARGET AXEVoice POST_BUILD
+  COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+    "${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify-axe-voice-lab.ps1"
+    "$<TARGET_FILE_DIR:AXEVoice>/verify-axe-voice-lab.ps1"
+  COMMENT "Copy LAB integrity verifier beside AXE-Voice.exe")
