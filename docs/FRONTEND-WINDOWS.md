@@ -126,3 +126,7 @@ A validação de contraste percebido, leitores de tela e escala DPI **ainda exig
 - Cartões, teclado telefônico, indicadores e botões owner-draw acompanham o DPI. MINI/MAX preserva proporções, incluindo 150% e 200%.
 - O smoke test Win32 verifica coordenadas do campo, troca de página e MINI nas escalas 150% e 200%, sem alterar as configurações reais do Windows. Novo teste unitário cobre a matemática do escalonamento.
 - Seguem pendentes os testes manuais em monitores físicos de DPI distintos, leitores de tela, truncamento de textos e resoluções pequenas. Registro SIP e áudio de chamada continuam não homologados.
+
+## v0.47 — Notificações oficiais do Core Audio
+
+A aba ÁUDIO passa a receber eventos do `IMMNotificationClient` para troca do dispositivo padrão de comunicações, inserção/remoção, estado ou propriedades de endpoint. O callback COM apenas agenda uma mensagem sem IDs para a fila da janela; o inventário acontece após debounce de 400 ms no loop Win32. A subscrição é liberada no `WM_DESTROY`, antes de destruir a janela. Se COM não puder inicializar, a atualização manual e a sinalização `WM_DEVICECHANGE` continuam ativas. O teste de callback usa janela message-only e eventos sintéticos, sem hardware. O Baresip ainda não recebe seleção de dispositivos nem realiza chamadas.
