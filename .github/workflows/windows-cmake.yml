@@ -23,4 +23,5 @@ jobs:
           path: |
             build/Release/AXE-Voice.exe
             build/Release/AXE-Voice-LAB.sha256
+            build/Release/verify-axe-voice-lab.ps1
           if-no-files-found: error
