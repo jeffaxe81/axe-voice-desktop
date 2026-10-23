@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.46.0 — link/ABI smoke test do SDK Baresip (laboratório)
+- Opcional `axv_native_baresip_sdk_abi_probe` verifica, no link de um executável, símbolos do SDK real aprovado pelo gate SHA256. É build-only e exige o SDK real fornecido externamente.
+- `baresip_sdk_abi_probe` exercita no CI a verificação com SDK simulado; não atesta compatibilidade com Baresip real.
+- CMake mantém `AXV_BUILD_NATIVE_BARESIP_ADAPTER=OFF` por padrão; a GUI continua sem SIP/RTP/SRTP, chamadas ou mídia reais.
+
+
 ## v0.45.0 — autorização de atender e desligar por sessão/chamada
 - Novo controle puro de comandos Dial/Answer/Hangup com sessão SIP válida e identificador opaco de chamada.
 - Impede atender/desligar chamadas já encerradas, identificadores de outra chamada, divergência de estado entre backend e UI, e discagem com chamada ativa.
