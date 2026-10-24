@@ -188,11 +188,25 @@ private:
             ? owner_ua_ : (resolver_?resolver_():nullptr);
         const auto result=owner_->dispatcher.tick(
             owner_->generation,now_ms(),selected);
+        // Native terminal decisions revoke cross-thread admission BEFORE
+        // publishing the diagnostic result. Stop/join is still required.
+        const bool terminal =
+            result.kind==RegistrationDispatchKind::Cancelled ||
+            result.kind==RegistrationDispatchKind::DeadlineExpired ||
+            result.kind==RegistrationDispatchKind::RegistrarRejected ||
+            result.kind==RegistrationDispatchKind::Failed ||
+            result.kind==RegistrationDispatchKind::OverflowStopped ||
+            result.kind==RegistrationDispatchKind::WrongOwnerThread ||
+            result.kind==RegistrationDispatchKind::SupersededDuringDispatch ||
+            result.kind==RegistrationDispatchKind::StaleGeneration;
+        if (terminal) accepting_.store(false);
         std::lock_guard<std::mutex> lock(mutex_);
         ++state_.ticks;
         if (result.kind!=RegistrationDispatchKind::Idle &&
             result.kind!=RegistrationDispatchKind::Pending &&
-            result.kind!=RegistrationDispatchKind::StaleGeneration)
+            // Never overwrite the first terminal cause with stale ticks.
+            !(result.kind==RegistrationDispatchKind::StaleGeneration &&
+              state_.last_dispatch!=RegistrationDispatchKind::Idle))
             state_.last_dispatch=result.kind;
     }
 
