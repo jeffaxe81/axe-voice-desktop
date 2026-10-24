@@ -118,6 +118,16 @@ public:
         return current_;
     }
 
+    // Cover the ENTIRE native callback, not only the few microseconds of
+    // mailbox publication. The owner must call this at callback ENTRY.
+    // This fence does not authenticate a raw C callback's original source.
+    BaresipCallbackFence::Lease hold_native_callback(CapturedSession captured) {
+        auto lease = fence_.admit(captured.fence_generation);
+        if (!lease || ingress_.session() != captured.mailbox_session)
+            return {};
+        return lease;
+    }
+
     bool registration(CapturedSession captured, BaresipEventKind event) {
         auto lease = fence_.admit(captured.fence_generation);
         return lease && ingress_.registration(captured.mailbox_session, event);
@@ -155,10 +165,15 @@ public:
     // of those callbacks. The native adapter must serialize its registrations
     // with begin()/revoke_and_wait() and maintain object lifetime externally.
     void revoke_and_wait() {
-        std::lock_guard<std::mutex> lock(lifecycle_);
+        std::unique_lock<std::mutex> lock(lifecycle_);
         fence_.close();
         ingress_.revoke();
+        // Release lifecycle_ while waiting: an already admitted callback may
+        // enter fail_closed() -> reject_current(), which needs this mutex.
+        // current_ remains nonempty, so begin() cannot admit a new generation.
+        lock.unlock();
         fence_.wait();
+        lock.lock();
         current_ = {};
     }
 
