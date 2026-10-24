@@ -1,12 +1,28 @@
 #include "../src/baresip_sdk_event_adapter.h"
 #include "../src/sip_event_projection.h"
 #include <cstdint>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
 
 static bevent_h* g_callback = nullptr;
 static void* g_context = nullptr;
 static bool g_fail_registration = false;
 static int g_registered = 0;
 static int g_unregistered = 0;
+// Fake registrar status, distinct from the callback delivery itself.
+static bool g_native_registered[8]{};
+static bool g_withhold_registration_confirmation = false;
+// Deterministic fake-SDK callback pause inside bevent_get_ua().
+static std::mutex g_pause_mutex;
+static std::condition_variable g_pause_cv;
+static bool g_pause_callback = false;
+static bool g_callback_entered_pause = false;
+static bool g_release_callback = false;
+static std::atomic<bool> g_watch_unregister{false};
+static std::atomic<bool> g_unregistered_during_test{false};
 extern "C" int bevent_register(bevent_h* handler, void* arg) {
     if (g_fail_registration) return 22;
     g_callback = handler; g_context = arg;
@@ -16,14 +32,38 @@ extern "C" int bevent_register(bevent_h* handler, void* arg) {
 extern "C" void bevent_unregister(bevent_h* handler) {
     if (g_callback == handler) { g_callback = nullptr; g_context = nullptr; }
     ++g_unregistered;
+    if (g_watch_unregister.load()) {
+        g_unregistered_during_test = true;
+        g_pause_cv.notify_all();
+    }
 }
 extern "C" struct ua* bevent_get_ua(const struct bevent* event) {
+    {
+        std::unique_lock<std::mutex> lock(g_pause_mutex);
+        if (g_pause_callback) {
+            g_callback_entered_pause = true;
+            g_pause_cv.notify_all();
+            g_pause_cv.wait(lock, [] { return g_release_callback; });
+        }
+    }
     return event ? event->owner : nullptr;
 }
 extern "C" struct call* bevent_get_call(const struct bevent* event) {
     return event ? event->active_call : nullptr;
 }
+extern "C" bool ua_isregistered(const struct ua* selected) {
+    return selected && selected->test_id < 8 && g_native_registered[selected->test_id];
+}
 static void emit(bevent_ev kind, bevent* event) {
+    // A faithful fake allows the SDK's registrar state and the emitted
+    // BEVENT_REGISTER_OK to be deliberately inconsistent in negative tests.
+    if (event && event->owner && event->owner->test_id < 8) {
+        const auto id = event->owner->test_id;
+        if (kind == BEVENT_REGISTERING || kind == BEVENT_REGISTER_FAIL ||
+            kind == BEVENT_UNREGISTERING) g_native_registered[id] = false;
+        if (kind == BEVENT_REGISTER_OK && !g_withhold_registration_confirmation)
+            g_native_registered[id] = true;
+    }
     if (g_callback) g_callback(kind, event, g_context);
 }
 
@@ -32,6 +72,9 @@ int main() {
     BaresipEventMailbox mailbox;
     BaresipCallbackLifecycle lifecycle(mailbox);
     BaresipSdkEventAdapter adapter(lifecycle);
+    BaresipEventMailbox competing_mailbox;
+    BaresipCallbackLifecycle competing_lifecycle(competing_mailbox);
+    BaresipSdkEventAdapter competing(competing_lifecycle);
     ua account{1}, other{2};
     call c1{&account, 1}, c2{&account, 2}, alien{&other, 3};
     bevent ua_event{&account, nullptr};
@@ -42,7 +85,13 @@ int main() {
     g_fail_registration = true;
     if (adapter.start(&account) || mailbox.drain().session != 0) return 2;
     g_fail_registration = false;
+    // After failed registration, a different adapter must acquire the lease.
+    if (!competing.start(&other) || !competing.active()) return 27;
+    if (adapter.start(&account) || !competing.active()) return 28;
+    competing.stop();
+    if (competing.active() || g_callback) return 29;
     if (!adapter.start(&account) || !adapter.active() || adapter.start(&other)) return 3;
+    if (competing.start(&other) || competing_mailbox.drain().session) return 30;
     const auto a = adapter.session();
     if (a == 0) return 4;
     emit(BEVENT_REGISTERING, &other_event);
@@ -72,6 +121,9 @@ int main() {
     // Wrong old call closure must revoke the whole session, not the new call.
     emit(BEVENT_CALL_CLOSED, &one);
     if (adapter.active() || mailbox.drain().session || mailbox.drain().size) return 10;
+    // Even after a fail-closed callback the SDK registration still exists
+    // until stop() unregisters it; another owner must remain excluded.
+    if (competing.start(&other)) return 35;
     adapter.stop();
     if (g_callback || adapter.active()) return 11;
     if (!adapter.start(&account) || adapter.session() <= a) return 12;
@@ -116,5 +168,94 @@ int main() {
     if (adapter.active() || mailbox.drain().session || mailbox.drain().session) return 25;
     adapter.stop();
     if (g_callback != nullptr || g_registered != g_unregistered) return 26;
+    // A second adapter is permitted after the original calls stop().
+    if (!competing.start(&other) || !competing.active()) return 31;
+    if (adapter.start(&account)) return 32;
+    emit(BEVENT_REGISTERING, &other_event);
+    emit(BEVENT_REGISTER_OK, &other_event);
+    auto second_batch = competing_mailbox.drain();
+    if (second_batch.size != 2 || second_batch.session == 0) return 33;
+    competing.stop();
+    if (g_callback || g_registered != g_unregistered) return 34;
+
+    // Simulate a callback remaining inside the fake SDK while stop() runs.
+    // The stop thread must unregister but may NOT finish until the callback
+    // releases its epoch lease. This guards UA/call object lifetime.
+    if (!adapter.start(&account) || !adapter.active()) return 36;
+    {
+        std::lock_guard<std::mutex> lock(g_pause_mutex);
+        g_pause_callback = true;
+        g_callback_entered_pause = false;
+        g_release_callback = false;
+    }
+    g_unregistered_during_test = false;
+    g_watch_unregister = true;
+    auto* saved_callback = g_callback;
+    void* saved_context = g_context;
+    std::thread native_callback([&] {
+        saved_callback(BEVENT_REGISTERING, &ua_event, saved_context);
+    });
+    {
+        std::unique_lock<std::mutex> lock(g_pause_mutex);
+        g_pause_cv.wait(lock, [] { return g_callback_entered_pause; });
+    }
+    std::atomic<bool> stop_finished{false};
+    std::thread stop_worker([&] {
+        adapter.stop();
+        stop_finished = true;
+        g_pause_cv.notify_all();
+    });
+    bool observed_unregister = false;
+    bool returned_early = false;
+    {
+        std::unique_lock<std::mutex> lock(g_pause_mutex);
+        observed_unregister = g_pause_cv.wait_for(
+            lock, std::chrono::seconds(3),
+            [] { return g_unregistered_during_test.load(); });
+        // Explicitly hold the callback while giving stop a chance to return.
+        // If it returns before release, the whole-callback lease is broken.
+        if (observed_unregister) {
+            (void)g_pause_cv.wait_for(lock, std::chrono::milliseconds(60),
+                                      [&] { return stop_finished.load(); });
+            returned_early = stop_finished.load();
+        }
+        g_release_callback = true;
+        g_pause_cv.notify_all();
+    }
+    native_callback.join();
+    stop_worker.join();
+    g_watch_unregister = false;
+    {
+        std::lock_guard<std::mutex> lock(g_pause_mutex);
+        g_pause_callback = false;
+    }
+    if (!observed_unregister) return 37;
+    if (returned_early) return 38;
+    if (!stop_finished || g_callback || g_registered != g_unregistered) return 39;
+    if (!adapter.start(&account) || !adapter.active()) return 40;
+    adapter.stop();
+    if (g_callback || g_registered != g_unregistered) return 41;
+
+    // A bare success event without native UA registration must fail closed.
+    if (!adapter.start(&account)) return 42;
+    emit(BEVENT_REGISTERING, &ua_event);
+    g_withhold_registration_confirmation = true;
+    emit(BEVENT_REGISTER_OK, &ua_event);
+    g_withhold_registration_confirmation = false;
+    if (adapter.active() || mailbox.drain().session) return 43;
+    adapter.stop();
+    if (g_callback || g_registered != g_unregistered) return 44;
+
+    // Even if an earlier event confirmed registration, a native deregister
+    // that has not yet emitted its event must not authorize a new call.
+    if (!adapter.start(&account)) return 45;
+    emit(BEVENT_REGISTERING, &ua_event);
+    emit(BEVENT_REGISTER_OK, &ua_event);
+    if (!adapter.active() || !ua_isregistered(&account)) return 46;
+    g_native_registered[account.test_id] = false;
+    emit(BEVENT_CALL_OUTGOING, &one);
+    if (adapter.active() || mailbox.drain().session) return 47;
+    adapter.stop();
+    if (g_callback || g_registered != g_unregistered) return 48;
     return 0;
 }

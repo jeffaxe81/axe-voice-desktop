@@ -4,6 +4,7 @@
 static bevent_h* callback = nullptr;
 static void* context = nullptr;
 static int registered = 0, unregistered = 0;
+static bool native_registered = false;
 extern "C" int bevent_register(bevent_h* fn, void* arg) {
     callback = fn; context = arg; ++registered; return 0;
 }
@@ -17,6 +18,9 @@ extern "C" ua* bevent_get_ua(const bevent* event) {
 extern "C" call* bevent_get_call(const bevent* event) {
     return event ? event->active_call : nullptr;
 }
+extern "C" bool ua_isregistered(const ua* selected) {
+    return selected && selected->test_id == 1 && native_registered;
+}
 int main() {
     using namespace axv;
     BaresipEventMailbox mailbox;
@@ -29,6 +33,7 @@ int main() {
     auto first = adapter.session();
     auto old_callback = callback; void* old_context = context;
     old_callback(BEVENT_REGISTERING,&owner,old_context);
+    native_registered = true; // Fake native reg state now actually succeeded.
     old_callback(BEVENT_REGISTER_OK,&owner,old_context);
     if (mailbox.drain().size != 2) return 2;
     adapter.stop();
@@ -41,6 +46,7 @@ int main() {
     auto stale = mailbox.drain();
     if (stale.session != second || stale.size || !adapter.active()) return 5;
     callback(BEVENT_REGISTERING,&owner,context);
+    native_registered = true;
     callback(BEVENT_REGISTER_OK,&owner,context);
     if (mailbox.drain().size != 2) return 6;
     callback(BEVENT_CALL_INCOMING,&c,context);
