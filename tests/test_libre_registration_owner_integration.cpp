@@ -1,5 +1,6 @@
 #include "../src/baresip_native_registration_host.h"
 #include "../src/baresip_native_ua_factory.h"
+#include "../src/baresip_native_core_bootstrap.h"
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -31,6 +32,7 @@ static std::atomic<bool> wrong_owner{false},emit_ok{false},emit_shutdown{false};
 static std::atomic<bool> deny_init{false},deny_push{false};
 static std::atomic<bool> confirm_on_register{false};
 static std::atomic<bool> deny_ua_alloc{false}, partial_ua_alloc{false};
+static std::atomic<bool> enforce_core_gate{false}, fake_core_prepared{false};
 static std::atomic<unsigned> allocated_ua{0}, freed_ua{0};
 static std::string last_account_aor; // Test-only: never enters application logs.
 
@@ -122,6 +124,7 @@ extern "C" int ua_alloc(ua** out, const char* aor) {
         wrong_owner=true;
         return 70;
     }
+    if (enforce_core_gate && !fake_core_prepared) wrong_owner=true;
     if (deny_ua_alloc) { *out=nullptr; return 71; }
     last_account_aor=aor;
     *out=&selected;
@@ -310,7 +313,97 @@ static int test_sdk_native_factory() {
     return 0;
 }
 
+// Core readiness is an injected lab contract, NOT real baresip_init/ua_init.
+// Test startup rollback and teardown order using the same owner thread.
+static int test_native_core_bootstrap_gate() {
+    using namespace axv;
+    const NativeUaIdentity identity{"1002","pbx.example.com",5061,true};
+    std::atomic<unsigned> prepare_count{0}, release_count{0};
+    std::atomic<bool> deny_prepare{false}, throw_prepare{false};
+    enforce_core_gate=true;
+    BaresipNativeCoreHooks core;
+    core.prepare=[&]()->bool {
+        if (std::this_thread::get_id()!=owner_thread || fake_core_prepared)
+            wrong_owner=true;
+        ++prepare_count;
+        if (throw_prepare) throw std::runtime_error("fake core init failed");
+        if (deny_prepare) return false;
+        fake_core_prepared=true;
+        return true;
+    };
+    core.release=[&] {
+        if (std::this_thread::get_id()!=owner_thread ||
+            event_handler || sdk_registered || allocated_ua!=freed_ua)
+            wrong_owner=true;
+        fake_core_prepared=false;
+        ++release_count;
+    };
+    BaresipNativeRegistrationHost host(
+        make_core_gated_native_ua_hooks(identity, core), {}, 5ms);
+    if (!host.start() || !host.snapshot().account_provisioned ||
+        !fake_core_prepared || allocated_ua!=1 || prepare_count!=1 ||
+        release_count!=0) return 301;
+    const auto initial_generation=host.generation();
+    confirm_on_register=true;
+    if (!host.submit_for_generation(initial_generation,2000) ||
+        !await_event(host,RegistrationDispatchKind::Confirmed) ||
+        native_register!=1) return 302;
+    if (!host.stop() || host.snapshot().account_provisioned ||
+        fake_core_prepared || prepare_count!=1 || release_count!=1 ||
+        allocated_ua!=1 || freed_ua!=1 || native_unregister!=1)
+        return 303;
+    confirm_on_register=false;
+
+    deny_prepare=true;
+    if (host.start() || host.snapshot().running ||
+        host.snapshot().account_provisioned ||
+        host.snapshot().reactor_fault!=LibreReactorFault::HookFailed ||
+        allocated_ua!=1 || prepare_count!=2 || release_count!=2 ||
+        fake_core_prepared) return 304;
+    deny_prepare=false;
+
+    throw_prepare=true;
+    if (host.start() || host.snapshot().running ||
+        host.snapshot().reactor_fault!=LibreReactorFault::HookFailed ||
+        prepare_count!=3 || release_count!=3 || fake_core_prepared)
+        return 305;
+    throw_prepare=false;
+
+    deny_ua_alloc=true;
+    if (host.start() || host.snapshot().account_provisioned ||
+        host.snapshot().reactor_fault!=LibreReactorFault::HookFailed ||
+        prepare_count!=4 || release_count!=4 ||
+        allocated_ua!=1 || fake_core_prepared) return 306;
+    deny_ua_alloc=false;
+
+    if (!host.start() || host.generation()<=initial_generation ||
+        host.submit_for_generation(initial_generation,2000) ||
+        allocated_ua!=2 || prepare_count!=5 || release_count!=4 ||
+        !fake_core_prepared) return 307;
+    if (!host.stop() || fake_core_prepared || prepare_count!=5 ||
+        release_count!=5 || allocated_ua!=freed_ua) return 308;
+
+    BaresipNativeCoreHooks incomplete;
+    incomplete.prepare=[&]()->bool {
+        ++prepare_count;
+        return true;
+    };
+    BaresipNativeRegistrationHost blocked(
+        make_core_gated_native_ua_hooks(identity, incomplete),{},5ms);
+    if (blocked.start() || blocked.snapshot().account_provisioned ||
+        blocked.snapshot().reactor_fault!=LibreReactorFault::HookFailed ||
+        prepare_count!=5 || release_count!=5) return 309;
+
+    if (wrong_owner || fake_core_prepared ||
+        callbacks_added!=callbacks_removed ||
+        libre_started!=libre_closed || queues_freed!=libre_closed)
+        return 310;
+    return 0;
+}
+
 int main(int argc, char** argv) {
+    if (argc==2 && std::string(argv[1])=="--core-bootstrap")
+        return test_native_core_bootstrap_gate();
     if (argc==2 && std::string(argv[1])=="--sdk-ua")
         return test_sdk_native_factory();
     if (argc==2 && std::string(argv[1])=="--owned-ua")
