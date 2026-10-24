@@ -118,6 +118,13 @@ public:
         return current_;
     }
 
+    // Lease spanning the entire native C callback, including SDK argument
+    // reads; shutdown waits for this lease after handler unregistration.
+    BaresipCallbackFence::Lease hold_native_callback(CapturedSession captured) {
+        return captured ? fence_.admit(captured.fence_generation)
+                        : BaresipCallbackFence::Lease{};
+    }
+
     bool registration(CapturedSession captured, BaresipEventKind event) {
         auto lease = fence_.admit(captured.fence_generation);
         return lease && ingress_.registration(captured.mailbox_session, event);
@@ -152,11 +159,18 @@ public:
     // of those callbacks. The native adapter must serialize its registrations
     // with begin()/revoke_and_wait() and maintain object lifetime externally.
     void revoke_and_wait() {
-        std::lock_guard<std::mutex> lock(lifecycle_);
-        fence_.close();
-        ingress_.revoke();
-        fence_.wait();
-        current_ = {};
+        // Do not hold lifecycle_ while waiting for admitted callbacks:
+        // an in-flight callback may need reject_current() to finish.
+        {
+            std::lock_guard<std::mutex> lock(lifecycle_);
+            fence_.close();
+            ingress_.revoke();
+        }
+        fence_.wait(); // stop() only, never on a native callback thread.
+        {
+            std::lock_guard<std::mutex> lock(lifecycle_);
+            current_ = {};
+        }
     }
 
 private:
