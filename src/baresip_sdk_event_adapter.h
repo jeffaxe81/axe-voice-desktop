@@ -47,6 +47,8 @@ public:
         native_key_ = 0;
         active_call_ = nullptr;
         seen_calls_.clear();
+        registration_callback_seen_ = false;
+        registration_failed_seen_ = false;
         // Each native registration receives a *distinct immutable epoch*.
         // Contexts remain allocated until owner-proven callback quiescence.
         // A failed allocation must not leak its context or monopolize the
@@ -79,13 +81,16 @@ public:
     void stop() {
         // Event-loop contract: no concurrent/in-flight SDK callbacks here.
         if (registered_) bevent_unregister(&BaresipSdkEventAdapter::callback);
-        registered_ = false;
+        // Keep native state alive until all callback leases have returned.
         lifecycle_.revoke_and_wait();
+        registered_ = false;
         owner_ = nullptr;
         captured_ = {};
         native_key_ = 0;
         active_call_ = nullptr;
         seen_calls_.clear();
+        registration_callback_seen_ = false;
+        registration_failed_seen_ = false;
         // Only release the process-wide claim AFTER native unregistration
         // and callback admission quiescence, never while subscribed.
         release_owner();
@@ -95,6 +100,17 @@ public:
     }
     std::uint64_t session() const {
         return active() ? captured_.mailbox_session : 0;
+    }
+    // Native event-loop owner only. Callback plus UA registrar state
+    // must agree; neither alone authorizes SIP controls in the UI.
+    bool native_register_ok_seen() const {
+        return active() && registration_callback_seen_ &&
+               !registration_failed_seen_ && owner_ && ua_isregistered(owner_);
+    }
+    // Only the selected UA's BEVENT_REGISTER_FAIL on this callback epoch
+    // can assert a registrar rejection. This is failure evidence, NEVER auth.
+    bool native_register_fail_seen() const {
+        return active() && registration_failed_seen_;
     }
 
 private:
@@ -114,8 +130,12 @@ private:
 
     static void callback(enum bevent_ev type, struct bevent* event, void* arg) {
         auto* context = static_cast<CallbackContext*>(arg);
-        if (context && context->owner)
-            context->owner->on_event(context->captured, type, event);
+        if (!context || !context->owner) return;
+        // Lease covers the SDK lookup, callback reducer, and lifetime
+        // of the selected UA until stop() confirms callback quiescence.
+        auto lease = context->owner->lifecycle_.hold_native_callback(context->captured);
+        if (!lease) return;
+        context->owner->on_event(context->captured, type, event);
     }
 
     bool same_epoch(BaresipCallbackLifecycle::CapturedSession captured) const {
@@ -128,6 +148,8 @@ private:
         lifecycle_.reject_current();
         captured_ = {}; // explicit stop() required before restart
         active_call_ = nullptr;
+        registration_callback_seen_ = false;
+        registration_failed_seen_ = false;
     }
 
     void on_event(BaresipCallbackLifecycle::CapturedSession callback_session,
@@ -171,23 +193,41 @@ private:
             fail_closed();
             return;
         case BEVENT_REGISTERING:
+            registration_callback_seen_ = false;
+            registration_failed_seen_ = false;
             if (!lifecycle_.registration(callback_session, BaresipEventKind::Registering))
                 fail_closed();
             return;
         case BEVENT_REGISTER_OK:
-            if (!lifecycle_.registration(callback_session, BaresipEventKind::RegisterOk))
+            // A callback alone does not prove the registrar accepted
+            // this UA: verify native state before publishing evidence.
+            if (!ua_isregistered(owner_) ||
+                !lifecycle_.registration(callback_session, BaresipEventKind::RegisterOk)) {
                 fail_closed();
+                return;
+            }
+            registration_callback_seen_ = true;
+            registration_failed_seen_ = false;
             return;
         case BEVENT_REGISTER_FAIL:
-            if (!lifecycle_.registration(callback_session, BaresipEventKind::RegisterFail))
+            registration_callback_seen_ = false;
+            if (!lifecycle_.registration(callback_session, BaresipEventKind::RegisterFail)) {
                 fail_closed();
+            } else {
+                registration_failed_seen_ = true;
+            }
             return;
         case BEVENT_UNREGISTERING:
+            registration_callback_seen_ = false;
             if (!lifecycle_.registration(callback_session, BaresipEventKind::Unregistering))
                 fail_closed();
             return;
         case BEVENT_CALL_INCOMING:
         case BEVENT_CALL_OUTGOING: {
+            if (!native_register_ok_seen()) {
+                fail_closed();
+                return;
+            }
             const struct call* call = bevent_get_call(event);
             // Never accept pointer reuse in the same session. Otherwise a late
             // callback could confuse a new call with a previously closed one.
@@ -242,5 +282,7 @@ private:
     std::vector<std::unique_ptr<CallbackContext>> contexts_;
     std::uint64_t native_key_ = 0;
     bool registered_ = false;
+    bool registration_callback_seen_ = false;
+    bool registration_failed_seen_ = false;
 };
 } // namespace axv
