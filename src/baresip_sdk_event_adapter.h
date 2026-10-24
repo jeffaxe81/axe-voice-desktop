@@ -2,6 +2,7 @@
 // Optional, isolated laboratory bridge. NOT part of the AXEVoice executable.
 // Production requires the audited Baresip and libre SDKs and an event-loop
 // owner that serializes callbacks with stop() / unregister completion.
+#include <re.h> // Upstream Baresip public API requires libre declarations.
 #include <baresip.h>
 #include <atomic>
 #include "baresip_callback_lifecycle.h"
@@ -46,6 +47,7 @@ public:
         native_key_ = 0;
         active_call_ = nullptr;
         seen_calls_.clear();
+        registration_callback_seen_ = false;
         contexts_.emplace_back(new CallbackContext{this, epoch});
         registered_ = true;
         const int error = bevent_register(&BaresipSdkEventAdapter::callback,
@@ -74,6 +76,7 @@ public:
         native_key_ = 0;
         active_call_ = nullptr;
         seen_calls_.clear();
+        registration_callback_seen_ = false;
         release_registry_owner();
     }
     bool active() const {
@@ -81,6 +84,13 @@ public:
     }
     std::uint64_t session() const {
         return active() ? captured_.mailbox_session : 0;
+    }
+    // Control-plane observation only. Does NOT grant VerifiedNativeApi to GUI.
+    // Requires an accepted REGISTER_OK callback and the selected UA still
+    // registered. Caller must serialize access with the native event loop.
+    bool native_register_ok_seen() const {
+        return active() && registration_callback_seen_ && owner_ &&
+               ua_isregistered(owner_);
     }
 
 private:
@@ -112,6 +122,7 @@ private:
         lifecycle_.reject_current();
         captured_ = {};
         active_call_ = nullptr;
+        registration_callback_seen_ = false;
     }
 
     void on_event(BaresipCallbackLifecycle::CapturedSession epoch,
@@ -139,23 +150,39 @@ private:
             fail_closed();
             return;
         case BEVENT_REGISTERING:
+            registration_callback_seen_ = false;
             if (!lifecycle_.registration(epoch, BaresipEventKind::Registering))
                 fail_closed();
             return;
         case BEVENT_REGISTER_OK:
-            if (!lifecycle_.registration(epoch, BaresipEventKind::RegisterOk))
+            // A callback alone is insufficient. Cross-check the selected
+            // native UA state before projecting a confirmed registration.
+            // A mismatch revokes the entire epoch, not merely the event.
+            if (!ua_isregistered(owner_) ||
+                !lifecycle_.registration(epoch, BaresipEventKind::RegisterOk)) {
                 fail_closed();
+                return;
+            }
+            registration_callback_seen_ = true;
             return;
         case BEVENT_REGISTER_FAIL:
+            registration_callback_seen_ = false;
             if (!lifecycle_.registration(epoch, BaresipEventKind::RegisterFail))
                 fail_closed();
             return;
         case BEVENT_UNREGISTERING:
+            registration_callback_seen_ = false;
             if (!lifecycle_.registration(epoch, BaresipEventKind::Unregistering))
                 fail_closed();
             return;
         case BEVENT_CALL_INCOMING:
         case BEVENT_CALL_OUTGOING: {
+            // MVP requires a still-registered native account before a call
+            // can enter the call-state pipeline; process-up alone is not proof.
+            if (!ua_isregistered(owner_)) {
+                fail_closed();
+                return;
+            }
             const struct call* call = bevent_get_call(event);
             // Never accept pointer reuse in the same session. Otherwise a late
             // callback could confuse a new call with a previously closed one.
@@ -208,5 +235,6 @@ private:
     BaresipCallbackLifecycle::CapturedSession captured_{};
     std::uint64_t native_key_ = 0;
     bool registered_ = false;
+    bool registration_callback_seen_ = false;
 };
 } // namespace axv
