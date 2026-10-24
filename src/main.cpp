@@ -45,6 +45,10 @@
 #include "call_readiness.h"
 #include "ui_contrast_policy.h"
 #include "ui_dpi_policy.h"
+#include "desktop_extras_win32.h"
+#include "sip_native_preflight.h"
+#include "native_sip_release_gate.h"
+#include "sip_vault_status_win32.h"
 #include <vector>
 #include <array>
 #include <algorithm>
@@ -100,6 +104,30 @@ constexpr UINT kTrayCallback = WM_APP + 41;
 constexpr UINT kTrayIconId = 1;
 constexpr UINT kTrayOpen = 3001;
 constexpr UINT kTrayExit = 3002;
+constexpr int kMoreButton = 2306;
+constexpr int kSaveFavorite = 3101;
+constexpr int kLoadFavorite = 3102;
+constexpr int kShowRecent = 3103;
+constexpr int kPrivacyDial = 3104;
+constexpr int kCloseToTrayToggle = 3105;
+constexpr int kAutostartToggle = 3106;
+constexpr int kClearRecent = 3107;
+constexpr int kExplicitExit = 3108;
+constexpr int kRecentPickStart = 3200;
+constexpr int kSipPreflight = 3114;
+constexpr int kSipVaultStatus = 3115;
+constexpr int kOpenCredentialManager = 3116;
+constexpr int kRemoveSipVaultCredential = 3118;
+constexpr int kSipNextSteps = 3117;
+constexpr int kStartupInTrayToggle = 3110;
+constexpr int kDeleteFavorite = 3111;
+constexpr int kRecallLastDestination = 3112;
+constexpr int kCopySafeDiagnostics = 3113;
+constexpr int kCopyDestination = 3120;
+constexpr int kPasteDestination = 3121;
+constexpr int kSelectAllDestination = 3122;
+constexpr int kUndoDialEdit = 3123;
+constexpr int kResetDialWorkspace = 3124;
 HWND g_number = nullptr;
 HWND g_number_label = nullptr;
 HWND g_status = nullptr;
@@ -157,6 +185,11 @@ bool g_account_invalid_server = false;
 bool g_account_invalid_user = false;
 bool g_account_invalid_port = false;
 bool g_tray_visible = false;
+bool g_close_to_tray = false;
+bool g_explicit_exit = false;
+bool g_private_dial = false;
+std::wstring g_favorite_destination;
+std::vector<std::wstring> g_recent_destinations;
 constexpr wchar_t kPrefsKey[] = L"Software\\AXEVoice\\Desktop";
 int g_page = 0; // 0 = dial, 1 = settings, 2 = audio
 std::vector<HWND> g_dial_controls;
@@ -190,6 +223,12 @@ void load_ui_preferences() {
                      nullptr, &value, &size) == ERROR_SUCCESS) {
         g_compact = value != 0;
     }
+    value = 0; size = sizeof(value);
+    if (RegGetValueW(HKEY_CURRENT_USER, kPrefsKey, L"CloseToTray", RRF_RT_REG_DWORD,
+                     nullptr, &value, &size) == ERROR_SUCCESS) {
+        g_close_to_tray = value != 0;
+    }
+    g_favorite_destination = axv::load_desktop_favorite(kPrefsKey);
 }
 void save_ui_preferences() {
     if (g_smoke_mode) return; // Smoke may not write to the user's registry.
@@ -200,12 +239,15 @@ void save_ui_preferences() {
     const DWORD theme = g_dark ? 1u : 0u;
     const DWORD pinned = g_pinned ? 1u : 0u;
     const DWORD compact = g_compact ? 1u : 0u;
+    const DWORD close_to_tray = g_close_to_tray ? 1u : 0u;
     RegSetValueExW(key, L"CompactMode", 0, REG_DWORD,
                    reinterpret_cast<const BYTE*>(&compact), sizeof(compact));
     RegSetValueExW(key, L"DarkTheme", 0, REG_DWORD,
                    reinterpret_cast<const BYTE*>(&theme), sizeof(theme));
     RegSetValueExW(key, L"AlwaysOnTop", 0, REG_DWORD,
                    reinterpret_cast<const BYTE*>(&pinned), sizeof(pinned));
+    RegSetValueExW(key, L"CloseToTray", 0, REG_DWORD,
+                   reinterpret_cast<const BYTE*>(&close_to_tray), sizeof(close_to_tray));
     RegCloseKey(key);
 }
 
@@ -528,6 +570,187 @@ void edit_number(HWND root, wchar_t action) {
     (void)root;
 }
 
+
+// Local workspace actions never authorize SIP commands or imply live calls.
+std::wstring current_destination() {
+    if (!g_number) return {};
+    wchar_t value[129] = {};
+    GetWindowTextW(g_number, value, 129);
+    return value;
+}
+void recall_destination(const std::wstring& value) {
+    if (!g_number || axv::valid_dial_destination(value).empty()) return;
+    SetWindowTextW(g_number, value.c_str());
+    SetFocus(g_number);
+    SendMessageW(g_number, EM_SETSEL, static_cast<WPARAM>(value.size()),
+                 static_cast<LPARAM>(value.size()));
+}
+void remember_current_destination() {
+    if (!g_private_dial) {
+        axv::remember_dial_destination(g_recent_destinations, current_destination());
+    }
+}
+void show_recent_destinations(HWND window) {
+    if (g_private_dial) {
+        SetWindowTextW(g_status, L"Modo privado ativo: recentes ocultos e desativados.");
+        return;
+    }
+    remember_current_destination();
+    HMENU menu = CreatePopupMenu();
+    if (!menu) return;
+    if (g_recent_destinations.empty()) {
+        AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, L"Nenhum destino nesta sessao");
+    } else {
+        for (size_t i = 0; i < g_recent_destinations.size(); ++i)
+            AppendMenuW(menu, MF_STRING, kRecentPickStart + static_cast<UINT>(i),
+                        g_recent_destinations[i].c_str());
+        AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(menu, MF_STRING, kClearRecent, L"Limpar destinos recentes");
+    }
+    const HWND anchor = GetDlgItem(window, kMoreButton);
+    RECT pos = {};
+    if (anchor) GetWindowRect(anchor, &pos);
+    else GetWindowRect(window, &pos);
+    SetForegroundWindow(window);
+    const UINT choice = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
+                                       pos.left, pos.bottom, 0, window, nullptr);
+    DestroyMenu(menu);
+    if (choice) SendMessageW(window, WM_COMMAND, MAKEWPARAM(choice, BN_CLICKED), 0);
+}
+
+// Copies a redacted LOCAL status only; never read the account, dial field,
+// Windows identity, endpoint names, SIP URI or credentials here.
+std::wstring safe_desktop_diagnostics() {
+    const auto process = g_baresip_process.poll();
+    const wchar_t* process_text =
+        process == axv::ProcessStatus::Running ? L"running-unverified" :
+        process == axv::ProcessStatus::Stopped ? L"stopped" :
+        process == axv::ProcessStatus::Failed ? L"failed" :
+        process == axv::ProcessStatus::Exited ? L"exited" : L"stopping";
+    return std::wstring(L"AXE Voice Desktop LAB 0.108\r\n") +
+        L"Processo Baresip: " + process_text +
+        L"\r\nRegistro SIP confirmado: NAO\r\nChamada RTP/SRTP homologada: NAO\r\n" +
+        L"Autostart: " + (axv::desktop_autostart_enabled() ? L"sim" : L"nao") +
+        L"\r\nInicializacao minimizada: " +
+        (axv::desktop_autostart_starts_in_tray() ? L"sim" : L"nao") +
+        L"\r\nFechar para bandeja: " + (g_close_to_tray ? L"sim" : L"nao") +
+        L"\r\nPrivacidade visual: " + (g_private_dial ? L"sim" : L"nao") +
+        L"\r\nModo compacto: " + (g_compact ? L"sim" : L"nao") +
+        L"\r\nEntradas de audio enumeradas: " + std::to_wstring(g_audio_inputs.size()) +
+        L"\r\nSaidas de audio enumeradas: " + std::to_wstring(g_audio_outputs.size()) +
+        L"\r\nObs.: inventario local nao confirma audio em chamada.\r\n";
+}
+
+bool copy_dial_destination(HWND owner) {
+    if (g_smoke_mode || g_private_dial) return false;
+    const auto text = axv::valid_dial_destination(current_destination());
+    if (text.empty()) return false;
+    const SIZE_T bytes = (text.size() + 1) * sizeof(wchar_t);
+    HGLOBAL buffer = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (!buffer) return false;
+    wchar_t* data = static_cast<wchar_t*>(GlobalLock(buffer));
+    if (!data) { GlobalFree(buffer); return false; }
+    std::copy(text.c_str(), text.c_str() + text.size() + 1, data);
+    GlobalUnlock(buffer);
+    if (!OpenClipboard(owner)) { GlobalFree(buffer); return false; }
+    const bool cleared = EmptyClipboard() != FALSE;
+    const bool copied = cleared && SetClipboardData(CF_UNICODETEXT, buffer) != nullptr;
+    CloseClipboard();
+    if (!copied) GlobalFree(buffer);
+    return copied;
+}
+
+bool paste_dial_destination(HWND owner) {
+    if (g_smoke_mode || g_private_dial || !g_number) return false;
+    if (!OpenClipboard(owner)) return false;
+    std::wstring value;
+    HANDLE h = GetClipboardData(CF_UNICODETEXT);
+    if (h) {
+        const SIZE_T capacity = GlobalSize(h) / sizeof(wchar_t);
+        if (capacity > 0 && capacity <= 129) {
+            const auto* data = static_cast<const wchar_t*>(GlobalLock(h));
+            if (data) {
+                const auto* end = std::wmemchr(data, L'\0', capacity);
+                if (end && end != data) value.assign(data, end);
+                GlobalUnlock(h);
+            }
+        }
+    }
+    CloseClipboard();
+    value = axv::valid_dial_destination(value);
+    if (value.empty()) return false;
+    recall_destination(value); // Never starts a SIP call.
+    return true;
+}
+
+bool copy_safe_diagnostics(HWND owner) {
+    const std::wstring report = safe_desktop_diagnostics();
+    const SIZE_T bytes = (report.size() + 1) * sizeof(wchar_t);
+    HGLOBAL buffer = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (!buffer) return false;
+    auto* chars = static_cast<wchar_t*>(GlobalLock(buffer));
+    if (!chars) { GlobalFree(buffer); return false; }
+    std::copy(report.begin(), report.end(), chars);
+    chars[report.size()] = L'\0';
+    GlobalUnlock(buffer);
+    if (!OpenClipboard(owner)) { GlobalFree(buffer); return false; }
+    if (!EmptyClipboard()) { CloseClipboard(); GlobalFree(buffer); return false; }
+    const bool transferred = SetClipboardData(CF_UNICODETEXT, buffer) != nullptr;
+    CloseClipboard();
+    if (!transferred) GlobalFree(buffer);
+    return transferred;
+}
+
+void show_more_actions(HWND window) {
+    HMENU menu = CreatePopupMenu();
+    if (!menu) return;
+    AppendMenuW(menu, MF_STRING | (g_private_dial ? MF_GRAYED : 0),
+                kSaveFavorite, L"Salvar destino como favorito (Ctrl+D)");
+    AppendMenuW(menu, MF_STRING | ((g_favorite_destination.empty() || g_private_dial) ? MF_GRAYED : 0),
+                kLoadFavorite, L"Carregar favorito (Ctrl+F)");
+    AppendMenuW(menu, MF_STRING | ((g_favorite_destination.empty() || g_private_dial) ? MF_GRAYED : 0),
+                kDeleteFavorite, L"Remover favorito salvo");
+    AppendMenuW(menu, MF_STRING | (g_private_dial ? MF_GRAYED : 0),
+                kShowRecent, L"Destinos recentes (Ctrl+H)");
+    AppendMenuW(menu, MF_STRING | ((g_private_dial || g_recent_destinations.empty()) ? MF_GRAYED : 0),
+                kRecallLastDestination, L"Recuperar ultimo destino (Ctrl+Shift+R)");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING | (g_private_dial ? MF_GRAYED : 0),
+                kCopyDestination, L"Copiar destino validado");
+    AppendMenuW(menu, MF_STRING | (g_private_dial ? MF_GRAYED : 0),
+                kPasteDestination, L"Colar destino validado");
+    AppendMenuW(menu, MF_STRING, kSelectAllDestination, L"Selecionar todo destino");
+    AppendMenuW(menu, MF_STRING, kUndoDialEdit, L"Desfazer edicao do destino");
+    AppendMenuW(menu, MF_STRING, kResetDialWorkspace, L"Limpar destino e recentes...");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING | (g_private_dial ? MF_CHECKED : 0),
+                kPrivacyDial, L"Ocultar destino na tela (Ctrl+Shift+P)");
+    AppendMenuW(menu, MF_STRING | (g_close_to_tray ? MF_CHECKED : 0),
+                kCloseToTrayToggle, L"Fechar janela para bandeja");
+    AppendMenuW(menu, MF_STRING | (axv::desktop_autostart_enabled() ? MF_CHECKED : 0),
+                kAutostartToggle, L"Iniciar com Windows (usuario atual)");
+    AppendMenuW(menu, MF_STRING | (!axv::desktop_autostart_enabled() ? MF_GRAYED : 0) |
+                      (axv::desktop_autostart_starts_in_tray() ? MF_CHECKED : 0),
+                kStartupInTrayToggle, L"Iniciar minimizado na bandeja");
+    AppendMenuW(menu, MF_STRING, kCopySafeDiagnostics, L"Copiar diagnostico local sem dados pessoais");
+    AppendMenuW(menu, MF_STRING, kSipPreflight, L"Pre-ativacao SIP segura (F3)");
+    AppendMenuW(menu, MF_STRING, kSipVaultStatus, L"Verificar credencial SIP no Windows (F4)");
+    AppendMenuW(menu, MF_STRING, kOpenCredentialManager, L"Abrir Gerenciador de Credenciais (F5)");
+    AppendMenuW(menu, MF_STRING, kRemoveSipVaultCredential, L"Remover credencial SIP do Windows (F7)");
+    AppendMenuW(menu, MF_STRING, kSipNextSteps, L"Pendencias para chamadas SIP (F6)");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, kExplicitExit, L"Sair do AXE Voice");
+    const HWND anchor = GetDlgItem(window, kMoreButton);
+    RECT pos = {};
+    if (anchor) GetWindowRect(anchor, &pos);
+    else GetWindowRect(window, &pos);
+    SetForegroundWindow(window);
+    const UINT choice = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
+                                       pos.left, pos.bottom, 0, window, nullptr);
+    DestroyMenu(menu);
+    if (choice) SendMessageW(window, WM_COMMAND, MAKEWPARAM(choice, BN_CLICKED), 0);
+}
+
 // Audio preferences are previews only: they never configure or contact Baresip.
 axv::AudioSelectionRefresh fill_audio_combo(
     HWND combo, const std::vector<axv::AudioEndpoint>& devices,
@@ -755,6 +978,124 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     if (IsWindowEnabled(button) != (dial ? TRUE : FALSE))
         EnableWindow(button, dial ? TRUE : FALSE);
 }
+
+// Inspect local prerequisite SHAPES only. No SIP SDK, network, credentials,
+// native owner callbacks or real call proof are available in this GUI build.
+
+// User-invoked local readiness action. Identity is displayed ONLY in this
+// dedicated dialog (never F3, logs, clipboard diagnostics or phone history).
+// Reading Credential Manager only checks presence; it cannot prove auth.
+std::wstring make_sip_vault_report() {
+    wchar_t server[129] = {}, user[129] = {};
+    GetWindowTextW(g_server, server, 129);
+    GetWindowTextW(g_user, user, 129);
+    const auto status = axv::inspect_sip_vault_presence(server, user);
+    std::wstring report = L"AXE Voice LAB - Cofre do Windows\r\n\r\n";
+    report += axv::sip_vault_status_label(status);
+    report += L"\r\n\r\n";
+    if (status == axv::SipVaultStatus::PresentUnverified ||
+        status == axv::SipVaultStatus::Missing) {
+        const auto alias = axv::sip_vault_alias(user, server);
+        if (!alias.empty()) {
+            report += L"Nome para criar uma Credencial Generica no Windows:\r\n";
+            report += alias;
+            report += L"\r\n\r\n";
+        }
+    }
+    report += L"Use o Gerenciador de Credenciais do Windows para criar\r\n";
+    report += L"uma credencial generica com o nome acima.\r\n";
+    report += L"Nenhuma senha e exibida ou copiada pelo AXE Voice.\r\n";
+    report += L"A presenca de um segredo NAO comprova LOGIN SIP.\r\n";
+    report += L"O SDK SIP ainda nao consome estas credenciais.\r\n";
+    return report;
+}
+
+
+// Clear operator guidance derived only from local state. Never reports
+// registration success merely because credentials/files/devices exist.
+std::wstring make_sip_next_steps_report() {
+    wchar_t server[129] = {}, user[129] = {}, port[129] = {};
+    if (g_server) GetWindowTextW(g_server, server, 129);
+    if (g_user) GetWindowTextW(g_user, user, 129);
+    if (g_port) GetWindowTextW(g_port, port, 129);
+    const bool selected_tls = g_tls &&
+        SendMessageW(g_tls, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    const auto local = axv::evaluate_native_sip_preflight(
+        server, user, port, selected_tls);
+    const bool identity_ready = local.eligible_for_preparation;
+    const auto vault = identity_ready
+        ? axv::inspect_sip_vault_presence(server, user)
+        : axv::SipVaultStatus::AccountInvalid;
+    const bool vault_ready = vault == axv::SipVaultStatus::PresentUnverified;
+    std::wstring out = L"AXE VOICE 0.103 - ETAPAS PARA USO SIP\r\n\r\n";
+    out += L"1. Conta SIP/TLS: ";
+    out += identity_ready ? L"formato local aceito (NAO testado)\r\n" :
+                           L"revisar campos/selecionar TLS (F3)\r\n";
+    out += L"2. Cofre Windows: ";
+    out += !identity_ready ? L"depende de identidade valida\r\n" :
+           vault_ready ? L"credencial presente, sem prova de senha\r\n" :
+                         L"revisar credencial generica (F4/F5)\r\n";
+    out += L"3. SDK Baresip/re auditado: PENDENTE NO EXECUTAVEL\r\n";
+    out += L"4. Autenticacao real/TLS do PABX: NAO VERIFICADA\r\n";
+    out += L"5. RTP/SRTP, codecs e audio headset: NAO VERIFICADOS\r\n";
+    out += L"6. Build e homologacao Windows/PABX: PENDENTES\r\n\r\n";
+    out += L"CHAMADAS BLOQUEADAS: motor SIP nativo nao ligado a GUI.\r\n";
+    out += L"Este relatorio nao divulga dominio, ramal ou senha.\r\n";
+    return out;
+}
+
+std::wstring make_native_sip_preflight_report() {
+    wchar_t server[129] = {}, user[129] = {}, port[129] = {};
+    if (g_server) GetWindowTextW(g_server, server, 129);
+    if (g_user) GetWindowTextW(g_user, user, 129);
+    if (g_port) GetWindowTextW(g_port, port, 129);
+    const bool tls_checked = g_tls &&
+        SendMessageW(g_tls, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    const auto account = axv::evaluate_native_sip_preflight(
+        server, user, port, tls_checked);
+    const axv::NativeSipReleaseEvidence evidence{}; // no approvals available in GUI
+    const auto commercial_gate = axv::evaluate_native_sip_activation(evidence);
+    (void)commercial_gate;
+
+    wchar_t exe[MAX_PATH] = {};
+    const DWORD len = GetModuleFileNameW(nullptr, exe, MAX_PATH);
+    bool has_local_baresip = false;
+    axv::BaresipModuleInventory inventory{};
+    if (len > 0 && len < MAX_PATH) {
+        const auto candidate = std::filesystem::path(exe).parent_path() / L"baresip.exe";
+        const auto probe = axv::probe_baresip_executable(candidate);
+        has_local_baresip =
+            probe.status == axv::BaresipProbeStatus::PresentUnverified;
+        if (has_local_baresip)
+            inventory = axv::inspect_baresip_module_files(candidate);
+    }
+
+    std::wstring report =
+        L"AXE VOICE LAB - PRE-ATIVACAO SIP (v0.103)\r\n\r\n";
+    report += L"1. Dados de conta: ";
+    report += axv::native_preflight_label(account.status);
+    report += L"\r\n2. Transporte SIP TLS: ";
+    report += tls_checked ? L"selecionado (nao testado)" : L"nao selecionado";
+    report += L"\r\n3. Baresip local: ";
+    report += has_local_baresip ? L"arquivo encontrado (nao autenticado)" :
+                                  L"nao localizado/verificavel";
+    report += L"\r\n4. Modulos locais: ";
+    report += inventory.status == axv::BaresipModuleScanStatus::Inspected
+        ? L"arquivos inspecionados (sem prova de codecs)" : L"inspecao incompleta";
+    report += L"\r\n5. Audio Windows: ";
+    report += !g_audio_inputs.empty() && !g_audio_outputs.empty()
+        ? L"dispositivos enumerados (sem prova de RTP)" : L"sem inventario completo";
+    report += L"\r\n\r\nEVIDENCIAS OPERACIONAIS\r\n";
+    report += L"Motor SDK conectado ao aplicativo: NAO\r\n";
+    report += L"Autenticacao com PABX validada: NAO\r\n";
+    report += L"TLS do servidor certificado: NAO\r\n";
+    report += L"Midia SRTP bidirecional validada: NAO\r\n";
+    report += L"Release comercial autorizada: NAO\r\n";
+    report += L"Comandos de chamada: BLOQUEADOS\r\n\r\n";
+    report += L"Nenhuma credencial, dominio, ramal ou URI e exibida.\r\n";
+    return report;
+}
+
 std::wstring make_readiness_report() {
     wchar_t number[129]{}, server[129]{}, user[129]{}, port[129]{};
     GetWindowTextW(g_number, number, 129);
@@ -825,8 +1166,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             make_button(window, dial_labels[i], kDigitStart + i,
                         39 + col * 119, 329 + row * 66, 111, 59, 0);
         }
-        make_button(window, L"APAGAR", kBackspace, 39, 597, 170, 38, 0);
-        make_button(window, L"LIMPAR", kClear, 218, 597, 171, 38, 0);
+        make_button(window, L"APAGAR", kBackspace, 39, 597, 110, 38, 0);
+        make_button(window, L"LIMPAR", kClear, 155, 597, 110, 38, 0);
+        make_button(window, L"MAIS", kMoreButton, 272, 597, 117, 38, 0);
         make_button(window, L"CHAMAR  •  SIP INDISPONÍVEL", kCallButton,
                     39, 651, 350, 51, 0);
         make_button(window, L"MUDO", kMuteFuture, 39, 708, 82, 34, 0);
@@ -920,6 +1262,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         return 0;
     }
     case WM_COMMAND:
+        if (LOWORD(wparam) == kNumberEdit && HIWORD(wparam) == EN_KILLFOCUS) {
+            remember_current_destination();
+            return 0;
+        }
         if (LOWORD(wparam) == kNumberEdit && HIWORD(wparam) == EN_CHANGE) {
             refresh_destination_feedback(); // keyboard, paste and dialpad share validation.
             return 0;
@@ -934,6 +1280,203 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         if (HIWORD(wparam) == BN_CLICKED || (HIWORD(wparam) == 1 && lparam == 0)) {
             const int control = LOWORD(wparam);
             if (control == kShowDial || control == kFocusNumber) { show_page(window, 0); return 0; }
+            if (control == kMoreButton) { show_more_actions(window); return 0; }
+            if (control == kShowRecent) { show_recent_destinations(window); return 0; }
+            if (control == kClearRecent) {
+                g_recent_destinations.clear();
+                SetWindowTextW(g_status, L"Destinos recentes desta sessao apagados.");
+                return 0;
+            }
+            if (!g_private_dial && control >= kRecentPickStart && control < kRecentPickStart + 10) {
+                const size_t index = static_cast<size_t>(control - kRecentPickStart);
+                if (index < g_recent_destinations.size()) {
+                    show_page(window, 0);
+                    recall_destination(g_recent_destinations[index]);
+                }
+                return 0;
+            }
+            if (control == kCopyDestination) {
+                if (g_private_dial || g_smoke_mode) return 0;
+                SetWindowTextW(g_status, copy_dial_destination(window)
+                    ? L"Destino copiado. A area de transferencia e compartilhada com outros apps."
+                    : L"Falha: informe destino valido e verifique a area de transferencia.");
+                return 0;
+            }
+            if (control == kPasteDestination) {
+                if (g_private_dial || g_smoke_mode) return 0;
+                const bool ok = paste_dial_destination(window);
+                SetWindowTextW(g_status, ok
+                    ? L"Destino validado e colado. Nenhuma chamada foi iniciada."
+                    : L"Clipboard vazio, excessivo ou invalido. Nada foi colado.");
+                return 0;
+            }
+            if (control == kSelectAllDestination) {
+                show_page(window, 0);
+                SendMessageW(g_number, EM_SETSEL, 0, -1);
+                return 0;
+            }
+            if (control == kUndoDialEdit) {
+                show_page(window, 0);
+                SendMessageW(g_number, EM_UNDO, 0, 0);
+                return 0;
+            }
+            if (control == kResetDialWorkspace) {
+                if (!g_smoke_mode && MessageBoxW(window,
+                    L"Apagar destino atual e destinos recentes desta sessao?",
+                    L"Limpar espaco de discagem", MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES)
+                    return 0;
+                g_recent_destinations.clear();
+                if (g_number) SetWindowTextW(g_number, L"");
+                SetWindowTextW(g_status, L"Campo e recentes limpos. Favorito preservado.");
+                return 0;
+            }
+            if (control == kSaveFavorite) {
+                if (g_private_dial) {
+                    SetWindowTextW(g_status, L"Modo privado: desative-o antes de salvar favorito.");
+                    return 0;
+                }
+                const auto value = axv::valid_dial_destination(current_destination());
+                if (value.empty()) {
+                    SetWindowTextW(g_status, L"Digite um destino valido antes de salvar favorito.");
+                } else if (g_smoke_mode) {
+                    g_favorite_destination = value; // no registry changes in smoke mode
+                } else if (axv::save_desktop_favorite(kPrefsKey, value)) {
+                    g_favorite_destination = value;
+                    SetWindowTextW(g_status, L"Favorito salvo neste usuario do Windows.");
+                } else {
+                    SetWindowTextW(g_status, L"Nao foi possivel salvar favorito local.");
+                }
+                return 0;
+            }
+            if (control == kLoadFavorite) {
+                if (!g_private_dial && !g_favorite_destination.empty()) {
+                    show_page(window, 0);
+                    recall_destination(g_favorite_destination);
+                }
+                return 0;
+            }
+            if (control == kPrivacyDial) {
+                g_private_dial = !g_private_dial;
+                if (g_private_dial) g_recent_destinations.clear();
+                SendMessageW(g_number, EM_SETPASSWORDCHAR,
+                             g_private_dial ? static_cast<WPARAM>(0x2022) : 0, 0);
+                InvalidateRect(g_number, nullptr, TRUE);
+                SetWindowTextW(g_status, g_private_dial
+                    ? L"Modo privado: destino mascarado, recentes limpos e nao registrados."
+                    : L"Destino visivel; recentes retomados nesta sessao.");
+                return 0;
+            }
+            if (control == kCloseToTrayToggle) {
+                g_close_to_tray = !g_close_to_tray;
+                save_ui_preferences();
+                SetWindowTextW(g_status, g_close_to_tray
+                    ? L"Fechar janela ocultara na bandeja; Sair encerra o programa."
+                    : L"Fechar janela encerrara o aplicativo.");
+                return 0;
+            }
+            if (control == kAutostartToggle) {
+                if (g_smoke_mode) return 0;
+                const bool enable = !axv::desktop_autostart_enabled();
+                const bool ok = axv::desktop_set_autostart(enable);
+                SetWindowTextW(g_status, !ok ? L"Falha ao alterar inicializacao com Windows."
+                    : enable ? L"Inicializacao com Windows habilitada no HKCU."
+                             : L"Inicializacao automatica com Windows removida.");
+                return 0;
+            }
+            if (control == kDeleteFavorite) {
+                if (g_private_dial) return 0;
+                if (g_smoke_mode || axv::desktop_clear_favorite(kPrefsKey)) {
+                    g_favorite_destination.clear();
+                    SetWindowTextW(g_status, L"Favorito removido deste usuario do Windows.");
+                } else {
+                    SetWindowTextW(g_status, L"Nao foi possivel remover favorito.");
+                }
+                return 0;
+            }
+            if (control == kRecallLastDestination) {
+                if (!g_private_dial && !g_recent_destinations.empty()) {
+                    show_page(window, 0);
+                    recall_destination(g_recent_destinations.front());
+                }
+                return 0;
+            }
+            if (control == kCopySafeDiagnostics) {
+                if (g_smoke_mode) return 0;
+                SetWindowTextW(g_status, copy_safe_diagnostics(window)
+                    ? L"Diagnostico local anonimizado copiado para area de transferencia."
+                    : L"Falha ao copiar diagnostico para area de transferencia.");
+                return 0;
+            }
+            if (control == kStartupInTrayToggle) {
+                if (g_smoke_mode || !axv::desktop_autostart_enabled()) return 0;
+                const bool next = !axv::desktop_autostart_starts_in_tray();
+                const bool ok = axv::desktop_set_autostart(true, next);
+                SetWindowTextW(g_status, !ok
+                    ? L"Falha ao alterar a inicializacao minimizada."
+                    : next ? L"Windows iniciara AXE Voice diretamente na bandeja."
+                           : L"Windows iniciara AXE Voice com janela visivel.");
+                return 0;
+            }
+            if (control == kExplicitExit) {
+                g_explicit_exit = true;
+                SendMessageW(window, WM_CLOSE, 0, 0);
+                return 0;
+            }
+            if (control == kSipVaultStatus) {
+                if (!g_smoke_mode) {
+                    const auto report = make_sip_vault_report();
+                    MessageBoxW(window, report.c_str(),
+                                L"Cofre SIP - AXE Voice LAB", MB_OK | MB_ICONINFORMATION);
+                }
+                return 0;
+            }
+            if (control == kRemoveSipVaultCredential) {
+                if (g_smoke_mode) return 0;
+                const int choice = MessageBoxW(
+                    window,
+                    L"Excluir a credencial SIP da conta configurada neste usuario"
+                    L" do Windows? A acao nao pode ser desfeita pelo AXE Voice."
+                    L" Nenhuma senha sera exibida.",
+                    L"Confirmar exclusao de credencial SIP",
+                    MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2);
+                if (choice != IDYES) return 0;
+                wchar_t server[129] = {}, user[129] = {};
+                GetWindowTextW(g_server, server, 129);
+                GetWindowTextW(g_user, user, 129);
+                const auto result = axv::remove_sip_vault_credential(server, user);
+                SetWindowTextW(g_status, axv::sip_vault_removal_label(result));
+                return 0;
+            }
+            if (control == kOpenCredentialManager) {
+                if (g_smoke_mode) return 0;
+                const auto status = reinterpret_cast<INT_PTR>(ShellExecuteW(
+                    window, L"open", L"control.exe",
+                    L"/name Microsoft.CredentialManager", nullptr, SW_SHOWNORMAL));
+                if (status <= 32)
+                    MessageBoxW(window,
+                        L"O Windows nao abriu o Gerenciador de Credenciais. "
+                        L"Abra Painel de Controle > Contas de Usuario > "
+                        L"Gerenciador de Credenciais.",
+                        L"Cofre Windows indisponivel", MB_OK | MB_ICONWARNING);
+                return 0;
+            }
+            if (control == kSipNextSteps) {
+                if (!g_smoke_mode) {
+                    const auto report = make_sip_next_steps_report();
+                    MessageBoxW(window, report.c_str(),
+                                L"Pendencias SIP - AXE Voice LAB",
+                                MB_OK | MB_ICONINFORMATION);
+                }
+                return 0;
+            }
+            if (control == kSipPreflight) {
+                const auto report = make_native_sip_preflight_report();
+                if (!g_smoke_mode)
+                    MessageBoxW(window, report.c_str(),
+                                L"Auditoria pre-ativacao SIP - AXE Voice LAB",
+                                MB_OK | MB_ICONINFORMATION);
+                return 0;
+            }
             if (control == kReadinessButton) {
                 refresh_runtime_banner(g_baresip_process.poll());
                 const std::wstring report = make_readiness_report();
@@ -1268,7 +1811,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                     location.x, location.y, 0, window, nullptr);
                 DestroyMenu(menu);
                 if (choice == kTrayOpen) restore_tray(window);
-                if (choice == kTrayExit) SendMessageW(window, WM_CLOSE, 0, 0);
+                if (choice == kTrayExit) {
+                    g_explicit_exit = true;
+                    SendMessageW(window, WM_CLOSE, 0, 0);
+                }
                 PostMessageW(window, WM_NULL, 0, 0);
             }
             return 0;
@@ -1409,6 +1955,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         }
         break;
     case WM_CLOSE:
+        if (g_close_to_tray && !g_explicit_exit && !g_smoke_mode && install_tray(window)) {
+            ShowWindow(window, SW_HIDE);
+            return 0;
+        }
         if (g_shutdown.pending()) {
             g_close_requested = true;
             return 0;
@@ -1459,7 +2009,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.56",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.108",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
@@ -1694,7 +2244,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         DestroyWindow(window);
         return ok ? 0 : 9;
     }
-    ShowWindow(window, show);
+    const bool request_tray = command_line &&
+        std::wcscmp(command_line, L"--tray") == 0;
+    if (request_tray && install_tray(window)) {
+        ShowWindow(window, SW_HIDE);
+    } else {
+        ShowWindow(window, show);
+    }
     UpdateWindow(window);
     const ACCEL shortcuts[] = {
         {FVIRTKEY | FCONTROL, L'K', kShowDial},
@@ -1707,9 +2263,20 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         {FVIRTKEY | FCONTROL, L'2', kShowSettings},
         {FVIRTKEY | FCONTROL, L'3', kShowAudio},
         {FVIRTKEY | FCONTROL, L'R', kRefreshHeadsetsButton},
+        {FVIRTKEY | FCONTROL, L'G', kMoreButton},
+        {FVIRTKEY | FCONTROL, L'D', kSaveFavorite},
+        {FVIRTKEY | FCONTROL, L'F', kLoadFavorite},
+        {FVIRTKEY | FCONTROL, L'H', kShowRecent},
+        {FVIRTKEY | FCONTROL | FSHIFT, L'P', kPrivacyDial},
+        {FVIRTKEY | FCONTROL | FSHIFT, L'R', kRecallLastDestination},
         {FVIRTKEY, VK_ESCAPE, kShowDial},
         {FVIRTKEY, VK_F1, kHelpButton},
-        {FVIRTKEY, VK_F2, kReadinessButton}
+        {FVIRTKEY, VK_F2, kReadinessButton},
+        {FVIRTKEY, VK_F3, kSipPreflight},
+        {FVIRTKEY, VK_F4, kSipVaultStatus},
+        {FVIRTKEY, VK_F5, kOpenCredentialManager},
+        {FVIRTKEY, VK_F6, kSipNextSteps},
+        {FVIRTKEY, VK_F7, kRemoveSipVaultCredential}
     };
     HACCEL accelerator = CreateAcceleratorTableW(
         const_cast<ACCEL*>(shortcuts), static_cast<int>(sizeof(shortcuts)/sizeof(shortcuts[0])));

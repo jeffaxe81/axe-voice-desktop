@@ -62,6 +62,12 @@ public:
     RegistrationDeadlineVerdict poll_registration_deadline(std::uint64_t now_ms) {
         if (!thread_guard_.is_owner())
             return RegistrationDeadlineVerdict::WrongEventLoopThread;
+        // Detect explicit registrar rejection immediately: waiting for the
+        // timeout would leave a rejected UA live longer than necessary.
+        if (bridge_.native_register_fail_seen()) {
+            stop();
+            return RegistrationDeadlineVerdict::RegistrarRejected;
+        }
         const auto decision = deadline_.check(bridge_.session(), now_ms,
                                              bridge_.native_register_ok_seen());
         switch (decision) {
