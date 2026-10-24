@@ -11,6 +11,7 @@
 #include "baresip_event_mailbox.h"
 #include "sip_event_projection.h"
 #include "sip_runtime_session_guard.h"
+#include "incoming_ringtone_coordinator.h"
 #include "dial_authorization.h"
 #include "call_policy.h"
 #include "sip_diagnostics.h"
@@ -137,6 +138,8 @@ axv::EngineSelection g_sip_selection = axv::create_sip_engine();
 axv::BaresipEventMailbox g_native_event_mailbox;
 axv::SipEventProjection g_sip_projection;
 axv::SipRuntimeSessionGuard g_sip_session_guard;
+axv::IncomingRingtoneCoordinator g_incoming_ring_coordinator;
+axv::DisabledIncomingRingtoneSink g_incoming_ring_sink;
 
 
 bool g_dark = true;
@@ -590,6 +593,8 @@ void update_audio_preview_buttons(HWND window) {
 
 void refresh_audio_panel() {
     if (g_preview_running.load()) g_preview_cancel.store(true);
+    // A new inventory can invalidate the prior incoming-ringtone route.
+    (void)g_incoming_ring_coordinator.revoke(g_incoming_ring_sink);
     const auto inventory = axv::inspect_windows_audio_devices();
     if (inventory.error != axv::AudioInventoryError::None) {
         g_audio_inputs.clear(); g_audio_outputs.clear();
@@ -633,6 +638,17 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
         observed_process(state, g_shutdown.pending()), axv::SipEvidence::None,
         g_native_event_mailbox, g_sip_projection);
     const auto current_session = observed.session;
+    const auto ring_target = axv::select_audio_preview_target(
+        g_audio_outputs, g_selected_output_id, g_selected_ringtone_id,
+        axv::AudioPreviewRole::Ringtone);
+    // A prospective incoming ringtone is authorized only from a verified
+    // in-process SIP event and the *current* Windows output endpoint.
+    // LAB supplies SipEvidence::None; no Start can produce sound.
+    const auto ring_action = g_incoming_ring_coordinator.update(
+        observed, current_session, g_selected_ringtone_id,
+        ring_target.available, g_incoming_ring_sink);
+    (void)ring_action; // Disabled sink; no automatic SIP ringtone in LAB.
+    // STOP must be acknowledged before a different device can START.
     // No audited native producer is linked; process state never implies SIP proof.
     // Without a native verified producer the UI cannot claim SIP registration.
     const wchar_t* banner = axv::runtime_status_banner(observed, current_session);
@@ -862,6 +878,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                     SetWindowTextW(g_headset_status,
                         L"Troca indisponivel: escolha duas saidas ativas e distintas. Sem audio SIP.");
                 } else {
+                    (void)g_incoming_ring_coordinator.revoke(g_incoming_ring_sink); // Stop previous endpoint first.
                     g_selected_output_id = plan.next_call_id;
                     g_selected_ringtone_id = plan.next_ringtone_id;
                     SendMessageW(g_output_audio_combo, CB_SETCURSEL,
@@ -1070,6 +1087,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 if (index >= 0 && static_cast<std::size_t>(index) < devices.size()) {
                     if (id != kInputAudioCombo && g_preview_running.load())
                         g_preview_cancel.store(true);
+                    if (id == kRingtoneAudioCombo)
+                        (void)g_incoming_ring_coordinator.revoke(g_incoming_ring_sink);
                     std::wstring& selected = id == kInputAudioCombo ? g_selected_input_id :
                         id == kOutputAudioCombo ? g_selected_output_id : g_selected_ringtone_id;
                     selected = devices[static_cast<std::size_t>(index)].id;
@@ -1322,6 +1341,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         DestroyWindow(window);
         return 0;
     case WM_DESTROY:
+        (void)g_incoming_ring_coordinator.revoke(g_incoming_ring_sink);
         // Stop cooperatively before waiting; worker never posts to a dead HWND.
         g_preview_cancel.store(true);
         if (g_preview_worker.joinable()) g_preview_worker.join();
@@ -1358,7 +1378,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.54",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.56",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
@@ -1462,7 +1482,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         ok = ok && restored_ok;
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(kShowAudio, BN_CLICKED),
                      reinterpret_cast<LPARAM>(GetDlgItem(window, kShowAudio)));
-        const bool audio_ok = g_page == 2 &&
+        const bool audio_ok = !g_incoming_ring_coordinator.playing() &&
+            !g_incoming_ring_coordinator.stop_pending() && g_page == 2 &&
             (GetWindowLongW(g_input_audio_combo, GWL_STYLE) & WS_VISIBLE) &&
             (GetWindowLongW(g_output_audio_combo, GWL_STYLE) & WS_VISIBLE) &&
             (GetWindowLongW(g_ringtone_audio_combo, GWL_STYLE) & WS_VISIBLE) &&
