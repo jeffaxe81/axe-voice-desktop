@@ -12,6 +12,7 @@ inline constexpr wchar_t kFrontendHelp[] =
     L"Ctrl+D: salvar favorito   Ctrl+F: recuperar favorito\n"
     L"Ctrl+H: destinos recentes desta sessao (nao chamadas)\n"
     L"Ctrl+Shift+P: ocultar/mostrar destino na tela\n"
+    L"F3: Auditoria SIP local (NAO registra nem habilita chamadas)\n"
     L"Ctrl+Shift+R: recuperar ultimo destino digitado\n"
     L"MAIS: iniciar minimizado, remover favorito, diagnostico anonimo\n"
     L"Modo privado limpa recentes e pausa captura de destinos.\n"

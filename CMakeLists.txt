@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AXEVoiceDesktop VERSION 0.83.0 LANGUAGES CXX)
+project(AXEVoiceDesktop VERSION 0.88.0 LANGUAGES CXX)
 if(NOT WIN32)
   message(FATAL_ERROR "This bootstrap currently supports Windows only")
 endif()
@@ -52,6 +52,63 @@ if(AXV_BUILD_NATIVE_BARESIP_ADAPTER)
   target_link_libraries(axv_native_baresip_sdk_abi_probe PRIVATE
     axv_native_baresip_adapter "${AXV_BARESIP_LIBRARY}")
 endif()
+
+# Optional SDK integration stage: compile the Baresip/libre owner runtime on
+# an isolated build target ONLY. The Windows GUI never links this target.
+option(AXV_BUILD_EXPERIMENTAL_NATIVE_REGISTRATION_RUNTIME
+  "Build audited experimental Baresip registration host (NOT production GUI)" OFF)
+if(AXV_BUILD_EXPERIMENTAL_NATIVE_REGISTRATION_RUNTIME)
+  if(NOT AXV_BUILD_NATIVE_BARESIP_ADAPTER)
+    message(FATAL_ERROR "Native host requires AXV_BUILD_NATIVE_BARESIP_ADAPTER=ON")
+  endif()
+  set(AXV_LIBRE_INCLUDE_DIR "" CACHE PATH "Approved libre/re include directory")
+  set(AXV_LIBRE_LIBRARY "" CACHE FILEPATH "Approved libre/re SDK library")
+  set(AXV_LIBRE_HEADER_SHA256 "" CACHE STRING "Approved SHA256 for re.h")
+  set(AXV_LIBRE_LIBRARY_SHA256 "" CACHE STRING "Approved SHA256 for libre/re library")
+  if(NOT EXISTS "${AXV_LIBRE_INCLUDE_DIR}/re.h" OR
+     NOT EXISTS "${AXV_LIBRE_LIBRARY}")
+    message(FATAL_ERROR "Approved re.h and libre library are mandatory")
+  endif()
+  if(IS_DIRECTORY "${AXV_LIBRE_LIBRARY}")
+    message(FATAL_ERROR "Approved libre library must be a regular file")
+  endif()
+  foreach(_axv_pin IN ITEMS AXV_LIBRE_HEADER_SHA256 AXV_LIBRE_LIBRARY_SHA256)
+    string(LENGTH "${${_axv_pin}}" _axv_pin_length)
+    if(NOT _axv_pin_length EQUAL 64 OR
+       NOT "${${_axv_pin}}" MATCHES "^[0-9a-fA-F]+$")
+      message(FATAL_ERROR "Libre SHA256 pins must be 64 hexadecimal digits")
+    endif()
+  endforeach()
+  file(SHA256 "${AXV_LIBRE_INCLUDE_DIR}/re.h" _axv_libre_header_actual)
+  file(SHA256 "${AXV_LIBRE_LIBRARY}" _axv_libre_library_actual)
+  string(TOLOWER "${AXV_LIBRE_HEADER_SHA256}" _axv_libre_header_expected)
+  string(TOLOWER "${AXV_LIBRE_LIBRARY_SHA256}" _axv_libre_library_expected)
+  if(NOT _axv_libre_header_actual STREQUAL _axv_libre_header_expected OR
+     NOT _axv_libre_library_actual STREQUAL _axv_libre_library_expected)
+    message(FATAL_ERROR "Approved libre hashes do not match local SDK files")
+  endif()
+  add_library(axv_native_registration_lab STATIC
+    src/baresip_sdk_registration_runtime.cpp
+    src/baresip_native_libre_reactor.cpp
+    src/baresip_sdk_event_adapter.cpp)
+  target_include_directories(axv_native_registration_lab PRIVATE
+    "${AXV_BARESIP_INCLUDE_DIR}" "${AXV_LIBRE_INCLUDE_DIR}")
+  target_compile_features(axv_native_registration_lab PRIVATE cxx_std_17)
+  target_compile_definitions(axv_native_registration_lab PRIVATE
+    AXV_EXPERIMENTAL_NATIVE_REGISTRATION_RUNTIME=1)
+  target_link_libraries(axv_native_registration_lab PUBLIC
+    "${AXV_BARESIP_LIBRARY}" "${AXV_LIBRE_LIBRARY}")
+  # A build-only executable forces symbol resolution; not registered with
+  # CTest and never run by this change. SDK/ABI failures must stop the build.
+  add_executable(axv_native_registration_lab_link_probe
+    src/baresip_sdk_runtime_link_probe.cpp)
+  target_include_directories(axv_native_registration_lab_link_probe PRIVATE
+    "${AXV_BARESIP_INCLUDE_DIR}" "${AXV_LIBRE_INCLUDE_DIR}")
+  target_compile_features(axv_native_registration_lab_link_probe PRIVATE cxx_std_17)
+  target_link_libraries(axv_native_registration_lab_link_probe PRIVATE
+    axv_native_registration_lab)
+endif()
+
 add_executable(AXEVoice WIN32 src/main.cpp)
 target_compile_features(AXEVoice PRIVATE cxx_std_17)
 target_compile_definitions(AXEVoice PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
