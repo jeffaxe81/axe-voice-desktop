@@ -1014,6 +1014,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         return 0;
     }
     case WM_COMMAND:
+        if (LOWORD(wparam) == kNumberEdit && HIWORD(wparam) == EN_KILLFOCUS) {
+            remember_current_destination();
+            return 0;
+        }
         if (LOWORD(wparam) == kNumberEdit && HIWORD(wparam) == EN_CHANGE) {
             refresh_destination_feedback(); // keyboard, paste and dialpad share validation.
             return 0;
@@ -1028,6 +1032,74 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         if (HIWORD(wparam) == BN_CLICKED || (HIWORD(wparam) == 1 && lparam == 0)) {
             const int control = LOWORD(wparam);
             if (control == kShowDial || control == kFocusNumber) { show_page(window, 0); return 0; }
+            if (control == kMoreButton) { show_more_actions(window); return 0; }
+            if (control == kShowRecent) { show_recent_destinations(window); return 0; }
+            if (control == kClearRecent) {
+                g_recent_destinations.clear();
+                SetWindowTextW(g_status, L"Destinos recentes desta sessao apagados.");
+                return 0;
+            }
+            if (control >= kRecentPickStart && control < kRecentPickStart + 10) {
+                const size_t index = static_cast<size_t>(control - kRecentPickStart);
+                if (index < g_recent_destinations.size()) {
+                    show_page(window, 0);
+                    recall_destination(g_recent_destinations[index]);
+                }
+                return 0;
+            }
+            if (control == kSaveFavorite) {
+                const auto value = axv::valid_dial_destination(current_destination());
+                if (value.empty()) {
+                    SetWindowTextW(g_status, L"Digite um destino valido antes de salvar favorito.");
+                } else if (g_smoke_mode) {
+                    g_favorite_destination = value; // no registry changes in smoke mode
+                } else if (axv::save_desktop_favorite(kPrefsKey, value)) {
+                    g_favorite_destination = value;
+                    SetWindowTextW(g_status, L"Favorito salvo neste usuario do Windows.");
+                } else {
+                    SetWindowTextW(g_status, L"Nao foi possivel salvar favorito local.");
+                }
+                return 0;
+            }
+            if (control == kLoadFavorite) {
+                if (!g_favorite_destination.empty()) {
+                    show_page(window, 0);
+                    recall_destination(g_favorite_destination);
+                }
+                return 0;
+            }
+            if (control == kPrivacyDial) {
+                g_private_dial = !g_private_dial;
+                SendMessageW(g_number, EM_SETPASSWORDCHAR,
+                             g_private_dial ? static_cast<WPARAM>(0x2022) : 0, 0);
+                InvalidateRect(g_number, nullptr, TRUE);
+                SetWindowTextW(g_status, g_private_dial
+                    ? L"Destino oculto na tela (apenas privacidade visual)."
+                    : L"Destino novamente visivel na tela.");
+                return 0;
+            }
+            if (control == kCloseToTrayToggle) {
+                g_close_to_tray = !g_close_to_tray;
+                save_ui_preferences();
+                SetWindowTextW(g_status, g_close_to_tray
+                    ? L"Fechar janela ocultara na bandeja; Sair encerra o programa."
+                    : L"Fechar janela encerrara o aplicativo.");
+                return 0;
+            }
+            if (control == kAutostartToggle) {
+                if (g_smoke_mode) return 0;
+                const bool enable = !axv::desktop_autostart_enabled();
+                const bool ok = axv::desktop_set_autostart(enable);
+                SetWindowTextW(g_status, !ok ? L"Falha ao alterar inicializacao com Windows."
+                    : enable ? L"Inicializacao com Windows habilitada no HKCU."
+                             : L"Inicializacao automatica com Windows removida.");
+                return 0;
+            }
+            if (control == kExplicitExit) {
+                g_explicit_exit = true;
+                SendMessageW(window, WM_CLOSE, 0, 0);
+                return 0;
+            }
             if (control == kReadinessButton) {
                 refresh_runtime_banner(g_baresip_process.poll());
                 const std::wstring report = make_readiness_report();
@@ -1362,7 +1434,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                     location.x, location.y, 0, window, nullptr);
                 DestroyMenu(menu);
                 if (choice == kTrayOpen) restore_tray(window);
-                if (choice == kTrayExit) SendMessageW(window, WM_CLOSE, 0, 0);
+                if (choice == kTrayExit) {
+                    g_explicit_exit = true;
+                    SendMessageW(window, WM_CLOSE, 0, 0);
+                }
                 PostMessageW(window, WM_NULL, 0, 0);
             }
             return 0;
@@ -1503,6 +1578,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         }
         break;
     case WM_CLOSE:
+        if (g_close_to_tray && !g_explicit_exit && !g_smoke_mode && install_tray(window)) {
+            ShowWindow(window, SW_HIDE);
+            return 0;
+        }
         if (g_shutdown.pending()) {
             g_close_requested = true;
             return 0;
@@ -1801,6 +1880,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         {FVIRTKEY | FCONTROL, L'2', kShowSettings},
         {FVIRTKEY | FCONTROL, L'3', kShowAudio},
         {FVIRTKEY | FCONTROL, L'R', kRefreshHeadsetsButton},
+        {FVIRTKEY | FCONTROL, L'G', kMoreButton},
+        {FVIRTKEY | FCONTROL, L'D', kSaveFavorite},
+        {FVIRTKEY | FCONTROL, L'F', kLoadFavorite},
+        {FVIRTKEY | FCONTROL, L'H', kShowRecent},
+        {FVIRTKEY | FCONTROL | FSHIFT, L'P', kPrivacyDial},
         {FVIRTKEY, VK_ESCAPE, kShowDial},
         {FVIRTKEY, VK_F1, kHelpButton},
         {FVIRTKEY, VK_F2, kReadinessButton}
