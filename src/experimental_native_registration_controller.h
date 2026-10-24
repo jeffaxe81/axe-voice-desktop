@@ -10,12 +10,16 @@ namespace axv {
 enum class NativeControlDecision {
     Allowed, NotConfigured, NoLiveGeneration, AlreadyPending,
     RetryDelayed, RetryExhausted, ClockFault, StartFailed, SubmissionRejected,
-    CancelRejected, StopFailed
+    CancelRejected, StopFailed, NativePending,
+    CallbackObservedUnverified, TerminalNativeFailure, UserCancelled
 };
 struct NativeControlView {
     bool control_thread_running = false;
     bool account_provisioned = false;
     bool register_request_pending = false;
+    bool terminal_failure_seen = false;
+    bool callback_unverified_seen = false;
+    bool restart_required = false;
     bool sip_authenticated = false; // explicitly NEVER inferred from a callback
     bool media_verified = false;
     std::uint64_t generation = 0;
@@ -41,6 +45,9 @@ public:
     NativeControlDecision request_registration(std::uint64_t monotonic_ms,
                                                std::uint32_t timeout_ms);
     NativeControlDecision cancel();
+    // Only this explicit client poll reconciles terminal native dispatch and
+    // accounts for a failure in the local retry budget (once per generation).
+    NativeControlDecision poll_control_plane(std::uint64_t monotonic_ms);
     NativeControlDecision stop();
     void reset_retry_budget_with_explicit_consent();
     NativeControlView snapshot() const;
@@ -51,5 +58,7 @@ private:
     std::uint64_t generation_ = 0;
     bool pending_ = false;
     bool started_ = false;
+    bool terminal_observed_ = false;
+    bool callback_unverified_seen_ = false;
 };
 } // namespace axv

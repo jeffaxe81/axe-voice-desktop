@@ -12,7 +12,7 @@ namespace axv {
 enum class RegistrationDispatchKind {
     Idle, Submitted, Cancelled, DeadlineExpired, Confirmed,
     Failed, OverflowStopped, WrongOwnerThread, StaleGeneration, Pending,
-    SupersededDuringDispatch
+    SupersededDuringDispatch, RegistrarRejected
 };
 struct RegistrationDispatchOutcome {
     RegistrationDispatchKind kind=RegistrationDispatchKind::Idle;
@@ -82,6 +82,9 @@ public:
         }
         const auto deadline=gateway_.poll_registration_deadline(monotonic_ms);
         switch (deadline) {
+        case RegistrationDeadlineVerdict::RegistrarRejected:
+            queue_.invalidate();
+            return {RegistrationDispatchKind::RegistrarRejected,{}};
         case RegistrationDeadlineVerdict::Expired:
         case RegistrationDeadlineVerdict::ClockRegressed:
         case RegistrationDeadlineVerdict::SessionRevoked:

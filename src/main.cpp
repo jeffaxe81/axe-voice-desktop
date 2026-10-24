@@ -117,6 +117,7 @@ constexpr int kRecentPickStart = 3200;
 constexpr int kSipPreflight = 3114;
 constexpr int kSipVaultStatus = 3115;
 constexpr int kOpenCredentialManager = 3116;
+constexpr int kSipNextSteps = 3117;
 constexpr int kStartupInTrayToggle = 3110;
 constexpr int kDeleteFavorite = 3111;
 constexpr int kRecallLastDestination = 3112;
@@ -620,7 +621,7 @@ std::wstring safe_desktop_diagnostics() {
         process == axv::ProcessStatus::Stopped ? L"stopped" :
         process == axv::ProcessStatus::Failed ? L"failed" :
         process == axv::ProcessStatus::Exited ? L"exited" : L"stopping";
-    return std::wstring(L"AXE Voice Desktop LAB 0.93\r\n") +
+    return std::wstring(L"AXE Voice Desktop LAB 0.98\r\n") +
         L"Processo Baresip: " + process_text +
         L"\r\nRegistro SIP confirmado: NAO\r\nChamada RTP/SRTP homologada: NAO\r\n" +
         L"Autostart: " + (axv::desktop_autostart_enabled() ? L"sim" : L"nao") +
@@ -678,6 +679,7 @@ void show_more_actions(HWND window) {
     AppendMenuW(menu, MF_STRING, kSipPreflight, L"Pre-ativacao SIP segura (F3)");
     AppendMenuW(menu, MF_STRING, kSipVaultStatus, L"Verificar credencial SIP no Windows (F4)");
     AppendMenuW(menu, MF_STRING, kOpenCredentialManager, L"Abrir Gerenciador de Credenciais (F5)");
+    AppendMenuW(menu, MF_STRING, kSipNextSteps, L"Pendencias para chamadas SIP (F6)");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kExplicitExit, L"Sair do AXE Voice");
     const HWND anchor = GetDlgItem(window, kMoreButton);
@@ -950,6 +952,40 @@ std::wstring make_sip_vault_report() {
     return report;
 }
 
+
+// Clear operator guidance derived only from local state. Never reports
+// registration success merely because credentials/files/devices exist.
+std::wstring make_sip_next_steps_report() {
+    wchar_t server[129] = {}, user[129] = {}, port[129] = {};
+    if (g_server) GetWindowTextW(g_server, server, 129);
+    if (g_user) GetWindowTextW(g_user, user, 129);
+    if (g_port) GetWindowTextW(g_port, port, 129);
+    const bool selected_tls = g_tls &&
+        SendMessageW(g_tls, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    const auto local = axv::evaluate_native_sip_preflight(
+        server, user, port, selected_tls);
+    const bool identity_ready = local.eligible_for_preparation;
+    const auto vault = identity_ready
+        ? axv::inspect_sip_vault_presence(server, user)
+        : axv::SipVaultStatus::AccountInvalid;
+    const bool vault_ready = vault == axv::SipVaultStatus::PresentUnverified;
+    std::wstring out = L"AXE VOICE 0.98 - ETAPAS PARA USO SIP\r\n\r\n";
+    out += L"1. Conta SIP/TLS: ";
+    out += identity_ready ? L"formato local aceito (NAO testado)\r\n" :
+                           L"revisar campos/selecionar TLS (F3)\r\n";
+    out += L"2. Cofre Windows: ";
+    out += !identity_ready ? L"depende de identidade valida\r\n" :
+           vault_ready ? L"credencial presente, sem prova de senha\r\n" :
+                         L"revisar credencial generica (F4/F5)\r\n";
+    out += L"3. SDK Baresip/re auditado: PENDENTE NO EXECUTAVEL\r\n";
+    out += L"4. Autenticacao real/TLS do PABX: NAO VERIFICADA\r\n";
+    out += L"5. RTP/SRTP, codecs e audio headset: NAO VERIFICADOS\r\n";
+    out += L"6. Build e homologacao Windows/PABX: PENDENTES\r\n\r\n";
+    out += L"CHAMADAS BLOQUEADAS: motor SIP nativo nao ligado a GUI.\r\n";
+    out += L"Este relatorio nao divulga dominio, ramal ou senha.\r\n";
+    return out;
+}
+
 std::wstring make_native_sip_preflight_report() {
     wchar_t server[129] = {}, user[129] = {}, port[129] = {};
     if (g_server) GetWindowTextW(g_server, server, 129);
@@ -977,7 +1013,7 @@ std::wstring make_native_sip_preflight_report() {
     }
 
     std::wstring report =
-        L"AXE VOICE LAB - PRE-ATIVACAO SIP (v0.93)\r\n\r\n";
+        L"AXE VOICE LAB - PRE-ATIVACAO SIP (v0.98)\r\n\r\n";
     report += L"1. Dados de conta: ";
     report += axv::native_preflight_label(account.status);
     report += L"\r\n2. Transporte SIP TLS: ";
@@ -1312,6 +1348,15 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                         L"Abra Painel de Controle > Contas de Usuario > "
                         L"Gerenciador de Credenciais.",
                         L"Cofre Windows indisponivel", MB_OK | MB_ICONWARNING);
+                return 0;
+            }
+            if (control == kSipNextSteps) {
+                if (!g_smoke_mode) {
+                    const auto report = make_sip_next_steps_report();
+                    MessageBoxW(window, report.c_str(),
+                                L"Pendencias SIP - AXE Voice LAB",
+                                MB_OK | MB_ICONINFORMATION);
+                }
                 return 0;
             }
             if (control == kSipPreflight) {
@@ -1854,7 +1899,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.93",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.98",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
@@ -2119,7 +2164,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         {FVIRTKEY, VK_F2, kReadinessButton},
         {FVIRTKEY, VK_F3, kSipPreflight},
         {FVIRTKEY, VK_F4, kSipVaultStatus},
-        {FVIRTKEY, VK_F5, kOpenCredentialManager}
+        {FVIRTKEY, VK_F5, kOpenCredentialManager},
+        {FVIRTKEY, VK_F6, kSipNextSteps}
     };
     HACCEL accelerator = CreateAcceleratorTableW(
         const_cast<ACCEL*>(shortcuts), static_cast<int>(sizeof(shortcuts)/sizeof(shortcuts[0])));
