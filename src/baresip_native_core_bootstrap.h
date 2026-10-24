@@ -73,3 +73,5 @@ make_core_gated_native_ua_hooks(NativeUaIdentity identity,
     };
     return result;
 }
+
+} // namespace axv
