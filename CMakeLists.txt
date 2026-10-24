@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AXEVoiceDesktop VERSION 0.55.0 LANGUAGES CXX)
+project(AXEVoiceDesktop VERSION 0.56.0 LANGUAGES CXX)
 if(NOT WIN32)
   message(FATAL_ERROR "This bootstrap currently supports Windows only")
 endif()
@@ -125,6 +125,12 @@ if(BUILD_TESTING)
   add_executable(test_integration_incoming_ringtone tests/test_integration_incoming_ringtone.cpp)
   target_compile_features(test_integration_incoming_ringtone PRIVATE cxx_std_17)
   add_test(NAME integration_incoming_ringtone COMMAND test_integration_incoming_ringtone)
+  add_executable(test_incoming_ringtone_coordinator tests/test_incoming_ringtone_coordinator.cpp)
+  target_compile_features(test_incoming_ringtone_coordinator PRIVATE cxx_std_17)
+  add_test(NAME incoming_ringtone_coordinator COMMAND test_incoming_ringtone_coordinator)
+  add_executable(test_integration_ringtone_playback_control tests/test_integration_ringtone_playback_control.cpp)
+  target_compile_features(test_integration_ringtone_playback_control PRIVATE cxx_std_17)
+  add_test(NAME integration_ringtone_playback_control COMMAND test_integration_ringtone_playback_control)
   add_executable(test_dial_authorization tests/test_dial_authorization.cpp)
   target_compile_features(test_dial_authorization PRIVATE cxx_std_17)
   target_link_libraries(test_dial_authorization PRIVATE axv_sip_address)
@@ -249,5 +255,6 @@ set_tests_properties(integration_sip_safety baresip_sdk_abi_probe windows_proces
   baresip_sdk_provenance
   sip_event_projection baresip_event_mailbox baresip_callback_ingress
   baresip_callback_lifecycle baresip_sdk_event_adapter baresip_sdk_single_owner baresip_sdk_epochs
-  call_command_authorization sip_command_executor integration_incoming_ringtone PROPERTIES LABELS "integration")
+  call_command_authorization sip_command_executor integration_incoming_ringtone
+  integration_ringtone_playback_control PROPERTIES LABELS "integration")
 set_target_properties(AXEVoice PROPERTIES OUTPUT_NAME "AXE-Voice")
