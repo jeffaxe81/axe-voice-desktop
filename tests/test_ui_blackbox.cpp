@@ -12,6 +12,7 @@ int fail(int code) {
 constexpr int kCall=1001,kDestination=1002,kServer=1004,kUser=1005,kPort=1006;
 constexpr int kDial=2001,kSettings=2002,kTheme=2003,kCompact=2005,kAudio=2006;
 constexpr int kDigit=2100,kBackspace=2201,kClear=2202;
+constexpr int kVoiceOutput=2402,kRingtoneOutput=2403,kSwapOutputs=2404;
 struct Target { DWORD pid; HWND window=nullptr; };
 BOOL CALLBACK find_window(HWND hwnd,LPARAM param) {
     auto* target=reinterpret_cast<Target*>(param);
@@ -116,6 +117,13 @@ int wmain(int argc,wchar_t** argv) {
     RECT full{};
     if(!GetWindowRect(window,&full) || full.bottom-full.top<=mini.bottom-mini.top) return fail(23);
     if(!clicked(window,kAudio) || !shown(GetDlgItem(window,kAudio))) return fail(24);
+    if (!shown(GetDlgItem(window,kVoiceOutput)) ||
+        !shown(GetDlgItem(window,kRingtoneOutput)) ||
+        !shown(GetDlgItem(window,kSwapOutputs))) return fail(29);
+    if (IsWindowEnabled(GetDlgItem(window,kRingtoneOutput)) ||
+        IsWindowEnabled(GetDlgItem(window,kSwapOutputs))) return fail(30);
+    if (!clicked(window,kSwapOutputs) ||
+        IsWindowEnabled(GetDlgItem(window,kCall))) return fail(31);
     if(IsWindowEnabled(GetDlgItem(window,kCall))) return fail(25);
     if(!PostMessageW(window,WM_CLOSE,0,0)) return fail(26);
     if(WaitForSingleObject(child.info.hProcess,5000)!=WAIT_OBJECT_0) return fail(27);
