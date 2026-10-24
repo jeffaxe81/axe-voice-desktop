@@ -19,9 +19,18 @@ static auto volatile probe_register = &bevent_register;
 static auto volatile probe_unregister = &bevent_unregister;
 static auto volatile probe_get_ua = &bevent_get_ua;
 static auto volatile probe_get_call = &bevent_get_call;
+static auto volatile probe_native_registration = &ua_isregistered;
+static_assert(std::is_same_v<decltype(&ua_alloc), int (*)(ua**, const char*)>,
+              "Incompatible audited ua_alloc ABI");
+static_assert(std::is_same_v<decltype(&ua_destroy), unsigned (*)(ua*)>,
+              "Incompatible audited ua_destroy ABI");
+static auto volatile probe_ua_alloc = &ua_alloc;
+static auto volatile probe_ua_destroy = &ua_destroy;
 
 int main() {
-    if (!probe_register || !probe_unregister || !probe_get_ua || !probe_get_call)
+    if (!probe_register || !probe_unregister || !probe_get_ua ||
+        !probe_get_call || !probe_native_registration ||
+        !probe_ua_alloc || !probe_ua_destroy)
         return 1;
 
     axv::BaresipEventMailbox mailbox;
