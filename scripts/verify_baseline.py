@@ -11,6 +11,8 @@ SOURCE = pathlib.Path("upstream/microsip-3.22.16.0") / BASELINE
 MANIFEST = pathlib.Path("docs/upstream/MICROSIP_3.22.16.0_MANIFEST.txt")
 PROVENANCE = pathlib.Path("docs/upstream/MICROSIP_3.22.16.0_PROVENANCE.md")
 EXPECTED_FILES = 231
+# IDE-specific local settings intentionally excluded by .gitignore during import.
+EXCLUDED_LOCAL_SETTINGS = {"microsip.vcxproj.user": 165}
 EXPECTED_SHA256 = "9c1ff942ae1ae56bdfcdd04c3d6e242a056d7f0dd50bb19f6e13226e7c819b83"
 
 
@@ -49,7 +51,12 @@ def verify(root, expected_count=EXPECTED_FILES):
                 for name, size in entries.items()}
     actual = {f.relative_to(root / SOURCE).as_posix(): f.stat().st_size
               for f in (root / SOURCE).rglob("*") if f.is_file() and not f.is_symlink()}
-    missing = set(expected) - set(actual)
+    if len(entries) == EXPECTED_FILES and any(
+            expected.get(name) != size for name, size in EXCLUDED_LOCAL_SETTINGS.items()):
+        raise BaselineError("The import manifest lacks the documented IDE-only exclusion")
+    exclusions = {name for name, size in EXCLUDED_LOCAL_SETTINGS.items()
+                  if expected.get(name) == size and name not in actual}
+    missing = set(expected) - set(actual) - exclusions
     unexpected = set(actual) - set(expected)
     changed = {name for name in set(expected) & set(actual) if expected[name] != actual[name]}
     if missing or unexpected or changed:
@@ -68,7 +75,9 @@ def verify(root, expected_count=EXPECTED_FILES):
     if "GNU GPL v2" not in license_text or "PJSIP" not in license_text:
         raise BaselineError("Baseline license and PJSIP limitations not documented")
     return {"status": "static_baseline_verified",
-            "imported_files_checked": len(entries),
+            "imported_files_in_manifest": len(entries),
+            "imported_files_checked": len(actual),
+            "excluded_ide_local_files": sorted(exclusions),
             "archive_sha256_documented": EXPECTED_SHA256,
             "build_executed": False, "sip_calls_tested": False,
             "commercial_distribution_approved": False}
@@ -84,8 +93,9 @@ def main():
     if opts.output:
         opts.output.parent.mkdir(parents=True, exist_ok=True)
         opts.output.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print("PASS: %d baseline files checked; no build, SIP call or commercialization verified" %
-          report["imported_files_checked"])
+    print("PASS: %d tracked baseline files checked (%d manifest entries; %d IDE-local exclusions); no build, SIP call or commercialization verified" %
+          (report["imported_files_checked"], report["imported_files_in_manifest"],
+           len(report["excluded_ide_local_files"])))
 
 
 if __name__ == "__main__":
