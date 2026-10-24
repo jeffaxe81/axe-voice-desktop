@@ -123,6 +123,11 @@ constexpr int kStartupInTrayToggle = 3110;
 constexpr int kDeleteFavorite = 3111;
 constexpr int kRecallLastDestination = 3112;
 constexpr int kCopySafeDiagnostics = 3113;
+constexpr int kCopyDestination = 3120;
+constexpr int kPasteDestination = 3121;
+constexpr int kSelectAllDestination = 3122;
+constexpr int kUndoDialEdit = 3123;
+constexpr int kResetDialWorkspace = 3124;
 HWND g_number = nullptr;
 HWND g_number_label = nullptr;
 HWND g_status = nullptr;
@@ -622,7 +627,7 @@ std::wstring safe_desktop_diagnostics() {
         process == axv::ProcessStatus::Stopped ? L"stopped" :
         process == axv::ProcessStatus::Failed ? L"failed" :
         process == axv::ProcessStatus::Exited ? L"exited" : L"stopping";
-    return std::wstring(L"AXE Voice Desktop LAB 0.103\r\n") +
+    return std::wstring(L"AXE Voice Desktop LAB 0.108\r\n") +
         L"Processo Baresip: " + process_text +
         L"\r\nRegistro SIP confirmado: NAO\r\nChamada RTP/SRTP homologada: NAO\r\n" +
         L"Autostart: " + (axv::desktop_autostart_enabled() ? L"sim" : L"nao") +
@@ -635,6 +640,49 @@ std::wstring safe_desktop_diagnostics() {
         L"\r\nSaidas de audio enumeradas: " + std::to_wstring(g_audio_outputs.size()) +
         L"\r\nObs.: inventario local nao confirma audio em chamada.\r\n";
 }
+
+bool copy_dial_destination(HWND owner) {
+    if (g_smoke_mode || g_private_dial) return false;
+    const auto text = axv::valid_dial_destination(current_destination());
+    if (text.empty()) return false;
+    const SIZE_T bytes = (text.size() + 1) * sizeof(wchar_t);
+    HGLOBAL buffer = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (!buffer) return false;
+    wchar_t* data = static_cast<wchar_t*>(GlobalLock(buffer));
+    if (!data) { GlobalFree(buffer); return false; }
+    std::copy(text.c_str(), text.c_str() + text.size() + 1, data);
+    GlobalUnlock(buffer);
+    if (!OpenClipboard(owner)) { GlobalFree(buffer); return false; }
+    const bool cleared = EmptyClipboard() != FALSE;
+    const bool copied = cleared && SetClipboardData(CF_UNICODETEXT, buffer) != nullptr;
+    CloseClipboard();
+    if (!copied) GlobalFree(buffer);
+    return copied;
+}
+
+bool paste_dial_destination(HWND owner) {
+    if (g_smoke_mode || g_private_dial || !g_number) return false;
+    if (!OpenClipboard(owner)) return false;
+    std::wstring value;
+    HANDLE h = GetClipboardData(CF_UNICODETEXT);
+    if (h) {
+        const SIZE_T capacity = GlobalSize(h) / sizeof(wchar_t);
+        if (capacity > 0 && capacity <= 129) {
+            const auto* data = static_cast<const wchar_t*>(GlobalLock(h));
+            if (data) {
+                const auto* end = std::wmemchr(data, L'\0', capacity);
+                if (end && end != data) value.assign(data, end);
+                GlobalUnlock(h);
+            }
+        }
+    }
+    CloseClipboard();
+    value = axv::valid_dial_destination(value);
+    if (value.empty()) return false;
+    recall_destination(value); // Never starts a SIP call.
+    return true;
+}
+
 bool copy_safe_diagnostics(HWND owner) {
     const std::wstring report = safe_desktop_diagnostics();
     const SIZE_T bytes = (report.size() + 1) * sizeof(wchar_t);
@@ -666,6 +714,14 @@ void show_more_actions(HWND window) {
                 kShowRecent, L"Destinos recentes (Ctrl+H)");
     AppendMenuW(menu, MF_STRING | ((g_private_dial || g_recent_destinations.empty()) ? MF_GRAYED : 0),
                 kRecallLastDestination, L"Recuperar ultimo destino (Ctrl+Shift+R)");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING | (g_private_dial ? MF_GRAYED : 0),
+                kCopyDestination, L"Copiar destino validado");
+    AppendMenuW(menu, MF_STRING | (g_private_dial ? MF_GRAYED : 0),
+                kPasteDestination, L"Colar destino validado");
+    AppendMenuW(menu, MF_STRING, kSelectAllDestination, L"Selecionar todo destino");
+    AppendMenuW(menu, MF_STRING, kUndoDialEdit, L"Desfazer edicao do destino");
+    AppendMenuW(menu, MF_STRING, kResetDialWorkspace, L"Limpar destino e recentes...");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING | (g_private_dial ? MF_CHECKED : 0),
                 kPrivacyDial, L"Ocultar destino na tela (Ctrl+Shift+P)");
@@ -1237,6 +1293,41 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                     show_page(window, 0);
                     recall_destination(g_recent_destinations[index]);
                 }
+                return 0;
+            }
+            if (control == kCopyDestination) {
+                if (g_private_dial || g_smoke_mode) return 0;
+                SetWindowTextW(g_status, copy_dial_destination(window)
+                    ? L"Destino copiado. A area de transferencia e compartilhada com outros apps."
+                    : L"Falha: informe destino valido e verifique a area de transferencia.");
+                return 0;
+            }
+            if (control == kPasteDestination) {
+                if (g_private_dial || g_smoke_mode) return 0;
+                const bool ok = paste_dial_destination(window);
+                SetWindowTextW(g_status, ok
+                    ? L"Destino validado e colado. Nenhuma chamada foi iniciada."
+                    : L"Clipboard vazio, excessivo ou invalido. Nada foi colado.");
+                return 0;
+            }
+            if (control == kSelectAllDestination) {
+                show_page(window, 0);
+                SendMessageW(g_number, EM_SETSEL, 0, -1);
+                return 0;
+            }
+            if (control == kUndoDialEdit) {
+                show_page(window, 0);
+                SendMessageW(g_number, EM_UNDO, 0, 0);
+                return 0;
+            }
+            if (control == kResetDialWorkspace) {
+                if (!g_smoke_mode && MessageBoxW(window,
+                    L"Apagar destino atual e destinos recentes desta sessao?",
+                    L"Limpar espaco de discagem", MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES)
+                    return 0;
+                g_recent_destinations.clear();
+                if (g_number) SetWindowTextW(g_number, L"");
+                SetWindowTextW(g_status, L"Campo e recentes limpos. Favorito preservado.");
                 return 0;
             }
             if (control == kSaveFavorite) {
@@ -1918,7 +2009,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.103",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.108",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
