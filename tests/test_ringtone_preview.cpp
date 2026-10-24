@@ -1,6 +1,7 @@
 #include "../src/ringtone_preview.h"
 #include <array>
 #include <atomic>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <vector>
@@ -48,5 +49,34 @@ int main() {
     if (ring_preview_cancelled(&cancel) || ring_preview_cancelled(nullptr)) return 11;
     cancel.store(true);
     if (play_selected_ringtone_preview(L"", &cancel) != RingPreviewResult::Cancelled) return 12;
+    // Unit tests for per-role local level scaling on PCM16/float32.
+    if (preview_level_index(25) != 0 || preview_level_index(50) != 1 ||
+        preview_level_index(75) != 2 || preview_level_index(100) != 3 ||
+        preview_level_index(30) != -1 ||
+        preview_level_for_index(0, 75) != 25 ||
+        preview_level_for_index(3, 75) != 100 ||
+        preview_level_for_index(-1, 75) != 75 ||
+        preview_level_for_index(4, 75) != 75) return 13;
+    std::array<float, 48000> full{};
+    std::array<float, 48000> quarter{};
+    if (!render_ring_samples(full.data(), 24000, 2, rate,
+                             RingSampleFormat::Float32, 100) ||
+        !render_ring_samples(quarter.data(), 24000, 2, rate,
+                             RingSampleFormat::Float32, 25)) return 14;
+    for (std::size_t i=0;i<48000;++i)
+        if (std::fabs(quarter[i]-full[i]*0.25f)>0.000001f) return 15;
+    std::array<std::int16_t, 48000> half{};
+    if (!render_ring_samples(half.data(), 24000, 2, rate,
+                             RingSampleFormat::Pcm16, 50)) return 16;
+    for (std::size_t i=0;i<48000;++i)
+        if (std::abs(static_cast<int>(half[i])-
+                     static_cast<int>(std::lround(full[i]*32767.f*0.5f)))>1) return 17;
+    if (render_ring_samples(full.data(), 24000, 2, rate,
+                            RingSampleFormat::Float32, 101) ||
+        play_selected_ringtone_preview(L"fake", nullptr, 101) !=
+            RingPreviewResult::InvalidLevel) return 18;
+    if (!render_ring_samples(quarter.data(), 24000, 2, rate,
+                             RingSampleFormat::Float32, 0)) return 19;
+    for (auto value : quarter) if (value != 0.f) return 20;
     return 0;
 }

@@ -43,8 +43,10 @@ bool supported_mix(const WAVEFORMATEX* mix, RingSampleFormat& result) {
 } // namespace
 
 RingPreviewResult play_selected_ringtone_preview(
-    const std::wstring& endpoint_id, const std::atomic<bool>* cancellation) {
+    const std::wstring& endpoint_id, const std::atomic<bool>* cancellation,
+    std::uint8_t level_percent) {
     if (ring_preview_cancelled(cancellation)) return RingPreviewResult::Cancelled;
+    if (!preview_level_valid(level_percent)) return RingPreviewResult::InvalidLevel;
     if (endpoint_id.empty() || endpoint_id.size() > 4096)
         return RingPreviewResult::DeviceUnavailable;
 
@@ -89,7 +91,7 @@ RingPreviewResult play_selected_ringtone_preview(
         BYTE* buffer = nullptr;
         if (FAILED(renderer->GetBuffer(frames, &buffer)) || !buffer) break;
         const bool filled = render_ring_samples(buffer, frames,
-            mix->nChannels, mix->nSamplesPerSec, encoding);
+            mix->nChannels, mix->nSamplesPerSec, encoding, level_percent);
         if (FAILED(renderer->ReleaseBuffer(frames,
                     filled ? 0 : AUDCLNT_BUFFERFLAGS_SILENT)) || !filled) break;
         if (ring_preview_cancelled(cancellation)) {
