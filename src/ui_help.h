@@ -14,6 +14,7 @@ inline constexpr wchar_t kFrontendHelp[] =
     L"Ctrl+Shift+P: ocultar/mostrar destino na tela\n"
     L"F3: Auditoria SIP local (NAO registra nem habilita chamadas)\n"    L"F4: Consultar existencia de credencial SIP no Windows (nao valida senha)\n"
     L"F5: Abrir Gerenciador de Credenciais do Windows\n"
+    L"F6: Lista de pendencias reais para liberar chamadas SIP\n"
     L"Ctrl+Shift+R: recuperar ultimo destino digitado\n"
     L"MAIS: iniciar minimizado, remover favorito, diagnostico anonimo\n"
     L"Modo privado limpa recentes e pausa captura de destinos.\n"
