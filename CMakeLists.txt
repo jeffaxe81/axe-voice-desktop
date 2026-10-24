@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AXEVoiceDesktop VERSION 0.108.0 LANGUAGES CXX)
+project(AXEVoiceDesktop VERSION 0.113.0 LANGUAGES CXX)
 if(NOT WIN32)
   message(FATAL_ERROR "This bootstrap currently supports Windows only")
 endif()
@@ -57,6 +57,12 @@ endif()
 # an isolated build target ONLY. The Windows GUI never links this target.
 option(AXV_BUILD_EXPERIMENTAL_NATIVE_REGISTRATION_RUNTIME
   "Build audited experimental Baresip registration host (NOT production GUI)" OFF)
+option(AXV_EXPERIMENTAL_NATIVE_WINCREDS_LAB
+  "LAB ONLY: allow real Baresip account authentication password from WinCred (never links into GUI)" OFF)
+if(AXV_EXPERIMENTAL_NATIVE_WINCREDS_LAB AND
+   NOT AXV_BUILD_EXPERIMENTAL_NATIVE_REGISTRATION_RUNTIME)
+  message(FATAL_ERROR "WinCred SDK LAB requires native registration runtime")
+endif()
 if(AXV_BUILD_EXPERIMENTAL_NATIVE_REGISTRATION_RUNTIME)
   if(NOT AXV_BUILD_NATIVE_BARESIP_ADAPTER)
     message(FATAL_ERROR "Native host requires AXV_BUILD_NATIVE_BARESIP_ADAPTER=ON")
@@ -97,6 +103,10 @@ if(AXV_BUILD_EXPERIMENTAL_NATIVE_REGISTRATION_RUNTIME)
   target_compile_features(axv_native_registration_lab PRIVATE cxx_std_17)
   target_compile_definitions(axv_native_registration_lab PRIVATE
     AXV_EXPERIMENTAL_NATIVE_REGISTRATION_RUNTIME=1)
+  if(AXV_EXPERIMENTAL_NATIVE_WINCREDS_LAB)
+    target_compile_definitions(axv_native_registration_lab PRIVATE
+      AXV_EXPERIMENTAL_NATIVE_WINCREDS_LAB=1)
+  endif()
   target_link_libraries(axv_native_registration_lab PUBLIC
     "${AXV_BARESIP_LIBRARY}" "${AXV_LIBRE_LIBRARY}" advapi32)
   # A build-only executable forces symbol resolution; not registered with
