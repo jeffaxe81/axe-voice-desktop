@@ -18,18 +18,27 @@ inline std::wstring desktop_executable_command() {
     if (length == 0 || length >= std::size(exe)) return {};
     return L"\"" + std::wstring(exe, length) + L"\"";
 }
-inline bool desktop_autostart_enabled() {
-    const auto expected = desktop_executable_command();
-    if (expected.empty()) return false;
+inline std::wstring desktop_run_entry() {
     wchar_t value[32768] = {};
     DWORD bytes = sizeof(value);
     if (RegGetValueW(HKEY_CURRENT_USER, kDesktopRunKey, kDesktopRunValue,
-                     RRF_RT_REG_SZ, nullptr, value, &bytes) != ERROR_SUCCESS) return false;
-    return expected == value;
+                     RRF_RT_REG_SZ, nullptr, value, &bytes) != ERROR_SUCCESS) return {};
+    return value;
 }
-inline bool desktop_set_autostart(bool enabled) {
-    const auto command = desktop_executable_command();
+inline bool desktop_autostart_enabled() {
+    const auto expected = desktop_executable_command();
+    if (expected.empty()) return false;
+    const auto saved = desktop_run_entry();
+    return saved == expected || saved == expected + L" --tray";
+}
+inline bool desktop_autostart_starts_in_tray() {
+    const auto expected = desktop_executable_command();
+    return !expected.empty() && desktop_run_entry() == expected + L" --tray";
+}
+inline bool desktop_set_autostart(bool enabled, bool start_in_tray = false) {
+    auto command = desktop_executable_command();
     if (command.empty()) return false;
+    if (enabled && start_in_tray) command += L" --tray";
     HKEY key = nullptr;
     if (enabled) {
         if (RegCreateKeyExW(HKEY_CURRENT_USER, kDesktopRunKey, 0, nullptr, 0,
@@ -47,6 +56,16 @@ inline bool desktop_set_autostart(bool enabled) {
     const LONG rc = RegDeleteValueW(key, kDesktopRunValue);
     RegCloseKey(key);
     return rc == ERROR_SUCCESS || rc == ERROR_FILE_NOT_FOUND;
+}
+inline bool desktop_clear_favorite(const wchar_t* preferences_key) {
+    HKEY key = nullptr;
+    const LONG opened = RegOpenKeyExW(HKEY_CURRENT_USER, preferences_key, 0,
+                                      KEY_SET_VALUE, &key);
+    if (opened == ERROR_FILE_NOT_FOUND) return true;
+    if (opened != ERROR_SUCCESS) return false;
+    const LONG erased = RegDeleteValueW(key, L"FavoriteDestination");
+    RegCloseKey(key);
+    return erased == ERROR_SUCCESS || erased == ERROR_FILE_NOT_FOUND;
 }
 inline std::wstring valid_dial_destination(const std::wstring& value) {
     if (value.size() > 128 || !evaluate_destination(value).valid()) return {};

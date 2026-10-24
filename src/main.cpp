@@ -111,6 +111,10 @@ constexpr int kAutostartToggle = 3106;
 constexpr int kClearRecent = 3107;
 constexpr int kExplicitExit = 3108;
 constexpr int kRecentPickStart = 3200;
+constexpr int kStartupInTrayToggle = 3110;
+constexpr int kDeleteFavorite = 3111;
+constexpr int kRecallLastDestination = 3112;
+constexpr int kCopySafeDiagnostics = 3113;
 HWND g_number = nullptr;
 HWND g_number_label = nullptr;
 HWND g_status = nullptr;
@@ -569,9 +573,15 @@ void recall_destination(const std::wstring& value) {
                  static_cast<LPARAM>(value.size()));
 }
 void remember_current_destination() {
-    axv::remember_dial_destination(g_recent_destinations, current_destination());
+    if (!g_private_dial) {
+        axv::remember_dial_destination(g_recent_destinations, current_destination());
+    }
 }
 void show_recent_destinations(HWND window) {
+    if (g_private_dial) {
+        SetWindowTextW(g_status, L"Modo privado ativo: recentes ocultos e desativados.");
+        return;
+    }
     remember_current_destination();
     HMENU menu = CreatePopupMenu();
     if (!menu) return;
@@ -594,13 +604,60 @@ void show_recent_destinations(HWND window) {
     DestroyMenu(menu);
     if (choice) SendMessageW(window, WM_COMMAND, MAKEWPARAM(choice, BN_CLICKED), 0);
 }
+
+// Copies a redacted LOCAL status only; never read the account, dial field,
+// Windows identity, endpoint names, SIP URI or credentials here.
+std::wstring safe_desktop_diagnostics() {
+    const auto process = g_baresip_process.poll();
+    const wchar_t* process_text =
+        process == axv::ProcessStatus::Running ? L"running-unverified" :
+        process == axv::ProcessStatus::Stopped ? L"stopped" :
+        process == axv::ProcessStatus::Failed ? L"failed" :
+        process == axv::ProcessStatus::Exited ? L"exited" : L"stopping";
+    return std::wstring(L"AXE Voice Desktop LAB 0.83\r\n") +
+        L"Processo Baresip: " + process_text +
+        L"\r\nRegistro SIP confirmado: NAO\r\nChamada RTP/SRTP homologada: NAO\r\n" +
+        L"Autostart: " + (axv::desktop_autostart_enabled() ? L"sim" : L"nao") +
+        L"\r\nInicializacao minimizada: " +
+        (axv::desktop_autostart_starts_in_tray() ? L"sim" : L"nao") +
+        L"\r\nFechar para bandeja: " + (g_close_to_tray ? L"sim" : L"nao") +
+        L"\r\nPrivacidade visual: " + (g_private_dial ? L"sim" : L"nao") +
+        L"\r\nModo compacto: " + (g_compact ? L"sim" : L"nao") +
+        L"\r\nEntradas de audio enumeradas: " + std::to_wstring(g_audio_inputs.size()) +
+        L"\r\nSaidas de audio enumeradas: " + std::to_wstring(g_audio_outputs.size()) +
+        L"\r\nObs.: inventario local nao confirma audio em chamada.\r\n";
+}
+bool copy_safe_diagnostics(HWND owner) {
+    const std::wstring report = safe_desktop_diagnostics();
+    const SIZE_T bytes = (report.size() + 1) * sizeof(wchar_t);
+    HGLOBAL buffer = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (!buffer) return false;
+    auto* chars = static_cast<wchar_t*>(GlobalLock(buffer));
+    if (!chars) { GlobalFree(buffer); return false; }
+    std::copy(report.begin(), report.end(), chars);
+    chars[report.size()] = L'\0';
+    GlobalUnlock(buffer);
+    if (!OpenClipboard(owner)) { GlobalFree(buffer); return false; }
+    if (!EmptyClipboard()) { CloseClipboard(); GlobalFree(buffer); return false; }
+    const bool transferred = SetClipboardData(CF_UNICODETEXT, buffer) != nullptr;
+    CloseClipboard();
+    if (!transferred) GlobalFree(buffer);
+    return transferred;
+}
+
 void show_more_actions(HWND window) {
     HMENU menu = CreatePopupMenu();
     if (!menu) return;
-    AppendMenuW(menu, MF_STRING, kSaveFavorite, L"Salvar destino como favorito (Ctrl+D)");
-    AppendMenuW(menu, MF_STRING | (g_favorite_destination.empty() ? MF_GRAYED : 0),
+    AppendMenuW(menu, MF_STRING | (g_private_dial ? MF_GRAYED : 0),
+                kSaveFavorite, L"Salvar destino como favorito (Ctrl+D)");
+    AppendMenuW(menu, MF_STRING | ((g_favorite_destination.empty() || g_private_dial) ? MF_GRAYED : 0),
                 kLoadFavorite, L"Carregar favorito (Ctrl+F)");
-    AppendMenuW(menu, MF_STRING, kShowRecent, L"Destinos recentes (Ctrl+H)");
+    AppendMenuW(menu, MF_STRING | ((g_favorite_destination.empty() || g_private_dial) ? MF_GRAYED : 0),
+                kDeleteFavorite, L"Remover favorito salvo");
+    AppendMenuW(menu, MF_STRING | (g_private_dial ? MF_GRAYED : 0),
+                kShowRecent, L"Destinos recentes (Ctrl+H)");
+    AppendMenuW(menu, MF_STRING | ((g_private_dial || g_recent_destinations.empty()) ? MF_GRAYED : 0),
+                kRecallLastDestination, L"Recuperar ultimo destino (Ctrl+Shift+R)");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING | (g_private_dial ? MF_CHECKED : 0),
                 kPrivacyDial, L"Ocultar destino na tela (Ctrl+Shift+P)");
@@ -608,6 +665,10 @@ void show_more_actions(HWND window) {
                 kCloseToTrayToggle, L"Fechar janela para bandeja");
     AppendMenuW(menu, MF_STRING | (axv::desktop_autostart_enabled() ? MF_CHECKED : 0),
                 kAutostartToggle, L"Iniciar com Windows (usuario atual)");
+    AppendMenuW(menu, MF_STRING | (!axv::desktop_autostart_enabled() ? MF_GRAYED : 0) |
+                      (axv::desktop_autostart_starts_in_tray() ? MF_CHECKED : 0),
+                kStartupInTrayToggle, L"Iniciar minimizado na bandeja");
+    AppendMenuW(menu, MF_STRING, kCopySafeDiagnostics, L"Copiar diagnostico local sem dados pessoais");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kExplicitExit, L"Sair do AXE Voice");
     const HWND anchor = GetDlgItem(window, kMoreButton);
@@ -1039,7 +1100,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 SetWindowTextW(g_status, L"Destinos recentes desta sessao apagados.");
                 return 0;
             }
-            if (control >= kRecentPickStart && control < kRecentPickStart + 10) {
+            if (!g_private_dial && control >= kRecentPickStart && control < kRecentPickStart + 10) {
                 const size_t index = static_cast<size_t>(control - kRecentPickStart);
                 if (index < g_recent_destinations.size()) {
                     show_page(window, 0);
@@ -1048,6 +1109,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 return 0;
             }
             if (control == kSaveFavorite) {
+                if (g_private_dial) {
+                    SetWindowTextW(g_status, L"Modo privado: desative-o antes de salvar favorito.");
+                    return 0;
+                }
                 const auto value = axv::valid_dial_destination(current_destination());
                 if (value.empty()) {
                     SetWindowTextW(g_status, L"Digite um destino valido antes de salvar favorito.");
@@ -1062,7 +1127,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 return 0;
             }
             if (control == kLoadFavorite) {
-                if (!g_favorite_destination.empty()) {
+                if (!g_private_dial && !g_favorite_destination.empty()) {
                     show_page(window, 0);
                     recall_destination(g_favorite_destination);
                 }
@@ -1070,12 +1135,13 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             }
             if (control == kPrivacyDial) {
                 g_private_dial = !g_private_dial;
+                if (g_private_dial) g_recent_destinations.clear();
                 SendMessageW(g_number, EM_SETPASSWORDCHAR,
                              g_private_dial ? static_cast<WPARAM>(0x2022) : 0, 0);
                 InvalidateRect(g_number, nullptr, TRUE);
                 SetWindowTextW(g_status, g_private_dial
-                    ? L"Destino oculto na tela (apenas privacidade visual)."
-                    : L"Destino novamente visivel na tela.");
+                    ? L"Modo privado: destino mascarado, recentes limpos e nao registrados."
+                    : L"Destino visivel; recentes retomados nesta sessao.");
                 return 0;
             }
             if (control == kCloseToTrayToggle) {
@@ -1093,6 +1159,40 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 SetWindowTextW(g_status, !ok ? L"Falha ao alterar inicializacao com Windows."
                     : enable ? L"Inicializacao com Windows habilitada no HKCU."
                              : L"Inicializacao automatica com Windows removida.");
+                return 0;
+            }
+            if (control == kDeleteFavorite) {
+                if (g_private_dial) return 0;
+                if (g_smoke_mode || axv::desktop_clear_favorite(kPrefsKey)) {
+                    g_favorite_destination.clear();
+                    SetWindowTextW(g_status, L"Favorito removido deste usuario do Windows.");
+                } else {
+                    SetWindowTextW(g_status, L"Nao foi possivel remover favorito.");
+                }
+                return 0;
+            }
+            if (control == kRecallLastDestination) {
+                if (!g_private_dial && !g_recent_destinations.empty()) {
+                    show_page(window, 0);
+                    recall_destination(g_recent_destinations.front());
+                }
+                return 0;
+            }
+            if (control == kCopySafeDiagnostics) {
+                if (g_smoke_mode) return 0;
+                SetWindowTextW(g_status, copy_safe_diagnostics(window)
+                    ? L"Diagnostico local anonimizado copiado para area de transferencia."
+                    : L"Falha ao copiar diagnostico para area de transferencia.");
+                return 0;
+            }
+            if (control == kStartupInTrayToggle) {
+                if (g_smoke_mode || !axv::desktop_autostart_enabled()) return 0;
+                const bool next = !axv::desktop_autostart_starts_in_tray();
+                const bool ok = axv::desktop_set_autostart(true, next);
+                SetWindowTextW(g_status, !ok
+                    ? L"Falha ao alterar a inicializacao minimizada."
+                    : next ? L"Windows iniciara AXE Voice diretamente na bandeja."
+                           : L"Windows iniciara AXE Voice com janela visivel.");
                 return 0;
             }
             if (control == kExplicitExit) {
@@ -1632,7 +1732,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.78",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.83",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
@@ -1867,7 +1967,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         DestroyWindow(window);
         return ok ? 0 : 9;
     }
-    ShowWindow(window, show);
+    const bool request_tray = command_line &&
+        std::wcscmp(command_line, L"--tray") == 0;
+    if (request_tray && install_tray(window)) {
+        ShowWindow(window, SW_HIDE);
+    } else {
+        ShowWindow(window, show);
+    }
     UpdateWindow(window);
     const ACCEL shortcuts[] = {
         {FVIRTKEY | FCONTROL, L'K', kShowDial},
@@ -1885,6 +1991,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         {FVIRTKEY | FCONTROL, L'F', kLoadFavorite},
         {FVIRTKEY | FCONTROL, L'H', kShowRecent},
         {FVIRTKEY | FCONTROL | FSHIFT, L'P', kPrivacyDial},
+        {FVIRTKEY | FCONTROL | FSHIFT, L'R', kRecallLastDestination},
         {FVIRTKEY, VK_ESCAPE, kShowDial},
         {FVIRTKEY, VK_F1, kHelpButton},
         {FVIRTKEY, VK_F2, kReadinessButton}
