@@ -74,6 +74,7 @@ public:
         case RegistrationDispatchKind::DeadlineExpired:
             return revoke(source, NativeRegistrationDiagnostic::DeadlineExceeded);
         case RegistrationDispatchKind::Failed:
+        case RegistrationDispatchKind::RegistrarRejected:
         case RegistrationDispatchKind::OverflowStopped:
         case RegistrationDispatchKind::WrongOwnerThread:
         case RegistrationDispatchKind::SupersededDuringDispatch:
