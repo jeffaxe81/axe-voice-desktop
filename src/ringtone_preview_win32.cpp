@@ -42,7 +42,11 @@ bool supported_mix(const WAVEFORMATEX* mix, RingSampleFormat& result) {
 }
 } // namespace
 
-RingPreviewResult play_selected_ringtone_preview(const std::wstring& endpoint_id) {
+RingPreviewResult play_selected_ringtone_preview(
+    const std::wstring& endpoint_id, const std::atomic<bool>* cancellation,
+    std::uint8_t level_percent) {
+    if (ring_preview_cancelled(cancellation)) return RingPreviewResult::Cancelled;
+    if (!preview_level_valid(level_percent)) return RingPreviewResult::InvalidLevel;
     if (endpoint_id.empty() || endpoint_id.size() > 4096)
         return RingPreviewResult::DeviceUnavailable;
 
@@ -55,6 +59,9 @@ RingPreviewResult play_selected_ringtone_preview(const std::wstring& endpoint_id
     WAVEFORMATEX* mix = nullptr;
     auto result = RingPreviewResult::AudioServiceUnavailable;
     do {
+        if (ring_preview_cancelled(cancellation)) {
+            result = RingPreviewResult::Cancelled; break;
+        }
         if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr,
                 CLSCTX_INPROC_SERVER, __uuidof(IMMDeviceEnumerator),
                 reinterpret_cast<void**>(&enumerator))) || !enumerator) break;
@@ -84,13 +91,25 @@ RingPreviewResult play_selected_ringtone_preview(const std::wstring& endpoint_id
         BYTE* buffer = nullptr;
         if (FAILED(renderer->GetBuffer(frames, &buffer)) || !buffer) break;
         const bool filled = render_ring_samples(buffer, frames,
-            mix->nChannels, mix->nSamplesPerSec, encoding);
+            mix->nChannels, mix->nSamplesPerSec, encoding, level_percent);
         if (FAILED(renderer->ReleaseBuffer(frames,
                     filled ? 0 : AUDCLNT_BUFFERFLAGS_SILENT)) || !filled) break;
+        if (ring_preview_cancelled(cancellation)) {
+            result = RingPreviewResult::Cancelled; break;
+        }
         if (FAILED(client->Start())) break;
-        Sleep(380); // Bounded local preview; signal ends at 320ms.
-        client->Stop();
         result = RingPreviewResult::Played;
+        // Short cooperative waits: UI can cancel without a 380ms blocked join.
+        for (int elapsed = 0; elapsed < 380; elapsed += 10) {
+            if (ring_preview_cancelled(cancellation)) {
+                result = RingPreviewResult::Cancelled;
+                break;
+            }
+            Sleep(10);
+        }
+        const HRESULT stopped = client->Stop();
+        if (ring_preview_cancelled(cancellation)) result = RingPreviewResult::Cancelled;
+        else if (FAILED(stopped)) result = RingPreviewResult::AudioServiceUnavailable;
     } while (false);
     if (renderer) renderer->Release();
     if (mix) CoTaskMemFree(mix);
@@ -98,6 +117,6 @@ RingPreviewResult play_selected_ringtone_preview(const std::wstring& endpoint_id
     if (device) device->Release();
     if (enumerator) enumerator->Release();
     CoUninitialize();
-    return result;
+    return ring_preview_cancelled(cancellation) ? RingPreviewResult::Cancelled : result;
 }
 } // namespace axv
