@@ -18,56 +18,79 @@ struct BaresipNativeCoreHooks {
     std::function<void()> release;
 };
 
+// The audited SDK integrator installs a Credential Manager secret ONLY on
+// the native re_main thread. revoke() MUST purge all native SDK secret copies.
+// These callbacks are NOT a real Baresip authentication implementation.
+struct NativeCredentialLifecycleHooks {
+    std::function<bool()> install;
+    std::function<void()> revoke;
+};
+
 // This composes with BaresipNativeRegistrationHost's private owner hooks.
 // No sensitive material or UA pointer crosses the UI command mailbox.
 // All callbacks run from the existing libre owner thread.
 inline BaresipNativeRegistrationHost::NativeUaLifecycleHooks
 make_core_gated_native_ua_hooks(NativeUaIdentity identity,
-                                BaresipNativeCoreHooks core) {
+                                BaresipNativeCoreHooks core,
+                                NativeCredentialLifecycleHooks credentials = {}) {
     struct State {
         bool core_live = false;
+        bool credentials_live = false;
         std::thread::id owner{};
     };
     auto state = std::make_shared<State>();
     auto native = BaresipNativeUaFactory::make_owner_hooks(std::move(identity));
     BaresipNativeRegistrationHost::NativeUaLifecycleHooks result;
 
-    result.create = [state, core, native]() -> ua* {
-        // Missing or mismatched core lifecycle is a hard refusal, not a
-        // fallback to direct ua_alloc. Never provision a second live UA.
-        if (!core.prepare || !core.release || state->core_live)
+    result.create = [state, core, native, credentials]() -> ua* {
+        // Refuse incomplete credential lifecycle BEFORE starting the SDK.
+        if (!core.prepare || !core.release || state->core_live ||
+            static_cast<bool>(credentials.install) !=
+            static_cast<bool>(credentials.revoke))
             return nullptr;
         state->owner = std::this_thread::get_id();
-        bool prepared = false;
+        bool install_attempted = false;
         try {
-            prepared = core.prepare();
-            if (prepared) {
-                auto* selected = native.create();
-                if (selected) {
-                    state->core_live = true;
-                    return selected;
+            if (core.prepare()) {
+                bool allowed = true;
+                if (credentials.install) {
+                    install_attempted = true;
+                    allowed = credentials.install();
+                }
+                if (allowed) {
+                    auto* selected = native.create();
+                    if (selected) {
+                        state->core_live = true;
+                        state->credentials_live = install_attempted;
+                        return selected;
+                    }
                 }
             }
         } catch (...) {
-            // The host's start() must fail closed even if setup throws.
+            // The host's start() must fail closed and release partial setup.
         }
-        // release() is REQUIRED to handle partial preparation, including
-        // prepare() returning false or throwing mid-initialization.
-        try { core.release(); } catch (...) { /* no SDK reuse on this run */ }
+        // SDK credentials may have been partially installed despite a false
+        // return/exception. Revoke BEFORE releasing the core even on failure.
+        if (install_attempted) {
+            try { credentials.revoke(); } catch (...) {}
+        }
+        try { core.release(); } catch (...) {}
+        state->credentials_live = false;
         state->owner = {};
         return nullptr;
     };
 
-    result.destroy = [state, core, native](ua* selected) {
-        // The host always executes this after unregister and callback
-        // quiescence, on the same thread as create(). No cross-thread
-        // SDK teardown is permitted.
+    result.destroy = [state, core, native, credentials](ua* selected) {
+        // UA teardown > credential purge > core teardown. The same owner
+        // thread performs the three operations after callback quiescence.
         if (!state->core_live || state->owner != std::this_thread::get_id())
             return;
-        try { native.destroy(selected); }
-        catch (...) { /* Still release the core, do not propagate. */ }
-        try { core.release(); }
-        catch (...) { /* release() is contractually noexcept. */ }
+        try { native.destroy(selected); } catch (...) {}
+        if (state->credentials_live) {
+            try { credentials.revoke(); } catch (...) {}
+        }
+        try { core.release(); } catch (...) {}
+        state->credentials_live = false;
         state->core_live = false;
         state->owner = {};
     };
