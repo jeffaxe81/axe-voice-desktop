@@ -7,7 +7,9 @@ namespace axv {
 std::unique_ptr<BaresipNativeRegistrationHost>
 make_experimental_sdk_registration_host(ExperimentalNativeRegistrationOptions options) {
 #if !defined(AXV_EXPERIMENTAL_NATIVE_REGISTRATION_RUNTIME) || \
-    AXV_EXPERIMENTAL_NATIVE_REGISTRATION_RUNTIME != 1
+    AXV_EXPERIMENTAL_NATIVE_REGISTRATION_RUNTIME != 1 || \
+    !defined(AXV_EXPERIMENTAL_NATIVE_WINCREDS_LAB) || \
+    AXV_EXPERIMENTAL_NATIVE_WINCREDS_LAB != 1
     (void)options;
     return {};
 #else
