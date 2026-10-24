@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AXEVoiceDesktop VERSION 0.98.0 LANGUAGES CXX)
+project(AXEVoiceDesktop VERSION 0.103.0 LANGUAGES CXX)
 if(NOT WIN32)
   message(FATAL_ERROR "This bootstrap currently supports Windows only")
 endif()
@@ -98,7 +98,7 @@ if(AXV_BUILD_EXPERIMENTAL_NATIVE_REGISTRATION_RUNTIME)
   target_compile_definitions(axv_native_registration_lab PRIVATE
     AXV_EXPERIMENTAL_NATIVE_REGISTRATION_RUNTIME=1)
   target_link_libraries(axv_native_registration_lab PUBLIC
-    "${AXV_BARESIP_LIBRARY}" "${AXV_LIBRE_LIBRARY}")
+    "${AXV_BARESIP_LIBRARY}" "${AXV_LIBRE_LIBRARY}" advapi32)
   # A build-only executable forces symbol resolution; not registered with
   # CTest and never run by this change. SDK/ABI failures must stop the build.
   add_executable(axv_native_registration_lab_link_probe
