@@ -18,6 +18,8 @@ NativeControlDecision ExperimentalNativeRegistrationController::start() {
     }
     started_ = true;
     pending_ = false;
+    terminal_observed_ = false;
+    callback_unverified_seen_ = false;
     return NativeControlDecision::Allowed;
 }
 NativeControlDecision ExperimentalNativeRegistrationController::request_registration(
@@ -25,7 +27,11 @@ NativeControlDecision ExperimentalNativeRegistrationController::request_registra
     if (!host_) return NativeControlDecision::NotConfigured;
     if (!started_ || !generation_ || generation_ != host_->generation())
         return NativeControlDecision::NoLiveGeneration;
-    if (pending_) return NativeControlDecision::AlreadyPending;
+    if (pending_) {
+        const auto current = poll_control_plane(monotonic_ms);
+        return current == NativeControlDecision::NativePending
+            ? NativeControlDecision::AlreadyPending : current;
+    }
     const auto admission = retry_.check(monotonic_ms);
     if (admission == NativeRetryAdmission::Exhausted)
         return NativeControlDecision::RetryExhausted;
@@ -37,6 +43,7 @@ NativeControlDecision ExperimentalNativeRegistrationController::request_registra
         retry_.record_failed_attempt(monotonic_ms);
         (void)host_->cancel(); // Ensure an ambiguous submission cannot later complete.
         pending_ = true;       // Explicit stop/restart required.
+        terminal_observed_ = true; // Never charge a second failure on a later poll.
         return NativeControlDecision::SubmissionRejected;
     }
     pending_ = true; // Submitted != authenticated, even on SDK success.
@@ -50,6 +57,46 @@ NativeControlDecision ExperimentalNativeRegistrationController::cancel() {
     const bool ok = host_->cancel();
     return ok ? NativeControlDecision::Allowed : NativeControlDecision::CancelRejected;
 }
+
+NativeControlDecision ExperimentalNativeRegistrationController::poll_control_plane(
+    std::uint64_t monotonic_ms) {
+    if (!host_) return NativeControlDecision::NotConfigured;
+    if (!started_ || !generation_) return NativeControlDecision::NoLiveGeneration;
+    const auto native = host_->snapshot();
+    if (native.command_generation != generation_ ||
+        generation_ != host_->generation() ||
+        !native.running || native.reactor_fault != LibreReactorFault::None) {
+        if (pending_ && !terminal_observed_) {
+            retry_.record_failed_attempt(monotonic_ms);
+            terminal_observed_ = true;
+        }
+        return NativeControlDecision::TerminalNativeFailure;
+    }
+    if (!pending_) return NativeControlDecision::NoLiveGeneration;
+    const auto kind = native.last_dispatch;
+    if (kind == RegistrationDispatchKind::Confirmed) {
+        callback_unverified_seen_ = true;
+        return NativeControlDecision::CallbackObservedUnverified;
+    }
+    if (kind == RegistrationDispatchKind::Cancelled)
+        return NativeControlDecision::UserCancelled; // no failure charge
+    const bool failed = kind == RegistrationDispatchKind::RegistrarRejected ||
+        kind == RegistrationDispatchKind::DeadlineExpired ||
+        kind == RegistrationDispatchKind::Failed ||
+        kind == RegistrationDispatchKind::OverflowStopped ||
+        kind == RegistrationDispatchKind::WrongOwnerThread ||
+        kind == RegistrationDispatchKind::SupersededDuringDispatch ||
+        kind == RegistrationDispatchKind::StaleGeneration;
+    if (failed) {
+        if (!terminal_observed_) {
+            retry_.record_failed_attempt(monotonic_ms);
+            terminal_observed_ = true;
+        }
+        return NativeControlDecision::TerminalNativeFailure;
+    }
+    // Submitted / Pending / Idle are NOT proof of registration.
+    return NativeControlDecision::NativePending;
+}
 NativeControlDecision ExperimentalNativeRegistrationController::stop() {
     if (!host_) return NativeControlDecision::NotConfigured;
     const bool done = host_->stop();
@@ -57,6 +104,8 @@ NativeControlDecision ExperimentalNativeRegistrationController::stop() {
     started_ = false;
     pending_ = false;
     generation_ = 0;
+    terminal_observed_ = false;
+    callback_unverified_seen_ = false;
     return NativeControlDecision::Allowed;
 }
 void ExperimentalNativeRegistrationController::reset_retry_budget_with_explicit_consent() {
@@ -69,6 +118,11 @@ NativeControlView ExperimentalNativeRegistrationController::snapshot() const {
     result.control_thread_running = started_ && native.running;
     result.account_provisioned = native.account_provisioned;
     result.register_request_pending = pending_;
+    result.terminal_failure_seen = terminal_observed_;
+    result.callback_unverified_seen = callback_unverified_seen_;
+    result.restart_required = terminal_observed_ ||
+        (pending_ && !native.running) ||
+        native.last_dispatch == RegistrationDispatchKind::Cancelled;
     result.generation = result.control_thread_running ? generation_ : 0;
     result.next_attempt_ms = retry_.next_allowed_ms();
     result.failures = retry_.failures();
