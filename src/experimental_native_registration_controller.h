@@ -11,12 +11,14 @@ enum class NativeControlDecision {
     Allowed, NotConfigured, NoLiveGeneration, AlreadyPending,
     RetryDelayed, RetryExhausted, ClockFault, StartFailed, SubmissionRejected,
     CancelRejected, StopFailed, NativePending,
-    CallbackObservedUnverified, TerminalNativeFailure, UserCancelled
+    CallbackObservedUnverified, TerminalNativeFailure, UserCancelled,
+    CancellationRequested
 };
 struct NativeControlView {
     bool control_thread_running = false;
     bool account_provisioned = false;
     bool register_request_pending = false;
+    bool cancellation_requested = false;
     bool terminal_failure_seen = false;
     bool callback_unverified_seen = false;
     bool restart_required = false;
@@ -60,5 +62,6 @@ private:
     bool started_ = false;
     bool terminal_observed_ = false;
     bool callback_unverified_seen_ = false;
+    bool cancel_requested_ = false;
 };
 } // namespace axv
