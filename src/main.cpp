@@ -12,6 +12,7 @@
 #include "baresip_event_mailbox.h"
 #include "sip_event_projection.h"
 #include "sip_runtime_session_guard.h"
+#include "incoming_ringtone_coordinator.h"
 #include "dial_authorization.h"
 #include "call_policy.h"
 #include "sip_diagnostics.h"
@@ -133,6 +134,8 @@ axv::EngineSelection g_sip_selection = axv::create_sip_engine();
 axv::BaresipEventMailbox g_native_event_mailbox;
 axv::SipEventProjection g_sip_projection;
 axv::SipRuntimeSessionGuard g_sip_session_guard;
+axv::IncomingRingtoneCoordinator g_incoming_ring_coordinator;
+axv::DisabledIncomingRingtoneSink g_incoming_ring_sink;
 
 
 bool g_dark = true;
@@ -561,6 +564,8 @@ void refresh_audio_panel() {
     const auto voice = fill_audio_combo(
         g_output_audio_combo, g_audio_outputs, g_selected_output_id);
     g_selected_ringtone_id = route.ring.selected_id;
+    // Hotplug may switch the ringtone endpoint. A future player must process
+    // Stop before accepting the new route on the next verified observation.
     const auto ring = fill_audio_combo(
         g_ringtone_audio_combo, g_audio_outputs, g_selected_ringtone_id);
     // The two dropdowns never automatically control the Baresip runtime.
@@ -594,6 +599,18 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
         observed_process(state, g_shutdown.pending()), axv::SipEvidence::None,
         g_native_event_mailbox, g_sip_projection);
     const auto current_session = observed.session;
+    const bool ring_device_active = !g_selected_ringtone_id.empty() &&
+        std::any_of(g_audio_outputs.begin(), g_audio_outputs.end(),
+                    [](const axv::AudioEndpoint& device) {
+                        return device.id == g_selected_ringtone_id;
+                    });
+    // The owning thread coordinates STOP acknowledgements before allowing
+    // START on a different endpoint. A disabled sink is deliberately bound
+    // until an audited Baresip call and cancellable ringtone renderer exist.
+    const auto ring_outcome = g_incoming_ring_coordinator.update(
+        observed, current_session, g_selected_ringtone_id,
+        ring_device_active, g_incoming_ring_sink);
+    (void)ring_outcome;
     // No audited native producer is linked; process state never implies SIP proof.
     // Without a native verified producer the UI cannot claim SIP registration.
     const wchar_t* banner = axv::runtime_status_banner(observed, current_session);
@@ -844,6 +861,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                     fill_audio_combo(g_ringtone_audio_combo, g_audio_outputs, g_selected_ringtone_id);
                     SetWindowTextW(g_headset_status,
                         L"Toque e voz invertidos localmente. Baresip nao configurado.");
+                    refresh_runtime_banner(g_baresip_process.poll());
                 }
                 return 0;
             }
@@ -1010,6 +1028,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                                  route.voice.available() && !g_audio_preview.busy());
                     SetWindowTextW(g_headset_status,
                         L"Rotas escolhidas nesta sessao. Audio de chamada ainda indisponivel.");
+                    if (id == kRingtoneAudioCombo)
+                        refresh_runtime_banner(g_baresip_process.poll());
                 }
                 return 0;
             }
@@ -1268,6 +1288,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         DestroyWindow(window);
         return 0;
     case WM_DESTROY:
+        g_incoming_ring_coordinator.revoke(g_incoming_ring_sink);
         g_audio_endpoint_watcher.stop();
         g_audio_preview.wait(); // Short bounded test sound; no SIP media thread.
         g_sip_session_guard.revoke(axv::RuntimeProcess::Stopped, g_native_event_mailbox, g_sip_projection);
@@ -1303,7 +1324,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.52",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.56",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
