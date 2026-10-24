@@ -102,3 +102,24 @@
 - Bloqueio de chamadas originadas, sessões antigas, fonte não comprovada, endpoint ausente e evidência revogada.
 - Unit tests e pipeline sintético mailbox/reducer/projection, com falha fechada em overflow.
 - Execução de toque automático continua bloqueada (backend de chamada SIP não integrado); sem mudança de volume ou dispositivos do Windows.
+
+### v0.54.0 — Ringtone endpoint fencing
+
+- Rota de toque vinculada ao identificador do endpoint na sessão de chamada autenticada.
+- Alteração/desconexão força Stop antes de Start da nova saída, sem dados sensíveis em logs.
+- Reavaliação imediata de inversão e seleção manual; regressões de unidade e integração sintética.
+- Nenhum toque de chamada automático foi ativado no executável laboratório.
+
+### v0.55.0 — Stop ACK do toque entrante
+
+- Contrato de saída cancelável com confirmação de parada do áudio.
+- Coordenador fail-closed bloqueia redirecionamento PC/headset durante parada pendente, evita reintentar uma chamada com start falho.
+- Testes unitários de falha e integração sintética entre mailbox SIP, redutor, projeção e sink.
+- Sink do aplicativo continua desativado, sem campainha automática ou chamadas reais.
+
+### v0.56.0 — Cancellable incoming ringtone worker
+
+- Biblioteca isolada para reprodução WASAPI repetida com pausa silenciosa cancelável.
+- Stop reconhecido somente após thread finalizar; falha do renderizador provoca revogação.
+- Testes unitários e integração sintética com coordenador e mailbox SIP.
+- Recurso não ativado no executável, que continua usando sink desabilitado.
