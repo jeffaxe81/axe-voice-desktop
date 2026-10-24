@@ -1,5 +1,6 @@
 #include "baresip_sdk_registration_runtime.h"
 #include "baresip_native_core_bootstrap.h"
+#include "baresip_sdk_account_credentials_win32.h"
 #include <utility>
 
 namespace axv {
@@ -16,23 +17,20 @@ make_experimental_sdk_registration_host(ExperimentalNativeRegistrationOptions op
         !options.tls_and_sdk_reviewed_externally ||
         !options.core_policy.enable_experimental_native_core ||
         !options.core_policy.sdk_integrity_reviewed ||
+        !options.sdk_account_copy_and_scrub_reviewed ||
         !native_ua_safe_aor(options.identity))
         return {};
 
-    // The SDK host is now intentionally unusable without a separately
-    // audited credential installer AND a matching native-thread revoker.
-    // A password presence check or a stub returning true is NOT a valid
-    // implementation or evidence of authenticated SIP registration.
-    auto vault_hooks = make_native_owner_vault_hooks(
-        options.identity, std::move(options.credential_port));
-    if (!vault_hooks) return {};
+    // Real account_set_auth_pass must execute AFTER ua_alloc returns a UA and
+    // BEFORE ua_register. No secret goes into AOR, registry config or UI.
+    // Source-level review of the audited Baresip account copy/free ABI is
+    // required because we explicitly scrub the account-owned heap copy.
+    auto scoped = make_baresip_account_wincred_hooks(options.identity);
+    if (!scoped) return {};
 
-    // Core prepare/release and UA create/destroy execute only on the native
-    // libre re_main owner thread. The public handle/queue holds no secrets.
     auto core = make_experimental_sdk_core_hooks(std::move(options.core_policy));
-    auto hooks = make_core_gated_native_ua_hooks(
-        std::move(options.identity), std::move(core),
-        std::move(*vault_hooks));
+    auto hooks = make_account_credential_gated_ua_hooks(
+        std::move(options.identity), std::move(core), std::move(*scoped));
     return std::make_unique<BaresipNativeRegistrationHost>(std::move(hooks));
 #endif
 }
