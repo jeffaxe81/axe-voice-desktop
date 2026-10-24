@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AXEVoiceDesktop VERSION 0.61.0 LANGUAGES CXX)
+project(AXEVoiceDesktop VERSION 0.108.0 LANGUAGES CXX)
 if(NOT WIN32)
   message(FATAL_ERROR "This bootstrap currently supports Windows only")
 endif()
@@ -52,6 +52,64 @@ if(AXV_BUILD_NATIVE_BARESIP_ADAPTER)
   target_link_libraries(axv_native_baresip_sdk_abi_probe PRIVATE
     axv_native_baresip_adapter "${AXV_BARESIP_LIBRARY}")
 endif()
+
+# Optional SDK integration stage: compile the Baresip/libre owner runtime on
+# an isolated build target ONLY. The Windows GUI never links this target.
+option(AXV_BUILD_EXPERIMENTAL_NATIVE_REGISTRATION_RUNTIME
+  "Build audited experimental Baresip registration host (NOT production GUI)" OFF)
+if(AXV_BUILD_EXPERIMENTAL_NATIVE_REGISTRATION_RUNTIME)
+  if(NOT AXV_BUILD_NATIVE_BARESIP_ADAPTER)
+    message(FATAL_ERROR "Native host requires AXV_BUILD_NATIVE_BARESIP_ADAPTER=ON")
+  endif()
+  set(AXV_LIBRE_INCLUDE_DIR "" CACHE PATH "Approved libre/re include directory")
+  set(AXV_LIBRE_LIBRARY "" CACHE FILEPATH "Approved libre/re SDK library")
+  set(AXV_LIBRE_HEADER_SHA256 "" CACHE STRING "Approved SHA256 for re.h")
+  set(AXV_LIBRE_LIBRARY_SHA256 "" CACHE STRING "Approved SHA256 for libre/re library")
+  if(NOT EXISTS "${AXV_LIBRE_INCLUDE_DIR}/re.h" OR
+     NOT EXISTS "${AXV_LIBRE_LIBRARY}")
+    message(FATAL_ERROR "Approved re.h and libre library are mandatory")
+  endif()
+  if(IS_DIRECTORY "${AXV_LIBRE_LIBRARY}")
+    message(FATAL_ERROR "Approved libre library must be a regular file")
+  endif()
+  foreach(_axv_pin IN ITEMS AXV_LIBRE_HEADER_SHA256 AXV_LIBRE_LIBRARY_SHA256)
+    string(LENGTH "${${_axv_pin}}" _axv_pin_length)
+    if(NOT _axv_pin_length EQUAL 64 OR
+       NOT "${${_axv_pin}}" MATCHES "^[0-9a-fA-F]+$")
+      message(FATAL_ERROR "Libre SHA256 pins must be 64 hexadecimal digits")
+    endif()
+  endforeach()
+  file(SHA256 "${AXV_LIBRE_INCLUDE_DIR}/re.h" _axv_libre_header_actual)
+  file(SHA256 "${AXV_LIBRE_LIBRARY}" _axv_libre_library_actual)
+  string(TOLOWER "${AXV_LIBRE_HEADER_SHA256}" _axv_libre_header_expected)
+  string(TOLOWER "${AXV_LIBRE_LIBRARY_SHA256}" _axv_libre_library_expected)
+  if(NOT _axv_libre_header_actual STREQUAL _axv_libre_header_expected OR
+     NOT _axv_libre_library_actual STREQUAL _axv_libre_library_expected)
+    message(FATAL_ERROR "Approved libre hashes do not match local SDK files")
+  endif()
+  add_library(axv_native_registration_lab STATIC
+    src/baresip_sdk_registration_runtime.cpp
+    src/experimental_native_registration_controller.cpp
+    src/baresip_native_libre_reactor.cpp
+    src/baresip_sdk_event_adapter.cpp)
+  target_include_directories(axv_native_registration_lab PRIVATE
+    "${AXV_BARESIP_INCLUDE_DIR}" "${AXV_LIBRE_INCLUDE_DIR}")
+  target_compile_features(axv_native_registration_lab PRIVATE cxx_std_17)
+  target_compile_definitions(axv_native_registration_lab PRIVATE
+    AXV_EXPERIMENTAL_NATIVE_REGISTRATION_RUNTIME=1)
+  target_link_libraries(axv_native_registration_lab PUBLIC
+    "${AXV_BARESIP_LIBRARY}" "${AXV_LIBRE_LIBRARY}" advapi32)
+  # A build-only executable forces symbol resolution; not registered with
+  # CTest and never run by this change. SDK/ABI failures must stop the build.
+  add_executable(axv_native_registration_lab_link_probe
+    src/baresip_sdk_runtime_link_probe.cpp)
+  target_include_directories(axv_native_registration_lab_link_probe PRIVATE
+    "${AXV_BARESIP_INCLUDE_DIR}" "${AXV_LIBRE_INCLUDE_DIR}")
+  target_compile_features(axv_native_registration_lab_link_probe PRIVATE cxx_std_17)
+  target_link_libraries(axv_native_registration_lab_link_probe PRIVATE
+    axv_native_registration_lab)
+endif()
+
 add_executable(AXEVoice WIN32 src/main.cpp)
 target_compile_features(AXEVoice PRIVATE cxx_std_17)
 target_compile_definitions(AXEVoice PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
@@ -61,6 +119,63 @@ endif()
 target_link_libraries(AXEVoice PRIVATE user32 gdi32 advapi32 shell32 axv_sip_address axv_audio_devices axv_windows_process axv_ringtone_preview)
 include(CTest)
 if(BUILD_TESTING)
+  # Native libre event-loop owner and pointer-free registration primitives
+  # imported from the isolated SIP track. These tests use only fake SDK APIs;
+  # AXEVoice.exe remains intentionally disconnected from native SIP/RTP.
+  add_executable(test_libre_owner_reactor
+    tests/test_libre_owner_reactor.cpp
+    src/baresip_native_libre_reactor.cpp)
+  target_include_directories(test_libre_owner_reactor PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fakes")
+  target_compile_features(test_libre_owner_reactor PRIVATE cxx_std_17)
+  add_test(NAME libre_owner_reactor COMMAND test_libre_owner_reactor)
+  set_tests_properties(libre_owner_reactor PROPERTIES TIMEOUT 15)
+
+  # Native owner-thread integration via deterministic fake libre+Baresip API.
+  # Not linked into AXEVoice.exe; no SIP credentials or network activity.
+  add_executable(test_libre_registration_owner_integration
+    tests/test_libre_registration_owner_integration.cpp
+    src/baresip_native_libre_reactor.cpp
+    src/baresip_sdk_event_adapter.cpp)
+  target_include_directories(test_libre_registration_owner_integration PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fakes")
+  target_compile_features(test_libre_registration_owner_integration PRIVATE cxx_std_17)
+  add_test(NAME libre_registration_owner_integration
+    COMMAND test_libre_registration_owner_integration)
+  set_tests_properties(libre_registration_owner_integration PROPERTIES TIMEOUT 15)
+  # Distinct integration scenario: private native UA is provisioned and
+  # destroyed exactly once on the libre owner thread; tests rejection too.
+  add_test(NAME libre_registration_owned_ua_lifecycle
+    COMMAND test_libre_registration_owner_integration --owned-ua)
+  set_tests_properties(libre_registration_owned_ua_lifecycle PROPERTIES TIMEOUT 15)
+  # Real SDK function signatures, but deterministic fake implementations.
+  # The production binary still links no native SIP account factory.
+  add_test(NAME libre_registration_native_sdk_ua_factory
+    COMMAND test_libre_registration_owner_integration --sdk-ua)
+  set_tests_properties(libre_registration_native_sdk_ua_factory PROPERTIES TIMEOUT 15)
+  # The fake audited SDK refuses UA allocation before core readiness, and
+  # confirms shutdown order: unregister > ua_destroy > core.release.
+  add_test(NAME libre_registration_core_bootstrap_gate
+    COMMAND test_libre_registration_owner_integration --core-bootstrap)
+  set_tests_properties(libre_registration_core_bootstrap_gate PROPERTIES TIMEOUT 15)
+
+  add_executable(test_baresip_registration_command_queue
+    tests/test_baresip_registration_command_queue.cpp)
+  target_compile_features(test_baresip_registration_command_queue PRIVATE cxx_std_17)
+  add_test(NAME baresip_registration_command_queue
+    COMMAND test_baresip_registration_command_queue)
+
+  add_executable(test_baresip_registration_watchdog
+    tests/test_baresip_registration_watchdog.cpp)
+  target_compile_features(test_baresip_registration_watchdog PRIVATE cxx_std_17)
+  add_test(NAME baresip_registration_watchdog
+    COMMAND test_baresip_registration_watchdog)
+
+  add_executable(test_baresip_native_thread_guard
+    tests/test_baresip_native_thread_guard.cpp)
+  target_compile_features(test_baresip_native_thread_guard PRIVATE cxx_std_17)
+  add_test(NAME baresip_native_thread_guard
+    COMMAND test_baresip_native_thread_guard)
   add_executable(test_baresip_sdk_abi_probe
     tests/baresip_sdk_abi_probe.cpp
     tests/fakes/baresip_sdk_stub.cpp)
@@ -161,6 +276,12 @@ if(BUILD_TESTING)
     "-DAXV_EXE=$<TARGET_FILE:AXEVoice>"
     "-DAXV_OUTPUT=$<TARGET_FILE_DIR:AXEVoice>/AXE-Voice-LAB.sha256"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/verify-lab-artifact.cmake")
+  add_test(NAME lab_artifact_hash_verifier COMMAND pwsh
+    -NoProfile -NonInteractive -File
+    "${CMAKE_CURRENT_SOURCE_DIR}/scripts/test-lab-hash-verifier.ps1"
+    -SourceDir "$<TARGET_FILE_DIR:AXEVoice>"
+    -Verifier "$<TARGET_FILE_DIR:AXEVoice>/verify-axe-voice-lab.ps1")
+  set_tests_properties(lab_artifact_hash_verifier PROPERTIES DEPENDS lab_artifact_manifest)
   add_test(NAME lab_artifact_manifest_negative COMMAND "${CMAKE_COMMAND}"
     "-DAXV_NEGATIVE_DIR=$<TARGET_FILE_DIR:AXEVoice>/manifest-negative-test"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/test-lab-artifact-negative.cmake")
@@ -208,6 +329,15 @@ if(BUILD_TESTING)
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/fakes")
   target_compile_features(test_baresip_sdk_epochs PRIVATE cxx_std_17)
   add_test(NAME baresip_sdk_epochs COMMAND test_baresip_sdk_epochs)
+  add_executable(test_baresip_sdk_callback_quiescence
+    tests/test_baresip_sdk_callback_quiescence.cpp
+    src/baresip_sdk_event_adapter.cpp)
+  target_include_directories(test_baresip_sdk_callback_quiescence PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fakes")
+  target_compile_features(test_baresip_sdk_callback_quiescence PRIVATE cxx_std_17)
+  add_test(NAME baresip_sdk_callback_quiescence
+    COMMAND test_baresip_sdk_callback_quiescence)
+  set_tests_properties(baresip_sdk_callback_quiescence PROPERTIES TIMEOUT 15)
   add_executable(test_sip_engine tests/test_sip_engine.cpp)
   target_compile_features(test_sip_engine PRIVATE cxx_std_17)
   add_test(NAME sip_engine COMMAND test_sip_engine)
@@ -244,6 +374,9 @@ if(BUILD_TESTING)
   add_executable(test_audio_role_swap tests/test_audio_role_swap.cpp)
   target_compile_features(test_audio_role_swap PRIVATE cxx_std_17)
   add_test(NAME audio_role_swap COMMAND test_audio_role_swap)
+  add_executable(test_audio_route_change_fence tests/test_audio_route_change_fence.cpp)
+  target_compile_features(test_audio_route_change_fence PRIVATE cxx_std_17)
+  add_test(NAME audio_route_change_fence COMMAND test_audio_route_change_fence)
   add_executable(test_ringtone_preview tests/test_ringtone_preview.cpp)
   target_compile_features(test_ringtone_preview PRIVATE cxx_std_17)
   target_link_libraries(test_ringtone_preview PRIVATE axv_ringtone_preview)
@@ -288,7 +421,18 @@ set_tests_properties(integration_sip_safety baresip_sdk_abi_probe windows_proces
   baresip_sdk_provenance
   sip_event_projection baresip_event_mailbox baresip_callback_ingress
   baresip_callback_lifecycle baresip_sdk_event_adapter baresip_sdk_single_owner baresip_sdk_epochs
+  baresip_sdk_callback_quiescence
   call_command_authorization sip_command_executor integration_incoming_ringtone
   integration_ringtone_playback_control integration_ringtone_worker integration_ring_fencing_matrix
-  lab_artifact_manifest lab_artifact_manifest_negative PROPERTIES LABELS "integration")
+  lab_artifact_manifest lab_artifact_manifest_negative
+  lab_artifact_hash_verifier libre_owner_reactor
+  libre_registration_owner_integration
+  libre_registration_owned_ua_lifecycle
+  libre_registration_native_sdk_ua_factory
+  libre_registration_core_bootstrap_gate PROPERTIES LABELS "integration")
 set_target_properties(AXEVoice PROPERTIES OUTPUT_NAME "AXE-Voice")
+add_custom_command(TARGET AXEVoice POST_BUILD
+  COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+    "${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify-axe-voice-lab.ps1"
+    "$<TARGET_FILE_DIR:AXEVoice>/verify-axe-voice-lab.ps1"
+  COMMENT "Copy LAB integrity verifier beside AXE-Voice.exe")
