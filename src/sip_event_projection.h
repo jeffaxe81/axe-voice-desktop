@@ -20,7 +20,7 @@ public:
             state_ = {process, SipStatus::Unavailable, SipEvidence::None, 0};
             return state_;
         }
-        if (batch.overflow) {
+        if (batch.overflow || batch.size > batch.events.size()) {
             reject(batch.session, process);
             return state_;
         }
