@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AXEVoiceDesktop VERSION 0.88.0 LANGUAGES CXX)
+project(AXEVoiceDesktop VERSION 0.93.0 LANGUAGES CXX)
 if(NOT WIN32)
   message(FATAL_ERROR "This bootstrap currently supports Windows only")
 endif()
@@ -89,6 +89,7 @@ if(AXV_BUILD_EXPERIMENTAL_NATIVE_REGISTRATION_RUNTIME)
   endif()
   add_library(axv_native_registration_lab STATIC
     src/baresip_sdk_registration_runtime.cpp
+    src/experimental_native_registration_controller.cpp
     src/baresip_native_libre_reactor.cpp
     src/baresip_sdk_event_adapter.cpp)
   target_include_directories(axv_native_registration_lab PRIVATE
