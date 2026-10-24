@@ -45,6 +45,7 @@
 #include "call_readiness.h"
 #include "ui_contrast_policy.h"
 #include "ui_dpi_policy.h"
+#include "desktop_extras_win32.h"
 #include <vector>
 #include <array>
 #include <algorithm>
@@ -100,6 +101,16 @@ constexpr UINT kTrayCallback = WM_APP + 41;
 constexpr UINT kTrayIconId = 1;
 constexpr UINT kTrayOpen = 3001;
 constexpr UINT kTrayExit = 3002;
+constexpr int kMoreButton = 2306;
+constexpr int kSaveFavorite = 3101;
+constexpr int kLoadFavorite = 3102;
+constexpr int kShowRecent = 3103;
+constexpr int kPrivacyDial = 3104;
+constexpr int kCloseToTrayToggle = 3105;
+constexpr int kAutostartToggle = 3106;
+constexpr int kClearRecent = 3107;
+constexpr int kExplicitExit = 3108;
+constexpr int kRecentPickStart = 3200;
 HWND g_number = nullptr;
 HWND g_number_label = nullptr;
 HWND g_status = nullptr;
@@ -157,6 +168,11 @@ bool g_account_invalid_server = false;
 bool g_account_invalid_user = false;
 bool g_account_invalid_port = false;
 bool g_tray_visible = false;
+bool g_close_to_tray = false;
+bool g_explicit_exit = false;
+bool g_private_dial = false;
+std::wstring g_favorite_destination;
+std::vector<std::wstring> g_recent_destinations;
 constexpr wchar_t kPrefsKey[] = L"Software\\AXEVoice\\Desktop";
 int g_page = 0; // 0 = dial, 1 = settings, 2 = audio
 std::vector<HWND> g_dial_controls;
@@ -190,6 +206,12 @@ void load_ui_preferences() {
                      nullptr, &value, &size) == ERROR_SUCCESS) {
         g_compact = value != 0;
     }
+    value = 0; size = sizeof(value);
+    if (RegGetValueW(HKEY_CURRENT_USER, kPrefsKey, L"CloseToTray", RRF_RT_REG_DWORD,
+                     nullptr, &value, &size) == ERROR_SUCCESS) {
+        g_close_to_tray = value != 0;
+    }
+    g_favorite_destination = axv::load_desktop_favorite(kPrefsKey);
 }
 void save_ui_preferences() {
     if (g_smoke_mode) return; // Smoke may not write to the user's registry.
@@ -200,12 +222,15 @@ void save_ui_preferences() {
     const DWORD theme = g_dark ? 1u : 0u;
     const DWORD pinned = g_pinned ? 1u : 0u;
     const DWORD compact = g_compact ? 1u : 0u;
+    const DWORD close_to_tray = g_close_to_tray ? 1u : 0u;
     RegSetValueExW(key, L"CompactMode", 0, REG_DWORD,
                    reinterpret_cast<const BYTE*>(&compact), sizeof(compact));
     RegSetValueExW(key, L"DarkTheme", 0, REG_DWORD,
                    reinterpret_cast<const BYTE*>(&theme), sizeof(theme));
     RegSetValueExW(key, L"AlwaysOnTop", 0, REG_DWORD,
                    reinterpret_cast<const BYTE*>(&pinned), sizeof(pinned));
+    RegSetValueExW(key, L"CloseToTray", 0, REG_DWORD,
+                   reinterpret_cast<const BYTE*>(&close_to_tray), sizeof(close_to_tray));
     RegCloseKey(key);
 }
 
@@ -528,6 +553,74 @@ void edit_number(HWND root, wchar_t action) {
     (void)root;
 }
 
+
+// Local workspace actions never authorize SIP commands or imply live calls.
+std::wstring current_destination() {
+    if (!g_number) return {};
+    wchar_t value[129] = {};
+    GetWindowTextW(g_number, value, 129);
+    return value;
+}
+void recall_destination(const std::wstring& value) {
+    if (!g_number || axv::valid_dial_destination(value).empty()) return;
+    SetWindowTextW(g_number, value.c_str());
+    SetFocus(g_number);
+    SendMessageW(g_number, EM_SETSEL, static_cast<WPARAM>(value.size()),
+                 static_cast<LPARAM>(value.size()));
+}
+void remember_current_destination() {
+    axv::remember_dial_destination(g_recent_destinations, current_destination());
+}
+void show_recent_destinations(HWND window) {
+    remember_current_destination();
+    HMENU menu = CreatePopupMenu();
+    if (!menu) return;
+    if (g_recent_destinations.empty()) {
+        AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, L"Nenhum destino nesta sessao");
+    } else {
+        for (size_t i = 0; i < g_recent_destinations.size(); ++i)
+            AppendMenuW(menu, MF_STRING, kRecentPickStart + static_cast<UINT>(i),
+                        g_recent_destinations[i].c_str());
+        AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(menu, MF_STRING, kClearRecent, L"Limpar destinos recentes");
+    }
+    const HWND anchor = GetDlgItem(window, kMoreButton);
+    RECT pos = {};
+    if (anchor) GetWindowRect(anchor, &pos);
+    else GetWindowRect(window, &pos);
+    SetForegroundWindow(window);
+    const UINT choice = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
+                                       pos.left, pos.bottom, 0, window, nullptr);
+    DestroyMenu(menu);
+    if (choice) SendMessageW(window, WM_COMMAND, MAKEWPARAM(choice, BN_CLICKED), 0);
+}
+void show_more_actions(HWND window) {
+    HMENU menu = CreatePopupMenu();
+    if (!menu) return;
+    AppendMenuW(menu, MF_STRING, kSaveFavorite, L"Salvar destino como favorito (Ctrl+D)");
+    AppendMenuW(menu, MF_STRING | (g_favorite_destination.empty() ? MF_GRAYED : 0),
+                kLoadFavorite, L"Carregar favorito (Ctrl+F)");
+    AppendMenuW(menu, MF_STRING, kShowRecent, L"Destinos recentes (Ctrl+H)");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING | (g_private_dial ? MF_CHECKED : 0),
+                kPrivacyDial, L"Ocultar destino na tela (Ctrl+Shift+P)");
+    AppendMenuW(menu, MF_STRING | (g_close_to_tray ? MF_CHECKED : 0),
+                kCloseToTrayToggle, L"Fechar janela para bandeja");
+    AppendMenuW(menu, MF_STRING | (axv::desktop_autostart_enabled() ? MF_CHECKED : 0),
+                kAutostartToggle, L"Iniciar com Windows (usuario atual)");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, kExplicitExit, L"Sair do AXE Voice");
+    const HWND anchor = GetDlgItem(window, kMoreButton);
+    RECT pos = {};
+    if (anchor) GetWindowRect(anchor, &pos);
+    else GetWindowRect(window, &pos);
+    SetForegroundWindow(window);
+    const UINT choice = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
+                                       pos.left, pos.bottom, 0, window, nullptr);
+    DestroyMenu(menu);
+    if (choice) SendMessageW(window, WM_COMMAND, MAKEWPARAM(choice, BN_CLICKED), 0);
+}
+
 // Audio preferences are previews only: they never configure or contact Baresip.
 axv::AudioSelectionRefresh fill_audio_combo(
     HWND combo, const std::vector<axv::AudioEndpoint>& devices,
@@ -825,8 +918,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             make_button(window, dial_labels[i], kDigitStart + i,
                         39 + col * 119, 329 + row * 66, 111, 59, 0);
         }
-        make_button(window, L"APAGAR", kBackspace, 39, 597, 170, 38, 0);
-        make_button(window, L"LIMPAR", kClear, 218, 597, 171, 38, 0);
+        make_button(window, L"APAGAR", kBackspace, 39, 597, 110, 38, 0);
+        make_button(window, L"LIMPAR", kClear, 155, 597, 110, 38, 0);
+        make_button(window, L"MAIS", kMoreButton, 272, 597, 117, 38, 0);
         make_button(window, L"CHAMAR  •  SIP INDISPONÍVEL", kCallButton,
                     39, 651, 350, 51, 0);
         make_button(window, L"MUDO", kMuteFuture, 39, 708, 82, 34, 0);
@@ -1459,7 +1553,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.56",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.78",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
