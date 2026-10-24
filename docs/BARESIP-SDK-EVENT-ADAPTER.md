@@ -279,3 +279,66 @@ with a fresh generation.
 real SIP registration, GUI integration or voice media transport. The caller
 must serialize start/stop, keep the UA alive through shutdown and establish
 native callback quiescence before destroying the real SDK.
+
+
+## Audited native SDK compile/link gate
+
+The optional build now requires pinned `baresip.h`/`re.h` and their
+MSVC import libraries. Upstream Baresip's public API uses libre, and
+the recommended multi-threaded integration is to post to a message
+queue owned by the `re_main` thread. The C++ ABI contract checks
+the function pointer types; an optional real-library executable link
+probe catches unresolved imports. Default Windows CI remains offline and
+uses test-only headers; nothing is connected to the GUI yet.
+
+
+## Real libre event-loop host — optional, no SIP
+
+`BaresipNativeLibreReactor` creates a dedicated native-loop owner thread.
+The thread calls the audited libre API `libre_init()`,
+`mqueue_alloc()`, `tmr_init()`, periodic `tmr_start()`, and
+`re_main()`. A foreign thread may only `wake()` via
+`mqueue_push()`. Its native message handler and periodic timer invoke
+owner-thread hooks; stop requests are delivered through the native
+queue and the timer can also call `re_cancel()` on the owner.
+Native queue/timer cleanup and `libre_close()` run on that thread.
+
+An offline fake-libre test verifies owner identity, cross-thread wake,
+timer-driven polling, shutdown/restart, and initialization failures.
+When **AXV_BUILD_NATIVE_BARESIP_ADAPTER=ON** with audited/pinned
+libraries, the separate `axv_native_libre_reactor_smoke` binary
+compiles and runs against the REAL libre `re_main` with no account
+creation or SIP traffic.
+
+**Scope:** this is the actual libre reactor primitive, NOT initialization
+of the Baresip core, a provisioned UA, or the registration dispatcher
+wired into that core. The UI remains disconnected, and no call/RTP
+features are enabled. The default Windows CI uses fake libre.
+
+
+## Register dispatcher running on libre's owner thread
+
+`BaresipNativeRegistrationHost` is the first wiring of the bounded
+registration command queue and owner-thread gateway to
+`BaresipNativeLibreReactor`. At `on_start`, the reactor thread
+constructs the event mailbox, lifecycle, adapter, gateway and command
+dispatcher, then publishes a new opaque generation. A GUI or controller
+thread may only enqueue `submit(timeout_ms)` or `cancel()`;
+`mqueue_push` wakes `re_main()` for owner-side processing and
+the timer invokes polling even if a wake is missed.
+
+A rejected wake forces a queued cancellation rather than leaving
+an unacknowledged request pending. Shutdown stops admission, invalidates
+the generation and **joins after the owner thread unregisters**
+callbacks. Restart requires a fresh native control-plane generation.
+A diagnostic snapshot exposes only outcomes, ticks and fault state,
+never credentials, SIP URI, call object or `ua*` pointer.
+
+The new default CI fake-libre + fake-Baresip integration test verifies
+UI-to-native register routing, native confirmation, cancellation,
+deadline expiry, terminal native shutdown, failed wakes and failed
+initialization across restarts. It is a **control-plane seam only**:
+the caller must still initialize Baresip itself, securely provision/
+own the UA and keep it alive throughout `stop()`. The actual
+`AXV_BUILD_NATIVE_BARESIP_ADAPTER=ON` SDK gate is separate.
+No real PABX login, RTP, SRTP, GUI dialing or voice is enabled.
