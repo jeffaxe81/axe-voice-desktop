@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   baseline:
-    name: Integridade MicroSIP | 13 testes estáticos
+    name: Integridade MicroSIP | 15 testes estáticos
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
