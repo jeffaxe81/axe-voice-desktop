@@ -59,6 +59,44 @@ inline SipVaultStatus inspect_sip_vault_presence(
     return meaningful ? SipVaultStatus::PresentUnverified :
                         SipVaultStatus::InvalidStoredRecord;
 }
+
+enum class SipVaultRemoval {
+    InvalidIdentity, AliasTooLong, Removed, AlreadyMissing, AccessDenied, Failed
+};
+
+// Explicit user action only. No automatic credential deletion during a failed
+// SIP registration, process restart, probe, or application shutdown.
+inline SipVaultRemoval remove_sip_vault_credential(
+    const std::wstring& dns_host, const std::wstring& user) {
+    if (!safe_native_identity(dns_host, user))
+        return SipVaultRemoval::InvalidIdentity;
+    const auto alias = sip_vault_alias(user, dns_host);
+    if (alias.empty()) return SipVaultRemoval::AliasTooLong;
+    if (CredDeleteW(alias.c_str(), CRED_TYPE_GENERIC, 0))
+        return SipVaultRemoval::Removed;
+    const DWORD error = GetLastError();
+    return error == ERROR_NOT_FOUND ? SipVaultRemoval::AlreadyMissing :
+           error == ERROR_ACCESS_DENIED ? SipVaultRemoval::AccessDenied :
+                                          SipVaultRemoval::Failed;
+}
+inline const wchar_t* sip_vault_removal_label(SipVaultRemoval value) noexcept {
+    switch (value) {
+    case SipVaultRemoval::InvalidIdentity:
+        return L"Informe uma identidade DNS/usuario valida para remover.";
+    case SipVaultRemoval::AliasTooLong:
+        return L"Identificador do cofre excede o limite permitido.";
+    case SipVaultRemoval::Removed:
+        return L"Credencial SIP local excluida do cofre do Windows.";
+    case SipVaultRemoval::AlreadyMissing:
+        return L"Nenhuma credencial SIP correspondente foi encontrada.";
+    case SipVaultRemoval::AccessDenied:
+        return L"O Windows negou a exclusao da credencial.";
+    case SipVaultRemoval::Failed:
+        return L"Falha ao excluir credencial; confira permissoes no Windows.";
+    }
+    return L"Resultado de exclusao do cofre indisponivel.";
+}
+
 inline const wchar_t* sip_vault_status_label(SipVaultStatus s) noexcept {
     switch (s) {
     case SipVaultStatus::AccountInvalid: return L"Identidade local invalida";
