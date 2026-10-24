@@ -9,6 +9,7 @@
 #include <memory>
 #include "audio_preview.h"
 #include "audio_preview_tone.h"
+#include "audio_preview_levels.h"
 
 namespace axv {
 namespace {
@@ -49,7 +50,9 @@ bool detect_tone_encoding(const WAVEFORMATEX* fmt, ToneSampleEncoding& encoding)
 }
 } // namespace
 
-AudioPreviewResult play_preview_tone_on_endpoint(const std::wstring& endpoint_id) {
+AudioPreviewResult play_preview_tone_on_endpoint(
+    const std::wstring& endpoint_id, std::uint8_t level_percent) {
+    if (level_percent > 100) return AudioPreviewResult::PlaybackFailed;
     if (endpoint_id.empty()) return AudioPreviewResult::NoEndpoint;
     ComApartment com;
     if (FAILED(com.status)) return AudioPreviewResult::WindowsAudioUnavailable;
@@ -89,9 +92,11 @@ AudioPreviewResult play_preview_tone_on_endpoint(const std::wstring& endpoint_id
         return AudioPreviewResult::PlaybackFailed;
     const bool generated = fill_preview_tone(samples, frames,
         format->nChannels, format->nSamplesPerSec, encoding);
+    const bool scaled = generated && scale_preview_buffer(
+        samples, frames, format->nChannels, encoding, level_percent);
     const HRESULT released = renderer->ReleaseBuffer(
-        frames, generated ? 0 : AUDCLNT_BUFFERFLAGS_SILENT);
-    if (!generated || FAILED(released)) return AudioPreviewResult::PlaybackFailed;
+        frames, scaled ? 0 : AUDCLNT_BUFFERFLAGS_SILENT);
+    if (!scaled || FAILED(released)) return AudioPreviewResult::PlaybackFailed;
     if (FAILED(client->Start())) return AudioPreviewResult::PlaybackFailed;
     // Intentional, bounded local preview. This runs only on the worker thread.
     Sleep(310);
@@ -99,14 +104,15 @@ AudioPreviewResult play_preview_tone_on_endpoint(const std::wstring& endpoint_id
     return AudioPreviewResult::Completed;
 }
 
-bool AudioPreviewWorker::start(const std::wstring& endpoint_id) {
-    if (endpoint_id.empty() || busy()) return false;
+bool AudioPreviewWorker::start(const std::wstring& endpoint_id,
+                               std::uint8_t level_percent) {
+    if (endpoint_id.empty() || level_percent > 100 || busy()) return false;
     wait(); // Previous completed worker, not the active one.
     busy_.store(true, std::memory_order_release);
     result_.store(AudioPreviewResult::NotRun, std::memory_order_release);
     try {
-        thread_ = std::thread([this, endpoint_id] {
-            result_.store(play_preview_tone_on_endpoint(endpoint_id),
+        thread_ = std::thread([this, endpoint_id, level_percent] {
+            result_.store(play_preview_tone_on_endpoint(endpoint_id, level_percent),
                           std::memory_order_release);
             busy_.store(false, std::memory_order_release);
         });
