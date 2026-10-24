@@ -1,0 +1,63 @@
+#pragma once
+// Windows-only, local, metadata-only readiness check. NEVER returns a secret.
+// This component is not a SIP authentication provider and authorizes no calls.
+#ifndef _WIN32
+#error "Windows Credential Manager only"
+#endif
+#include "sip_native_preflight.h"
+#include "sip_credential_lease_win32.h"
+#include <windows.h>
+#include <wincred.h>
+#include <string>
+#include <cstddef>
+
+namespace axv {
+
+enum class SipVaultStatus {
+    AccountInvalid, AliasTooLong, Missing, PresentUnverified
+};
+
+// Length-prefix the username so two pairs of identity parts cannot collide.
+// An alias is not the password or proof of SIP authentication. The username
+// and DNS host are used only to locate the Windows generic credential.
+inline std::wstring sip_vault_alias(const std::wstring& user,
+                                   const std::wstring& dns_host) {
+    if (!safe_native_identity(dns_host, user)) return {};
+    std::wstring result = L"AXEVoice/SIP/v1.";
+    result += std::to_wstring(user.size()) + L"." + user + L"." + dns_host;
+    if (!sip_credential_target_safe(result)) return {};
+    return result;
+}
+
+// Credential Manager can return a full secret blob even for existence checks.
+// NEVER inspect or copy it. Wipe and free the Win32 structure immediately.
+inline SipVaultStatus inspect_sip_vault_presence(
+    const std::wstring& dns_host, const std::wstring& user) {
+    if (!safe_native_identity(dns_host, user))
+        return SipVaultStatus::AccountInvalid;
+    const auto alias = sip_vault_alias(user, dns_host);
+    if (alias.empty()) return SipVaultStatus::AliasTooLong;
+    PCREDENTIALW record = nullptr;
+    if (!CredReadW(alias.c_str(), CRED_TYPE_GENERIC, 0, &record) || !record)
+        return SipVaultStatus::Missing;
+    // Even a present secret may be invalid or have wrong username/permissions.
+    // Presence alone is NOT authentication and NEVER unlocks registration.
+    const bool meaningful = record->CredentialBlob &&
+        record->CredentialBlobSize > 0 && record->CredentialBlobSize <= 2048;
+    if (record->CredentialBlob && record->CredentialBlobSize)
+        SecureZeroMemory(record->CredentialBlob, record->CredentialBlobSize);
+    CredFree(record);
+    return meaningful ? SipVaultStatus::PresentUnverified : SipVaultStatus::Missing;
+}
+inline const wchar_t* sip_vault_status_label(SipVaultStatus s) noexcept {
+    switch (s) {
+    case SipVaultStatus::AccountInvalid: return L"Identidade local invalida";
+    case SipVaultStatus::AliasTooLong: return L"Identificador da conta excede limite seguro";
+    case SipVaultStatus::Missing: return L"Credencial nao localizada ou vazia";
+    case SipVaultStatus::PresentUnverified:
+        return L"Credencial local encontrada (autenticacao NAO confirmada)";
+    }
+    return L"Estado do cofre indisponivel";
+}
+
+} // namespace axv
