@@ -138,3 +138,27 @@ A aba ÁUDIO possui 3 seletores: microfone, saída para **voz remota** e saída 
 A primeira seleção escolhe a saída padrão de comunicação para voz e, quando possível, outra saída para toque. Mudanças são mantidas em memória e reconciliadas ao desconectar dispositivos, sem gravar identificadores no Windows Registry. Testes: política de papéis e fallback, UI smoke com dois endpoints sintéticos em direções opostas e caixa-preta confirmando presença dos controles mesmo sem hardware.
 
 **Não há implementação de toque ou áudio SIP** no Baresip da aplicação; isso é um contrato de UX e estado local para integração posterior. O Baresip oferece opções documentadas `audio_player` e `audio_alert` com limitações de versão/módulo, cuja compatibilidade terá de ser testada em uma instância de telefonia real. O botao Chamar continua bloqueado.
+
+## v0.49 — Botões TESTAR TOQUE e TESTAR VOZ
+
+Os dois seletores de saída agora permitem reproduzir um tom curto no endpoint escolhido via renderização WASAPI (modo compartilhado do Windows). Não muda a saída padrão do sistema, não grava IDs, não acessa o microfone e não envia comandos ao Baresip. A execução ocorre em worker limitado e só após clique explícito, com erro local caso não haja dispositivo suportado. Teste de geração de amostras mono/estéreo, limites de volume e silêncio fora do sinal somado à suíte. O áudio ouvido comprova somente a seleção do endpoint Windows; chamadas SIP e áudio remoto não estão implementados.
+
+## v0.52 — Volume separado para testes dos dois destinos
+
+Seletores independentes de 25%, 50%, 75% e 100% do **som de teste** de toque/voz. Implementação sobre o tom local existente, multiplicando amostras PCM16 ou float32 pela fração escolhida. A UI não modifica volume mestre do Windows nem controle de áudio do Baresip. Default 75% do tom seguro. Unit test cobrindo níveis válidos/inválidos, ambos formatos e saída mono/estéreo; smoke Windows cobre seleção sem dispositivo físico. Toda mídia de chamada SIP permanece bloqueada até integração nativa.
+
+## v0.53 — Admissão segura de campainha para chamada entrante
+
+O novo gate aceita um toque automático somente quando `SipRuntimeObservation` comprova processo em execução, `VerifiedNativeApi`, sessão válida, estado `Ringing`, token opaco da chamada compatível com `last_call_id` e saída de toque ativa. A transição para chamada atendida, falha, expiração da sessão, remoção da saída e reinício exige Stop. Não há sobreposição de sessões: se a chamada muda, primeiro se interrompe a anterior. Testes de unidade e de integração com mailbox/projeção sintéticos cobrem esses cenários, além de overflow fail-closed.
+
+**Entrega apenas de segurança/estado, não som automático.** O aplicativo ainda não recebe callbacks SIP reais e não possui um player de campainha conectado a essas decisões. Os botões manuais TESTAR TOQUE/TESTAR VOZ seguem funcionando independentemente. O campo `audio_alert` não pode ser tomado isoladamente como mapeamento comprovado de chamadas entrantes; requer comprovação com versão e módulos do Baresip.
+
+## v0.54 — Fence de endpoint do toque por sessão e chamada
+
+O gate `IncomingRingtoneGate` mantém internamente o endpoint Windows autorizado, sem persistência. Se a seleção mudar de PC para headset (ou vice-versa), ou se a saída ficar indisponível, o estado cancela a autorização e exige um ciclo Stop antes de uma futura autorização Start. Inversão de toque/voz e seleção manual forçam reavaliação no loop UI. A observação normal por timer também verifica hotplug. Os testes cobrem troca durante chamada recebida sintética, desconexão do endpoint, reautorização, revogação da evidência e overflow da fila nativa.
+
+A saída ainda não é controlada por eventos reais do Baresip neste executável: somente a intenção segura foi implementada, sem campainha SIP real.
+
+## v0.55 — Contrato de parada confirmada de campainha
+
+O novo coordenador separa a autorização de toque de sua reprodução. O destino não pode ser alterado se o reprodutor da rota antiga não confirmar a parada. Falha ao iniciar também aciona parada obrigatória antes de qualquer outra tentativa; a mesma chamada não dispara retries automáticos. A implementação suporta injeção de reprodutor de teste para testes sem dispositivo físico. No build principal, o reprodutor está **desabilitado**, porque ainda não existe callback SIP nativo auditado integrado. A UI preserva o comportamento de testes locais, sem campainha de telefonia.

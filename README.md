@@ -79,3 +79,37 @@ O painel ÁUDIO agora registra um `IMMNotificationClient` oficial do Windows par
 Na aba **ÁUDIO**, o usuário escolhe separadamente **VOZ DA CHAMADA** e **TOQUE DA CHAMADA** dentre saídas reais do Windows. O botão **INVERTER TOQUE/VOZ** alterna instantaneamente as escolhas: toque no computador e voz no headset, ou toque no headset e voz no computador. O campo **MICROFONE** continua independente. A interface não tenta deduzir o tipo do dispositivo a partir do nome, e ao desconectar um headset volta a uma saída disponível, preferindo separar os papéis quando existirem duas. IDs de endpoints e escolhas não são persistidos.
 
 **Limite funcional:** as opções representam preferências de roteamento para futura integração; o backend Baresip ainda não está conectado. **Nenhum som de chamada ou voz é encaminhado a esses dispositivos neste protótipo.** No futuro, o adaptador deverá mapear explicitamente `audio_alert` (toque) e `audio_player` (voz) ao módulo de áudio do Baresip, verificar dispositivos reais e testar chamadas/alertas; nunca escrever automaticamente endpoints Windows não verificados no arquivo de configuração SIP.
+
+## v0.49.0 — Testes reais de saída de áudio, sem SIP
+
+Novos botões **TESTAR TOQUE** e **TESTAR VOZ** na aba ÁUDIO reproduzem, após clique explícito, um som curto via WASAPI shared mode na saída do Windows selecionada. É uma prova local independente para conferir se PC e headset estão invertidos corretamente, sem contatar servidores e sem capturar microfone. A reprodução ocorre em uma thread separada, com volume máximo de teste ~11% da amplitude digital e duração curta; suporta PCM16 ou float32 no mix format. Se o dispositivo desaparecer, o formato for incompatível, o áudio do Windows falhar ou o volume estiver mudo, a interface informa a falha ou o usuário pode não ouvir o som. Os testes CI validam o gerador matemático e a presença dos controles; a audibilidade em dispositivos físicos precisa de homologação manual.
+
+**Não há roteamento de voz SIP nem toque de chamada real**, pois o adaptador do Baresip continua desativado. O som de teste não deve ser confundido com sinalização de chamada.
+
+## v0.52 — Volumes independentes para prévia de toque e voz
+
+Na aba ÁUDIO, as listas **VOLUME TESTE — TOQUE** e **VOLUME TESTE — VOZ** oferecem 25/50/75/100% do tom de laboratório. Cada escolha vale apenas para o botão de teste correspondente e dura somente até encerrar o aplicativo. É uma fração da amplitude já limitada do tom local (máximo aproximado 11% PCM), não é o volume do sistema Windows, não modifica microfone, nem altera volume ou rota das chamadas SIP. Os valores são copiados ao iniciar o worker WASAPI e validados antes de renderizar. Testes unitários verificam níveis e clipping; o smoke da interface não reproduz som no runner.
+
+## v0.53 — Proteção da campainha para chamada recebida (sem reprodução automática)
+
+Preparada a máquina de estado `IncomingRingtoneGate`: somente uma **chamada entrante** com registro validado por eventos **nativos autenticados**, sessão vigente, ID de chamada coerente e saída de toque ativa pode autorizar **Start**. O gate emite **Stop** ao atender, encerrar, perder o transporte, trocar a sessão, revogar a prova SIP ou desconectar a saída. Uma chamada originada não ativa campainha de entrada. Os eventos passam pelo redutor e projeção do protótipo; nenhuma informação de telefone/conta entra nos sinais.
+
+**Importante:** as decisões Start/Stop não são ligadas à reprodução na versão atual. Nenhuma campainha SIP é tocada automaticamente: o executável continua usando `UnavailableSipEngine`. A ligação futura exigirá adaptador nativo autenticado e reprodução local cancelável, com teste em ambiente real e confirmação de comportamento do Baresip. Em particular, **não presumir que `audio_alert` equivale ao toque de chamada recebida em todas as versões**: a documentação oficial o descreve como alerta de mensagens SIP e as interações de tons dependem da versão/módulo. Isso exige homologação específica.
+
+## v0.54 — Bloqueio de campainha ao trocar computador/headset
+
+O gate de autorização da futura campainha de chamada recebida passa a **fixar a identidade do endpoint Windows escolhido** em memória, além de sessão e token de chamada. Se o operador inverter toque/voz, escolher outra saída ou remover o dispositivo, o gate primeiro retorna **Stop**, descartando a rota antiga; uma eventual autorização **Start** para a nova saída só pode ocorrer em uma observação posterior, ainda com evidência nativa válida. A tela reavalia imediatamente ao selecionar ou inverter a saída. Nenhum ID é persistido, exibido no log ou incluído na projeção SIP.
+
+**Limite:** o gate continua sendo decisão de controle, sem reprodução automática de chamada. Os botões locais TESTAR TOQUE/TESTAR VOZ continuam independentes e o motor Baresip ainda não está integrado ao processo Win32. Testes unitários e de integração sintética verificam Stop-antes-de-Start ao trocar os destinos.
+
+## v0.55 — Confirmação de parada antes de reencaminhar a campainha
+
+Foi criado o coordenador `IncomingRingtoneCoordinator`, que consome o gate de eventos SIP verificados e exige confirmação do reprodutor de toque antes de permitir outra saída. Se o comando de parada falhar, o controlador mantém o estado **StopPending** e não permite começar toque em outro dispositivo; tenta finalizar na observação seguinte. Se iniciar falhar, exige parada e bloqueia tentativas repetidas na mesma chamada/sessão para evitar tempestade de áudio. Testes simulam toques PC→headset, conexão atendida, perda de prova SIP, falhas de start/stop e encerramento.
+
+O aplicativo ainda vincula explicitamente um `DisabledIncomingRingtoneSink`: **nenhuma campainha automática será reproduzida** sem o motor SIP nativo comprovado e um player de campainha cancelável. Os botões manuais TESTAR TOQUE e TESTAR VOZ e seus volumes independentes continuam disponíveis.
+
+## v0.56 — Reprodutor de campainha cancelável, isolado da telefonia
+
+Nova biblioteca `axv_incoming_ring_worker`: reutiliza um tom local WASAPI curto com intervalo silencioso de 1,1 s cancelável. O comando `stop()` **só confirma a parada quando a thread realmente finalizou**, impedindo iniciar outra saída enquanto a anterior poderia emitir som. Falha do reprodutor revoga a autorização e evita tentativas repetidas para a mesma chamada. Há testes determinísticos de cancelamento, falha e troca PC/headset.
+
+**O executável principal ainda usa `DisabledIncomingRingtoneSink`**: nenhuma campainha automática ou áudio SIP real foi habilitado. A biblioteca nova está compilada e testada, mas a ativação requer proveniência nativa de chamada Baresip e testes em headset real. Uma reprodução WASAPI em andamento pode levar aproximadamente 310 ms para finalizar o buffer; a coordenação espera a parada antes de nova saída.
