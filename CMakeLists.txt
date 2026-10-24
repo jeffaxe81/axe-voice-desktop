@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AXEVoiceDesktop VERSION 0.68.0 LANGUAGES CXX)
+project(AXEVoiceDesktop VERSION 0.69.0 LANGUAGES CXX)
 if(NOT WIN32)
   message(FATAL_ERROR "This bootstrap currently supports Windows only")
 endif()
@@ -95,6 +95,11 @@ if(BUILD_TESTING)
   add_test(NAME libre_registration_native_sdk_ua_factory
     COMMAND test_libre_registration_owner_integration --sdk-ua)
   set_tests_properties(libre_registration_native_sdk_ua_factory PROPERTIES TIMEOUT 15)
+  # The fake audited SDK refuses UA allocation before core readiness, and
+  # confirms shutdown order: unregister > ua_destroy > core.release.
+  add_test(NAME libre_registration_core_bootstrap_gate
+    COMMAND test_libre_registration_owner_integration --core-bootstrap)
+  set_tests_properties(libre_registration_core_bootstrap_gate PROPERTIES TIMEOUT 15)
 
   add_executable(test_baresip_registration_command_queue
     tests/test_baresip_registration_command_queue.cpp)
@@ -365,7 +370,8 @@ set_tests_properties(integration_sip_safety baresip_sdk_abi_probe windows_proces
   lab_artifact_hash_verifier libre_owner_reactor
   libre_registration_owner_integration
   libre_registration_owned_ua_lifecycle
-  libre_registration_native_sdk_ua_factory PROPERTIES LABELS "integration")
+  libre_registration_native_sdk_ua_factory
+  libre_registration_core_bootstrap_gate PROPERTIES LABELS "integration")
 set_target_properties(AXEVoice PROPERTIES OUTPUT_NAME "AXE-Voice")
 add_custom_command(TARGET AXEVoice POST_BUILD
   COMMAND "${CMAKE_COMMAND}" -E copy_if_different
