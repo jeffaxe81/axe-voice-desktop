@@ -10,5 +10,8 @@ int main() {
         text.find(L"NAO comprova registro SIP") == text.npos) return 3;
     if (text.find(L"Ctrl+R: Atualizar") == text.npos) return 4;
     if (text.find(L"INVERTER VOZ/TOQUE") == text.npos) return 5;
+    if (text.find(L"TESTAR VOZ / TESTAR TOQUE") == text.npos) return 6;
+    if (text.find(L"PARAR VOZ / PARAR TOQUE") == text.npos) return 7;
+    if (text.find(L"Volume local de teste") == text.npos) return 8;
     return 0;
 }

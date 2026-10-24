@@ -1,4 +1,6 @@
 #pragma once
+#include <atomic>
+#include "audio_preview_levels.h"
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -9,7 +11,8 @@ namespace axv {
 // A short, non-looping local speaker test; NOT a SIP incoming-call ringtone.
 enum class RingSampleFormat { Float32, Pcm16 };
 enum class RingPreviewResult {
-    Played, DeviceUnavailable, UnsupportedFormat, AudioServiceUnavailable
+    Played, DeviceUnavailable, UnsupportedFormat, AudioServiceUnavailable, Cancelled,
+    InvalidLevel
 };
 
 inline float ring_sample(std::uint64_t frame, std::uint32_t sample_rate) {
@@ -34,9 +37,10 @@ inline float ring_sample(std::uint64_t frame, std::uint32_t sample_rate) {
 // opening a sound device. The caller owns a correctly sized/aligned buffer.
 inline bool render_ring_samples(void* target, std::size_t frames,
                                 unsigned channels, std::uint32_t rate,
-                                RingSampleFormat encoding) {
+                                RingSampleFormat encoding,
+                                std::uint8_t level_percent = 100) {
     if (!target || !frames || channels == 0 || channels > 8 ||
-        rate < 8000 || rate > 192000 ||
+        rate < 8000 || rate > 192000 || !preview_level_valid(level_percent) ||
         frames > static_cast<std::size_t>(rate) * 2 ||
         frames > (std::numeric_limits<std::size_t>::max)() / channels)
         return false;
@@ -44,7 +48,7 @@ inline bool render_ring_samples(void* target, std::size_t frames,
     if (encoding == RingSampleFormat::Float32) {
         auto* samples = static_cast<float*>(target);
         for (std::size_t i = 0; i < frames; ++i) {
-            const float value = ring_sample(i, rate);
+            const float value = preview_scale(ring_sample(i, rate), level_percent);
             for (unsigned channel = 0; channel < channels; ++channel)
                 samples[i * channels + channel] = value;
         }
@@ -54,7 +58,7 @@ inline bool render_ring_samples(void* target, std::size_t frames,
         auto* samples = static_cast<std::int16_t*>(target);
         for (std::size_t i = 0; i < frames; ++i) {
             const auto value = static_cast<std::int16_t>(
-                std::lround(ring_sample(i, rate) * 32767.0f));
+                std::lround(preview_scale(ring_sample(i, rate), level_percent) * 32767.0f));
             for (unsigned channel = 0; channel < channels; ++channel)
                 samples[i * channels + channel] = value;
         }
@@ -66,5 +70,13 @@ inline bool render_ring_samples(void* target, std::size_t frames,
 
 // Explicit endpoint selection only. Failure does not fall back silently to a
 // different speaker and NEVER changes SIP / call / RTP state.
-RingPreviewResult play_selected_ringtone_preview(const std::wstring& endpoint_id);
+inline bool ring_preview_cancelled(const std::atomic<bool>* signal) {
+    return signal && signal->load(std::memory_order_acquire);
+}
+
+// Cooperative cancellation; no WASAPI access if already cancelled.
+// Signal must outlive the call. The UI joins the worker before destruction.
+RingPreviewResult play_selected_ringtone_preview(
+    const std::wstring& endpoint_id, const std::atomic<bool>* cancellation = nullptr,
+    std::uint8_t level_percent = 100);
 } // namespace axv
