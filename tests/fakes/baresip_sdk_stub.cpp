@@ -18,3 +18,9 @@ extern "C" struct call* bevent_get_call(const struct bevent* event) {
 extern "C" bool ua_isregistered(const struct ua* selected) {
     return selected != nullptr;
 }
+
+extern "C" int ua_alloc(ua** selected, const char*) {
+    if (selected) *selected = nullptr;
+    return 1;
+}
+extern "C" unsigned ua_destroy(ua*) { return 0; }

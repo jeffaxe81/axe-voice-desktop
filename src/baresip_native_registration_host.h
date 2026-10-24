@@ -19,6 +19,7 @@ struct NativeRegistrationHostSnapshot {
     std::uint64_t ticks = 0;
     RegistrationDispatchKind last_dispatch = RegistrationDispatchKind::Idle;
     LibreReactorFault reactor_fault = LibreReactorFault::None;
+    bool account_provisioned = false;
 };
 
 // The caller provisions and owns the UA and must keep it alive until stop()
@@ -29,6 +30,14 @@ class BaresipNativeRegistrationHost {
 public:
     using ResolveSelectedUa = std::function<struct ua*()>;
     using MonotonicClock = std::function<std::uint64_t()>;
+    // The callback owner supplies credentials ONLY inside create() on the
+    // libre event-loop thread, never to this host or its UI command queue.
+    // destroy() must be noexcept, must not call stop(), and must release
+    // its UA on the SAME thread after gateway.stop()/callback quiescence.
+    struct NativeUaLifecycleHooks {
+        std::function<struct ua*()> create;
+        std::function<void(struct ua*)> destroy;
+    };
 
     explicit BaresipNativeRegistrationHost(
         ResolveSelectedUa resolver,
@@ -38,6 +47,18 @@ public:
         reactor_([this] { on_tick(); },
                  [this] { on_start(); },
                  [this] { on_stop(); }, cadence) {}
+
+    // Stronger ownership mode for future audited SIP account provisioning.
+    // No native pointer or credential passes through submit()/snapshot().
+    // A partial pair of hooks fails closed during start().
+    explicit BaresipNativeRegistrationHost(
+        NativeUaLifecycleHooks hooks,
+        MonotonicClock clock = {},
+        std::chrono::milliseconds cadence = std::chrono::milliseconds(20))
+      : BaresipNativeRegistrationHost(ResolveSelectedUa{},
+                                     std::move(clock), cadence) {
+        hooks_ = std::move(hooks);
+    }
 
     BaresipNativeRegistrationHost(const BaresipNativeRegistrationHost&)=delete;
     BaresipNativeRegistrationHost& operator=(const BaresipNativeRegistrationHost&)=delete;
@@ -122,13 +143,38 @@ private:
     void on_start() {
         // Runs only on libre's re_main thread, before accepting UI commands.
         owner_=std::make_unique<OwnerState>(queue_);
+        // Provision exactly once per native-loop generation. Neither the
+        // UI nor the generic legacy resolver gets to see an owned UA.
+        if (hooks_.create || hooks_.destroy) {
+            if (!hooks_.create || !hooks_.destroy) {
+                owner_.reset();
+                throw std::runtime_error("incomplete native UA hooks");
+            }
+            try {
+                owner_ua_=hooks_.create();
+            } catch (...) {
+                owner_.reset();
+                throw;
+            }
+            if (!owner_ua_) {
+                owner_.reset();
+                throw std::runtime_error("native UA provisioning rejected");
+            }
+        }
         const auto id=queue_.begin_generation();
-        if (!id) { owner_.reset(); throw std::runtime_error("no generation"); }
+        if (!id) {
+            // A failed admission must never leave a provisioned UA alive.
+            auto* selected=std::exchange(owner_ua_,nullptr);
+            if (selected) hooks_.destroy(selected);
+            owner_.reset();
+            throw std::runtime_error("no generation");
+        }
         owner_->generation=id;
         {
             std::lock_guard<std::mutex> lock(mutex_);
             state_={};
             state_.command_generation=id;
+            state_.account_provisioned=owner_ua_!=nullptr;
         }
         active_generation_.store(id);
         accepting_.store(true);
@@ -136,13 +182,31 @@ private:
 
     void on_tick() {
         if (!owner_) throw std::runtime_error("owner missing");
+        // Only owner mode may reuse its generation's private UA pointer.
+        // Legacy resolver mode stays for isolated host tests/migration.
+        auto* selected=(hooks_.create || hooks_.destroy)
+            ? owner_ua_ : (resolver_?resolver_():nullptr);
         const auto result=owner_->dispatcher.tick(
-            owner_->generation,now_ms(),resolver_?resolver_():nullptr);
+            owner_->generation,now_ms(),selected);
+        // Native terminal decisions revoke cross-thread admission BEFORE
+        // publishing the diagnostic result. Stop/join is still required.
+        const bool terminal =
+            result.kind==RegistrationDispatchKind::Cancelled ||
+            result.kind==RegistrationDispatchKind::DeadlineExpired ||
+            result.kind==RegistrationDispatchKind::RegistrarRejected ||
+            result.kind==RegistrationDispatchKind::Failed ||
+            result.kind==RegistrationDispatchKind::OverflowStopped ||
+            result.kind==RegistrationDispatchKind::WrongOwnerThread ||
+            result.kind==RegistrationDispatchKind::SupersededDuringDispatch ||
+            result.kind==RegistrationDispatchKind::StaleGeneration;
+        if (terminal) accepting_.store(false);
         std::lock_guard<std::mutex> lock(mutex_);
         ++state_.ticks;
         if (result.kind!=RegistrationDispatchKind::Idle &&
             result.kind!=RegistrationDispatchKind::Pending &&
-            result.kind!=RegistrationDispatchKind::StaleGeneration)
+            // Never overwrite the first terminal cause with stale ticks.
+            !(result.kind==RegistrationDispatchKind::StaleGeneration &&
+              state_.last_dispatch!=RegistrationDispatchKind::Idle))
             state_.last_dispatch=result.kind;
     }
 
@@ -155,12 +219,22 @@ private:
             (void)owner_->gateway.stop();
             owner_.reset();
         }
+        auto* selected=std::exchange(owner_ua_,nullptr);
         active_generation_.store(0);
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            state_.account_provisioned=false;
+        }
+        // The UA cannot be destroyed until gateway.stop() has
+        // unregistered its SDK callback and awaited the callback lease.
+        if (selected) hooks_.destroy(selected);
     }
 
     RegistrationCommandQueue queue_;
     ResolveSelectedUa resolver_;
     MonotonicClock clock_;
+    NativeUaLifecycleHooks hooks_{};
+    struct ua* owner_ua_ = nullptr; // Native thread ONLY; never in snapshot.
     BaresipNativeLibreReactor reactor_;
     mutable std::mutex mutex_;
     NativeRegistrationHostSnapshot state_{};
