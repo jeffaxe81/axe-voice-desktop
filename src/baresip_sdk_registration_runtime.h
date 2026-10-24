@@ -14,8 +14,12 @@ struct ExperimentalNativeRegistrationOptions {
     BaresipSdkCorePolicy core_policy{};
     bool explicitly_enabled_for_isolated_lab = false;
     bool tls_and_sdk_reviewed_externally = false;
-    // MUST be backed by audited SDK functions: no default dummy secret
-    // callback is allowed to start a registration host in this build.
+    // The Baresip version used must prove account_set_auth_pass copies the
+    // secret, account_auth_pass exposes its writable heap copy, and setting
+    // null releases it. True is an external source review, NOT auth proof.
+    bool sdk_account_copy_and_scrub_reviewed = false;
+    // Legacy callback contract retained for SDK lab compatibility but not
+    // invoked by the new real UA-scoped credential installer.
     NativeSdkCredentialPort credential_port{};
 };
 
