@@ -14,7 +14,8 @@
 namespace axv {
 
 enum class SipVaultStatus {
-    AccountInvalid, AliasTooLong, Missing, PresentUnverified
+    AccountInvalid, AliasTooLong, Missing, AccessDenied,
+    InspectionFailed, InvalidStoredRecord, PresentUnverified
 };
 
 // Length-prefix the username so two pairs of identity parts cannot collide.
@@ -38,22 +39,35 @@ inline SipVaultStatus inspect_sip_vault_presence(
     const auto alias = sip_vault_alias(user, dns_host);
     if (alias.empty()) return SipVaultStatus::AliasTooLong;
     PCREDENTIALW record = nullptr;
-    if (!CredReadW(alias.c_str(), CRED_TYPE_GENERIC, 0, &record) || !record)
-        return SipVaultStatus::Missing;
-    // Even a present secret may be invalid or have wrong username/permissions.
-    // Presence alone is NOT authentication and NEVER unlocks registration.
-    const bool meaningful = record->CredentialBlob &&
+    if (!CredReadW(alias.c_str(), CRED_TYPE_GENERIC, 0, &record)) {
+        // A permission failure or OS error is not a "missing password".
+        const DWORD error = GetLastError();
+        return error == ERROR_NOT_FOUND ? SipVaultStatus::Missing :
+               error == ERROR_ACCESS_DENIED ? SipVaultStatus::AccessDenied :
+                                              SipVaultStatus::InspectionFailed;
+    }
+    if (!record) return SipVaultStatus::InspectionFailed;
+    // Do not trust Win32 record metadata beyond this narrow alias/size check.
+    // Even a present secret may be wrong or unauthorized for this registrar.
+    const bool meaningful = record->Type == CRED_TYPE_GENERIC &&
+        record->TargetName && alias == record->TargetName &&
+        record->CredentialBlob &&
         record->CredentialBlobSize > 0 && record->CredentialBlobSize <= 2048;
     if (record->CredentialBlob && record->CredentialBlobSize)
         SecureZeroMemory(record->CredentialBlob, record->CredentialBlobSize);
     CredFree(record);
-    return meaningful ? SipVaultStatus::PresentUnverified : SipVaultStatus::Missing;
+    return meaningful ? SipVaultStatus::PresentUnverified :
+                        SipVaultStatus::InvalidStoredRecord;
 }
 inline const wchar_t* sip_vault_status_label(SipVaultStatus s) noexcept {
     switch (s) {
     case SipVaultStatus::AccountInvalid: return L"Identidade local invalida";
     case SipVaultStatus::AliasTooLong: return L"Identificador da conta excede limite seguro";
-    case SipVaultStatus::Missing: return L"Credencial nao localizada ou vazia";
+    case SipVaultStatus::Missing: return L"Credencial nao localizada no Windows";
+    case SipVaultStatus::AccessDenied: return L"Windows negou acesso ao cofre";
+    case SipVaultStatus::InspectionFailed: return L"Falha ao consultar o cofre do Windows";
+    case SipVaultStatus::InvalidStoredRecord:
+        return L"Registro de credencial sem segredo valido ou tipo incorreto";
     case SipVaultStatus::PresentUnverified:
         return L"Credencial local encontrada (autenticacao NAO confirmada)";
     }
