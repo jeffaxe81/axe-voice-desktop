@@ -126,3 +126,13 @@ A regra do botão habilitado e a execução de `WM_COMMAND` usam agora a mesma f
 - O status diferencia alternativa temporária e reconexão; nunca indica áudio SIP funcional.
 - Teste `audio_preference_state` cobre fallback, reconexão, substituição manual, ausência total e privacidade do aviso.
 - **Limite:** esses dispositivos continuam não configurados no Baresip; sem chamadas reais ou mídia RTP/SRTP. Revisão manual no Windows 10/11 permanece necessária.
+
+## v0.41 — Consulta de dispositivos em segundo plano
+
+- Enumeração Core Audio da aba Áudio e seu botão de atualização deixam a thread Win32 e passam para um worker independente.
+- A interface coleta resultados concluídos durante seu timer já existente, sem bloquear por drivers lentos.
+- Pedidos repetidos são coalescidos enquanto há uma leitura ativa. Resultados após mudança de aba ou encerramento são descartados.
+- Uma lista suspensa aberta não é reconstruída durante a leitura; preferências locais v0.39 continuam intactas.
+- O worker não possui referências à janela, não recebe contas SIP e não abre streams de áudio; seu encerramento não depende da vida da janela.
+- Testes `audio_inventory_async` cobrem leitura lenta, coalescência, descarte de resultados obsoletos, resultado entregue uma vez, falha e shutdown não bloqueante.
+- **Nenhum registro SIP ou canal RTP/SRTP é ativado.** Teste manual de drivers, headset e DPI no Windows ainda pendente.

@@ -1,3 +1,8 @@
+## 0.41.0 — 2026-10-22 (laboratório)
+
+- Consultas de headset Core Audio assíncronas, sem travar a interface durante polling/manual.
+- Teste de concorrência e cancelamento de resultados antigos. Sem integração SIP/mídia real.
+
 ## 0.39.0 — 2026-10-22 (laboratório)
 
 - Retorna à preferência explícita de headset quando o dispositivo reaparece, sem persistir IDs.
