@@ -16,7 +16,10 @@ inline constexpr wchar_t kFrontendHelp[] =
     L"F5: Abrir Gerenciador de Credenciais do Windows\n"
     L"F6: Lista de pendencias reais para liberar chamadas SIP\n"
     L"F7: Remover credencial local SIP (exige confirmacao)\n"
-    L"Ctrl+Shift+R: recuperar ultimo destino digitado\n"
+    L"Ctrl+Shift+R: recuperar ultimo destino digitado\n"    L"MAIS: copiar/colar destino validado (clipboard compartilhado)\n"
+    L"MAIS: selecionar destino, desfazer edicao, limpar destino + recentes\n"
+    L"Comandos de destino nao realizam chamadas e respeitam modo privado.\n"
+
     L"MAIS: iniciar minimizado, remover favorito, diagnostico anonimo\n"
     L"Modo privado limpa recentes e pausa captura de destinos.\n"
     L"Na aba Audio: INVERTER VOZ/TOQUE troca as preferencias locais.\n"
