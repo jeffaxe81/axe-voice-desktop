@@ -1,0 +1,46 @@
+name: AXE Voice | integridade da baseline
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: axe-voice-quality-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  baseline:
+    name: Integridade MicroSIP | 15 testes estáticos
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Checkout sem credenciais persistentes
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Executar testes de integridade (não testes SIP)
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+
+      - name: Conferir 231 arquivos da importação original
+        run: python scripts/verify_baseline.py --output evidence/voice-baseline-check.json
+
+      - name: Publicar relatório rastreável da baseline
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: axe-voice-static-baseline-${{ github.sha }}
+          path: evidence/voice-baseline-check.json
+          if-no-files-found: error
+          retention-days: 14
