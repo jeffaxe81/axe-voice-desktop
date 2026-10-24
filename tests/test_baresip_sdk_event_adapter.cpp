@@ -8,6 +8,7 @@ static bool g_fail_registration = false;
 static int g_registered = 0;
 static int g_unregistered = 0;
 static int g_ua_lookups = 0;
+static bool g_native_registered = true;
 extern "C" int bevent_register(bevent_h* handler, void* arg) {
     if (g_fail_registration) return 22;
     g_callback = handler; g_context = arg;
@@ -24,6 +25,9 @@ extern "C" struct ua* bevent_get_ua(const struct bevent* event) {
 }
 extern "C" struct call* bevent_get_call(const struct bevent* event) {
     return event ? event->active_call : nullptr;
+}
+extern "C" bool ua_isregistered(const struct ua* selected) {
+    return selected && selected->test_id == 1 && g_native_registered;
 }
 static void emit(bevent_ev kind, bevent* event) {
     if (g_callback) g_callback(kind, event, g_context);
@@ -46,7 +50,7 @@ int main() {
     g_fail_registration = false;
     if (!adapter.start(&account) || !adapter.active() || adapter.start(&other)) return 3;
     const auto a = adapter.session();
-    if (a == 0) return 4;
+    if (a == 0 || adapter.native_register_ok_seen()) return 4;
     emit(BEVENT_REGISTERING, &other_event);
     emit(BEVENT_CALL_INCOMING, &unrelated);
     if (mailbox.drain().size) return 5; // unrelated account isolation
@@ -54,7 +58,7 @@ int main() {
     emit(BEVENT_REGISTER_OK, &ua_event);
     auto first = mailbox.drain();
     if (first.size != 2 || first.events[0].kind != BaresipEventKind::Registering ||
-        first.events[1].session != a) return 6;
+        first.events[1].session != a || !adapter.native_register_ok_seen()) return 6;
     SipEventProjection projection;
     auto state = projection.observe(RuntimeProcess::Running,
                                     SipEvidence::VerifiedNativeApi, first);
@@ -122,6 +126,17 @@ int main() {
     emit(BEVENT_REGISTER_OK, &ua_event);
     if (!adapter.active() || mailbox.drain().size != 2) return 23;
     adapter.stop();
+
+    // A forged or mistimed REGISTER_OK without native registrar approval
+    // must revoke the entire session and never allow SIP call controls.
+    if (!adapter.start(&account) || adapter.native_register_ok_seen()) return 27;
+    emit(BEVENT_REGISTERING, &ua_event);
+    g_native_registered = false;
+    emit(BEVENT_REGISTER_OK, &ua_event);
+    if (adapter.active() || adapter.native_register_ok_seen() ||
+        adapter.session() || mailbox.drain().session) return 28;
+    adapter.stop();
+    g_native_registered = true;
 
     // BEVENT_EXIT is a global event and requires no associated UA.
     if (!adapter.start(&account)) return 24;
