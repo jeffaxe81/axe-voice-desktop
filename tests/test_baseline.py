@@ -96,7 +96,7 @@ class BaselineGuardTests(unittest.TestCase):
     def test_excluded_ide_user_config_is_explicit(self):
         manifest = self.root / MANIFEST
         with manifest.open("a", encoding="utf-8") as handle:
-            handle.write(f"{BASELINE}/microsip.vcxproj.user\\t165 bytes\\n")
+            handle.write(f"{BASELINE}/microsip.vcxproj.user\t165 bytes\n")
         report = verify(self.root, expected_count=None)
         self.assertEqual(report["imported_files_checked"], 2)
         self.assertEqual(report["imported_files_in_manifest"], 3)
@@ -105,7 +105,7 @@ class BaselineGuardTests(unittest.TestCase):
     def test_ide_exclusion_size_must_match_original(self):
         manifest = self.root / MANIFEST
         with manifest.open("a", encoding="utf-8") as handle:
-            handle.write(f"{BASELINE}/microsip.vcxproj.user\\t999 bytes\\n")
+            handle.write(f"{BASELINE}/microsip.vcxproj.user\t999 bytes\n")
         with self.assertRaisesRegex(BaselineError, "missing"):
             verify(self.root, expected_count=None)
 
