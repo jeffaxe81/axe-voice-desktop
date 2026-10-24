@@ -46,6 +46,8 @@
 #include "ui_contrast_policy.h"
 #include "ui_dpi_policy.h"
 #include "desktop_extras_win32.h"
+#include "sip_native_preflight.h"
+#include "native_sip_release_gate.h"
 #include <vector>
 #include <array>
 #include <algorithm>
@@ -111,6 +113,7 @@ constexpr int kAutostartToggle = 3106;
 constexpr int kClearRecent = 3107;
 constexpr int kExplicitExit = 3108;
 constexpr int kRecentPickStart = 3200;
+constexpr int kSipPreflight = 3114;
 constexpr int kStartupInTrayToggle = 3110;
 constexpr int kDeleteFavorite = 3111;
 constexpr int kRecallLastDestination = 3112;
@@ -669,6 +672,7 @@ void show_more_actions(HWND window) {
                       (axv::desktop_autostart_starts_in_tray() ? MF_CHECKED : 0),
                 kStartupInTrayToggle, L"Iniciar minimizado na bandeja");
     AppendMenuW(menu, MF_STRING, kCopySafeDiagnostics, L"Copiar diagnostico local sem dados pessoais");
+    AppendMenuW(menu, MF_STRING, kSipPreflight, L"Pre-ativacao SIP segura (F3)");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kExplicitExit, L"Sair do AXE Voice");
     const HWND anchor = GetDlgItem(window, kMoreButton);
@@ -909,6 +913,61 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     if (IsWindowEnabled(button) != (dial ? TRUE : FALSE))
         EnableWindow(button, dial ? TRUE : FALSE);
 }
+
+// Inspect local prerequisite SHAPES only. No SIP SDK, network, credentials,
+// native owner callbacks or real call proof are available in this GUI build.
+std::wstring make_native_sip_preflight_report() {
+    wchar_t server[129] = {}, user[129] = {}, port[129] = {};
+    if (g_server) GetWindowTextW(g_server, server, 129);
+    if (g_user) GetWindowTextW(g_user, user, 129);
+    if (g_port) GetWindowTextW(g_port, port, 129);
+    const bool tls_checked = g_tls &&
+        SendMessageW(g_tls, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    const auto account = axv::evaluate_native_sip_preflight(
+        server, user, port, tls_checked);
+    const axv::NativeSipReleaseEvidence evidence{}; // no approvals available in GUI
+    const auto commercial_gate = axv::evaluate_native_sip_activation(evidence);
+    (void)commercial_gate;
+
+    wchar_t exe[MAX_PATH] = {};
+    const DWORD len = GetModuleFileNameW(nullptr, exe, MAX_PATH);
+    bool has_local_baresip = false;
+    axv::BaresipModuleInventory inventory{};
+    if (len > 0 && len < MAX_PATH) {
+        const auto candidate = std::filesystem::path(exe).parent_path() / L"baresip.exe";
+        const auto probe = axv::probe_baresip_executable(candidate);
+        has_local_baresip =
+            probe.status == axv::BaresipProbeStatus::PresentUnverified;
+        if (has_local_baresip)
+            inventory = axv::inspect_baresip_module_files(candidate);
+    }
+
+    std::wstring report =
+        L"AXE VOICE LAB - PRE-ATIVACAO SIP (v0.88)\r\n\r\n";
+    report += L"1. Dados de conta: ";
+    report += axv::native_preflight_label(account.status);
+    report += L"\r\n2. Transporte SIP TLS: ";
+    report += tls_checked ? L"selecionado (nao testado)" : L"nao selecionado";
+    report += L"\r\n3. Baresip local: ";
+    report += has_local_baresip ? L"arquivo encontrado (nao autenticado)" :
+                                  L"nao localizado/verificavel";
+    report += L"\r\n4. Modulos locais: ";
+    report += inventory.status == axv::BaresipModuleScanStatus::Inspected
+        ? L"arquivos inspecionados (sem prova de codecs)" : L"inspecao incompleta";
+    report += L"\r\n5. Audio Windows: ";
+    report += !g_audio_inputs.empty() && !g_audio_outputs.empty()
+        ? L"dispositivos enumerados (sem prova de RTP)" : L"sem inventario completo";
+    report += L"\r\n\r\nEVIDENCIAS OPERACIONAIS\r\n";
+    report += L"Motor SDK conectado ao aplicativo: NAO\r\n";
+    report += L"Autenticacao com PABX validada: NAO\r\n";
+    report += L"TLS do servidor certificado: NAO\r\n";
+    report += L"Midia SRTP bidirecional validada: NAO\r\n";
+    report += L"Release comercial autorizada: NAO\r\n";
+    report += L"Comandos de chamada: BLOQUEADOS\r\n\r\n";
+    report += L"Nenhuma credencial, dominio, ramal ou URI e exibida.\r\n";
+    return report;
+}
+
 std::wstring make_readiness_report() {
     wchar_t number[129]{}, server[129]{}, user[129]{}, port[129]{};
     GetWindowTextW(g_number, number, 129);
@@ -1198,6 +1257,14 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             if (control == kExplicitExit) {
                 g_explicit_exit = true;
                 SendMessageW(window, WM_CLOSE, 0, 0);
+                return 0;
+            }
+            if (control == kSipPreflight) {
+                const auto report = make_native_sip_preflight_report();
+                if (!g_smoke_mode)
+                    MessageBoxW(window, report.c_str(),
+                                L"Auditoria pre-ativacao SIP - AXE Voice LAB",
+                                MB_OK | MB_ICONINFORMATION);
                 return 0;
             }
             if (control == kReadinessButton) {
@@ -1732,7 +1799,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.83",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.88",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
@@ -1994,7 +2061,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         {FVIRTKEY | FCONTROL | FSHIFT, L'R', kRecallLastDestination},
         {FVIRTKEY, VK_ESCAPE, kShowDial},
         {FVIRTKEY, VK_F1, kHelpButton},
-        {FVIRTKEY, VK_F2, kReadinessButton}
+        {FVIRTKEY, VK_F2, kReadinessButton},
+        {FVIRTKEY, VK_F3, kSipPreflight}
     };
     HACCEL accelerator = CreateAcceleratorTableW(
         const_cast<ACCEL*>(shortcuts), static_cast<int>(sizeof(shortcuts)/sizeof(shortcuts[0])));
