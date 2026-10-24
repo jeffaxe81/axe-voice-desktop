@@ -45,6 +45,7 @@
 #include "call_readiness.h"
 #include "ui_contrast_policy.h"
 #include "ui_dpi_policy.h"
+#include "ui_viewport_policy.h"
 #include "desktop_extras_win32.h"
 #include "sip_native_preflight.h"
 #include "native_sip_release_gate.h"
@@ -91,6 +92,13 @@ constexpr int kRingPreviewLevel = 2407;
 constexpr int kWindowWidth = 438;
 unsigned g_dpi = axv::kBaseDpi;
 constexpr int kFullHeight = 842;
+constexpr int kFullScrollContentEnd = 804;
+constexpr int kMiniScrollContentEnd = 340;
+int g_scroll_offset = 0;
+int g_scroll_max = 0;
+int g_wheel_remainder = 0;
+bool g_controls_ready = false;
+bool g_scrollbar_updating = false;
 constexpr int kCompactHeight = 365;
 constexpr int kDigitStart = 2100;
 constexpr int kBackspace = 2201;
@@ -358,19 +366,19 @@ void rebuild_fonts() {
 void position_logical(HWND child, int x,int y,int width,int height) {
     if(!child) return;
     const auto box = axv::scaled_box({x,y,width,height},g_dpi);
-    SetWindowPos(child,nullptr,box.x,box.y,box.width,box.height,
+    SetWindowPos(child,nullptr,box.x,box.y-g_scroll_offset,box.width,box.height,
                  SWP_NOACTIVATE|SWP_NOZORDER);
 }
 RECT logical_rect(int x,int y,int right,int bottom) {
-    return {axv::dpi_pixels(x,g_dpi), axv::dpi_pixels(y,g_dpi),
-            axv::dpi_pixels(right,g_dpi), axv::dpi_pixels(bottom,g_dpi)};
+    return {axv::dpi_pixels(x,g_dpi), axv::dpi_pixels(y,g_dpi)-g_scroll_offset,
+            axv::dpi_pixels(right,g_dpi), axv::dpi_pixels(bottom,g_dpi)-g_scroll_offset};
 }
 HWND make_control(HWND root, LPCWSTR type, LPCWSTR title, DWORD style,
                   int x, int y, int width, int height, int id,
                   int page = -1, HFONT font = nullptr) {
     const auto box = axv::scaled_box({x,y,width,height},g_dpi);
     HWND child = CreateWindowExW(0, type, title, WS_CHILD | WS_VISIBLE | style,
-        box.x, box.y, box.width, box.height, root,
+        box.x, box.y-g_scroll_offset, box.width, box.height, root,
         id ? reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)) : nullptr,
         GetModuleHandleW(nullptr), nullptr);
     if (child) {
@@ -434,7 +442,78 @@ void refresh_account_feedback() {
     InvalidateRect(g_user, nullptr, TRUE);
     InvalidateRect(g_port, nullptr, TRUE);
 }
+// Viewport only changes UI coordinates; it never authorizes calls.
+void position_all_children() {
+    for (const auto& child : g_layout) {
+        auto r=child.logical;
+        if (child.handle==g_number_label) r.y=g_compact?218:246;
+        if (child.handle==g_number) r.y=g_compact?242:272;
+        if (child.handle==g_status) r.y=g_compact?298:762;
+        position_logical(child.handle,r.x,r.y,r.width,r.height);
+    }
+}
+int viewport_content_height() {
+    return axv::dpi_pixels(g_compact?kMiniScrollContentEnd:kFullScrollContentEnd,g_dpi);
+}
+void sync_viewport_scroll(HWND window) {
+    if (!g_controls_ready || g_scrollbar_updating) return;
+    g_scrollbar_updating=true;
+    RECT client{};
+    GetClientRect(window,&client);
+    const int visible=client.bottom-client.top;
+    const int content=viewport_content_height();
+    const int previous=g_scroll_offset;
+    g_scroll_max=axv::max_scroll_offset(content,visible);
+    g_scroll_offset=axv::clamp_scroll_offset(g_scroll_offset,content,visible);
+    SCROLLINFO info{};
+    info.cbSize=sizeof(info);
+    info.fMask=SIF_RANGE|SIF_PAGE|SIF_POS;
+    info.nMin=0;
+    info.nMax=content>0?content-1:0;
+    info.nPage=static_cast<UINT>(std::max(0,visible));
+    info.nPos=g_scroll_offset;
+    SetScrollInfo(window,SB_VERT,&info,TRUE);
+    ShowScrollBar(window,SB_VERT,g_scroll_max>0);
+    if (previous!=g_scroll_offset) {
+        position_all_children();
+        InvalidateRect(window,nullptr,TRUE);
+    }
+    g_scrollbar_updating=false;
+}
+void set_viewport_scroll(HWND window,int desired) {
+    if (!g_controls_ready) return;
+    RECT client{};
+    GetClientRect(window,&client);
+    const int target=axv::clamp_scroll_offset(desired,
+        viewport_content_height(),client.bottom-client.top);
+    if (target==g_scroll_offset) return;
+    g_scroll_offset=target;
+    sync_viewport_scroll(window);
+    position_all_children();
+    InvalidateRect(window,nullptr,TRUE);
+}
+void bring_focused_control_into_view(HWND window,HWND control) {
+    if (!g_controls_ready || !control) return;
+    for (const auto& child:g_layout) {
+        if (child.handle!=control) continue;
+        int y=child.logical.y;
+        if (control==g_number_label) y=g_compact?218:246;
+        if (control==g_number) y=g_compact?242:272;
+        if (control==g_status) y=g_compact?298:762;
+        RECT client{};
+        GetClientRect(window,&client);
+        const int top=axv::dpi_pixels(y,g_dpi);
+        const int bottom=top+axv::dpi_pixels(child.logical.height,g_dpi);
+        const int target=axv::scroll_for_visible_range(
+            g_scroll_offset,viewport_content_height(),client.bottom-client.top,
+            top,bottom,axv::dpi_pixels(8,g_dpi));
+        set_viewport_scroll(window,target);
+        break;
+    }
+}
+
 void show_page(HWND root, int page) {
+    if (g_page != page) set_viewport_scroll(root,0);
     if (page != 2 && g_preview_running.load()) g_preview_cancel.store(true);
     g_page = page;
     for (auto child : g_dial_controls) {
@@ -444,6 +523,7 @@ void show_page(HWND root, int page) {
     }
     for (auto child : g_settings_controls) ShowWindow(child, page == 1 ? SW_SHOW : SW_HIDE);
     for (auto child : g_audio_controls) ShowWindow(child, page == 2 ? SW_SHOW : SW_HIDE);
+    sync_viewport_scroll(root);
     InvalidateRect(root, nullptr, TRUE);
     HWND target = page == 0 ? g_number : (page == 1 ? g_server : g_input_audio_combo);
     if (target) SetFocus(target);
@@ -460,10 +540,21 @@ void apply_compact_layout(HWND root) {
     position_logical(g_number,39,g_compact?242:272,350,43);
     position_logical(g_status,24,g_compact?298:762,390,30);
     SetWindowTextW(GetDlgItem(root, kCompact), g_compact ? L"MAX" : L"MINI");
-    SetWindowPos(root, nullptr, 0, 0, axv::dpi_pixels(kWindowWidth,g_dpi),
-                 axv::dpi_pixels(g_compact?kCompactHeight:kFullHeight,g_dpi),
-                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
-    show_page(root, g_page);
+    const int desired_height=axv::dpi_pixels(g_compact?kCompactHeight:kFullHeight,g_dpi);
+    int fitted_height=desired_height;
+    MONITORINFO monitor{};
+    monitor.cbSize=sizeof(monitor);
+    const HMONITOR display=MonitorFromWindow(root,MONITOR_DEFAULTTONEAREST);
+    if (display && GetMonitorInfoW(display,&monitor)) {
+        const int work_height=monitor.rcWork.bottom-monitor.rcWork.top;
+        if (work_height>0) fitted_height=std::min(desired_height,work_height);
+    }
+    const int width=axv::dpi_pixels(kWindowWidth,g_dpi)+
+                    GetSystemMetricsForDpi(SM_CXVSCROLL,g_dpi);
+    SetWindowPos(root,nullptr,0,0,width,fitted_height,
+                 SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
+    show_page(root,g_page);
+    sync_viewport_scroll(root);
 }
 void draw_card(HDC dc, RECT rect, COLORREF color, int radius) {
     HBRUSH fill = CreateSolidBrush(color);
@@ -627,7 +718,7 @@ std::wstring safe_desktop_diagnostics() {
         process == axv::ProcessStatus::Stopped ? L"stopped" :
         process == axv::ProcessStatus::Failed ? L"failed" :
         process == axv::ProcessStatus::Exited ? L"exited" : L"stopping";
-    return std::wstring(L"AXE Voice Desktop LAB 0.113\r\n") +
+    return std::wstring(L"AXE Voice Desktop LAB 0.114\r\n") +
         L"Processo Baresip: " + process_text +
         L"\r\nRegistro SIP confirmado: NAO\r\nChamada RTP/SRTP homologada: NAO\r\n" +
         L"Autostart: " + (axv::desktop_autostart_enabled() ? L"sim" : L"nao") +
@@ -1259,9 +1350,15 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         apply_compact_layout(window);
         refresh_runtime_banner(g_baresip_process.poll());
         SetTimer(window, kProcessTimer, 100, nullptr);
+        g_controls_ready = true;
+        sync_viewport_scroll(window);
         return 0;
     }
     case WM_COMMAND:
+        if (lparam && (HIWORD(wparam)==EN_SETFOCUS ||
+                       HIWORD(wparam)==BN_SETFOCUS ||
+                       HIWORD(wparam)==CBN_SETFOCUS))
+            bring_focused_control_into_view(window,reinterpret_cast<HWND>(lparam));
         if (LOWORD(wparam) == kNumberEdit && HIWORD(wparam) == EN_KILLFOCUS) {
             remember_current_destination();
             return 0;
@@ -1768,6 +1865,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         }
         break;
     case WM_DPICHANGED: {
+        g_scroll_offset=0;
         const unsigned next=axv::normalized_dpi(LOWORD(wparam));
         if(next!=g_dpi) {
             g_dpi=next;
@@ -1782,11 +1880,48 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                          SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE);
         }
         apply_compact_layout(window);
+        sync_viewport_scroll(window);
         InvalidateRect(window,nullptr,TRUE);
         EnumChildWindows(window,repaint_child,0);
         return 0;
     }
+    case WM_VSCROLL: {
+        if (!g_controls_ready) return 0;
+        RECT client{};
+        GetClientRect(window,&client);
+        const int page=std::max(1,client.bottom-client.top);
+        int desired=g_scroll_offset;
+        switch (LOWORD(wparam)) {
+        case SB_TOP: desired=0; break;
+        case SB_BOTTOM: desired=g_scroll_max; break;
+        case SB_LINEUP: desired-=axv::dpi_pixels(42,g_dpi); break;
+        case SB_LINEDOWN: desired+=axv::dpi_pixels(42,g_dpi); break;
+        case SB_PAGEUP: desired-=page; break;
+        case SB_PAGEDOWN: desired+=page; break;
+        case SB_THUMBPOSITION:
+        case SB_THUMBTRACK: {
+            SCROLLINFO info{};
+            info.cbSize=sizeof(info);
+            info.fMask=SIF_TRACKPOS;
+            GetScrollInfo(window,SB_VERT,&info);
+            desired=info.nTrackPos;
+            break;
+        }
+        default: return 0;
+        }
+        set_viewport_scroll(window,desired);
+        return 0;
+    }
+    case WM_MOUSEWHEEL: {
+        g_wheel_remainder+=GET_WHEEL_DELTA_WPARAM(wparam);
+        const int steps=g_wheel_remainder/WHEEL_DELTA;
+        g_wheel_remainder%=WHEEL_DELTA;
+        if (steps) set_viewport_scroll(window,g_scroll_offset-
+            steps*axv::dpi_pixels(48,g_dpi));
+        return 0;
+    }
     case WM_SIZE:
+        if (wparam != SIZE_MINIMIZED) sync_viewport_scroll(window);
         if (wparam == SIZE_MINIMIZED && install_tray(window)) {
             ShowWindow(window, SW_HIDE);
             return 0;
@@ -1879,8 +2014,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         HPEN rule = CreatePen(PS_SOLID, 1, line_color());
         HGDIOBJ old = SelectObject(dc, rule);
         const int divider_y = g_compact ? 294 : 747;
-        MoveToEx(dc,axv::dpi_pixels(24,g_dpi),axv::dpi_pixels(divider_y,g_dpi),nullptr);
-        LineTo(dc,axv::dpi_pixels(414,g_dpi),axv::dpi_pixels(divider_y,g_dpi));
+        MoveToEx(dc,axv::dpi_pixels(24,g_dpi),axv::dpi_pixels(divider_y,g_dpi)-g_scroll_offset,nullptr);
+        LineTo(dc,axv::dpi_pixels(414,g_dpi),axv::dpi_pixels(divider_y,g_dpi)-g_scroll_offset);
         SelectObject(dc, old);
         DeleteObject(rule);
         EndPaint(window, &paint);
@@ -2009,9 +2144,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.113",
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
-        axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(kFullHeight,g_dpi),
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.114",
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VSCROLL,
+        CW_USEDEFAULT, CW_USEDEFAULT,
+        axv::dpi_pixels(kWindowWidth,g_dpi)+GetSystemMetricsForDpi(SM_CXVSCROLL,g_dpi),
+        axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
     if (!window) return 2;
     if (g_smoke_mode && command_line &&
