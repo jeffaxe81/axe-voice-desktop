@@ -69,14 +69,22 @@ if(AXV_BUILD_EXPERIMENTAL_NATIVE_REGISTRATION_RUNTIME)
      NOT EXISTS "${AXV_LIBRE_LIBRARY}")
     message(FATAL_ERROR "Approved re.h and libre library are mandatory")
   endif()
-  if(NOT AXV_LIBRE_HEADER_SHA256 MATCHES "^[0-9a-fA-F]{64}$" OR
-     NOT AXV_LIBRE_LIBRARY_SHA256 MATCHES "^[0-9a-fA-F]{64}$")
-    message(FATAL_ERROR "SHA256 pins must be explicit 64-digit hex values")
+  if(IS_DIRECTORY "${AXV_LIBRE_LIBRARY}")
+    message(FATAL_ERROR "Approved libre library must be a regular file")
   endif()
+  foreach(_axv_pin IN ITEMS AXV_LIBRE_HEADER_SHA256 AXV_LIBRE_LIBRARY_SHA256)
+    string(LENGTH "${${_axv_pin}}" _axv_pin_length)
+    if(NOT _axv_pin_length EQUAL 64 OR
+       NOT "${${_axv_pin}}" MATCHES "^[0-9a-fA-F]+$")
+      message(FATAL_ERROR "Libre SHA256 pins must be 64 hexadecimal digits")
+    endif()
+  endforeach()
   file(SHA256 "${AXV_LIBRE_INCLUDE_DIR}/re.h" _axv_libre_header_actual)
   file(SHA256 "${AXV_LIBRE_LIBRARY}" _axv_libre_library_actual)
-  if(NOT _axv_libre_header_actual STREQUAL AXV_LIBRE_HEADER_SHA256 OR
-     NOT _axv_libre_library_actual STREQUAL AXV_LIBRE_LIBRARY_SHA256)
+  string(TOLOWER "${AXV_LIBRE_HEADER_SHA256}" _axv_libre_header_expected)
+  string(TOLOWER "${AXV_LIBRE_LIBRARY_SHA256}" _axv_libre_library_expected)
+  if(NOT _axv_libre_header_actual STREQUAL _axv_libre_header_expected OR
+     NOT _axv_libre_library_actual STREQUAL _axv_libre_library_expected)
     message(FATAL_ERROR "Approved libre hashes do not match local SDK files")
   endif()
   add_library(axv_native_registration_lab STATIC
