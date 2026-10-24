@@ -21,11 +21,11 @@ option(AXV_BUILD_NATIVE_BARESIP_ADAPTER
 if(AXV_BUILD_NATIVE_BARESIP_ADAPTER)
   set(AXV_BARESIP_INCLUDE_DIR "" CACHE PATH "Audited Baresip SDK include path")
   set(AXV_BARESIP_LIBRARY "" CACHE FILEPATH "Audited Baresip SDK library path")
-  if(NOT EXISTS "${AXV_BARESIP_INCLUDE_DIR}/baresip.h" OR
-     NOT EXISTS "${AXV_BARESIP_LIBRARY}")
-    message(FATAL_ERROR
-      "Native bridge requires explicitly audited Baresip headers and library")
-  endif()
+  set(AXV_BARESIP_HEADER_SHA256 "" CACHE STRING "Expected SHA-256 of pinned baresip.h")
+  set(AXV_BARESIP_LIBRARY_SHA256 "" CACHE STRING "Expected SHA-256 of pinned Baresip MSVC .lib")
+  set(AXV_BARESIP_VERSION "" CACHE STRING "Expected BARESIP_VERSION from audited SDK header")
+  set(AXV_REPOSITORY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
+  include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/axv_verify_baresip_sdk.cmake")
   add_library(axv_native_baresip_adapter STATIC src/baresip_sdk_event_adapter.cpp)
   target_include_directories(axv_native_baresip_adapter PRIVATE "${AXV_BARESIP_INCLUDE_DIR}")
   target_link_libraries(axv_native_baresip_adapter PUBLIC "${AXV_BARESIP_LIBRARY}")
@@ -95,6 +95,10 @@ if(BUILD_TESTING)
   add_executable(test_baresip_callback_lifecycle tests/test_baresip_callback_lifecycle.cpp)
   target_compile_features(test_baresip_callback_lifecycle PRIVATE cxx_std_17)
   add_test(NAME baresip_callback_lifecycle COMMAND test_baresip_callback_lifecycle)
+  add_test(NAME baresip_sdk_integrity_preflight COMMAND "${CMAKE_COMMAND}"
+    "-DAXV_REPOSITORY_ROOT=${CMAKE_CURRENT_SOURCE_DIR}"
+    "-DAXV_SCRATCH=${CMAKE_CURRENT_BINARY_DIR}/axv_sdk_integrity_test"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cmake/test_baresip_sdk_integrity.cmake")
   add_executable(test_baresip_sdk_event_adapter
     tests/test_baresip_sdk_event_adapter.cpp
     src/baresip_sdk_event_adapter.cpp)
