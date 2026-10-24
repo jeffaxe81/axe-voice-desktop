@@ -1,8 +1,8 @@
 # AXE Voice — Validação da baseline MicroSIP
 
-A CI `AXE Voice | integridade da baseline` executa **13 testes unitários do verificador**
+A CI `AXE Voice | integridade da baseline` executa **15 testes unitários do verificador**
 e compara os arquivos importados do MicroSIP 3.22.16.0 com o manifesto produzido
-na importação oficial (nomes e tamanhos), sua versão, SHA-256 **documentado** do
+na importação oficial (231 entradas: **230 arquivos versionados**, e a configuração local do Visual Studio \`microsip.vcxproj.user\` excluída expressamente pelo \`.gitignore\`; nomes e tamanhos), sua versão, SHA-256 **documentado** do
 archive original e o inventário preliminar de licenças. Um relatório JSON é
 guardado como artefato por 14 dias, vinculado ao commit da execução.
 
