@@ -8,6 +8,8 @@ inline constexpr wchar_t kFrontendHelp[] =
     L"Ctrl+L: Focar destino    Ctrl+K: Teclado\n"
     L"Ctrl+M: MINI/MAX    Ctrl+T: Tema    Ctrl+P: Fixar\n"
     L"Ctrl+R: Atualizar dispositivos (apenas em Audio)\n"
+    L"Rolagem e roda do mouse: acessar campos em telas menores.\n"
+    L"Foco via Tab rola para exibir o controle selecionado.\n"
     L"Ctrl+G: menu MAIS - opcoes de escritorio\n"
     L"Ctrl+D: salvar favorito   Ctrl+F: recuperar favorito\n"
     L"Ctrl+H: destinos recentes desta sessao (nao chamadas)\n"
