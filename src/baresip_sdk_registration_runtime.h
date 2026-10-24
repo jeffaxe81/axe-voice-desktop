@@ -5,6 +5,7 @@
 #include "baresip_native_registration_host.h"
 #include "baresip_native_ua_factory.h"
 #include "baresip_sdk_core_bootstrap.h"
+#include "sip_native_owner_credential_bridge.h"
 #include <memory>
 
 namespace axv {
@@ -13,6 +14,9 @@ struct ExperimentalNativeRegistrationOptions {
     BaresipSdkCorePolicy core_policy{};
     bool explicitly_enabled_for_isolated_lab = false;
     bool tls_and_sdk_reviewed_externally = false;
+    // MUST be backed by audited SDK functions: no default dummy secret
+    // callback is allowed to start a registration host in this build.
+    NativeSdkCredentialPort credential_port{};
 };
 
 // Returns null unless explicitly opted into *isolated* SDK development.

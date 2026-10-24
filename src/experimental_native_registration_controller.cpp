@@ -20,6 +20,7 @@ NativeControlDecision ExperimentalNativeRegistrationController::start() {
     pending_ = false;
     terminal_observed_ = false;
     callback_unverified_seen_ = false;
+    cancel_requested_ = false;
     return NativeControlDecision::Allowed;
 }
 NativeControlDecision ExperimentalNativeRegistrationController::request_registration(
@@ -53,9 +54,12 @@ NativeControlDecision ExperimentalNativeRegistrationController::cancel() {
     if (!host_) return NativeControlDecision::NotConfigured;
     if (!started_ || !generation_) return NativeControlDecision::NoLiveGeneration;
     if (!pending_) return NativeControlDecision::NoLiveGeneration;
-    // Cancelling revokes this generation; caller must stop and start anew.
+    if (cancel_requested_) return NativeControlDecision::CancellationRequested;
+    // An accepted cancellation is only queued, never described as completed.
     const bool ok = host_->cancel();
-    return ok ? NativeControlDecision::Allowed : NativeControlDecision::CancelRejected;
+    if (ok) cancel_requested_ = true;
+    return ok ? NativeControlDecision::CancellationRequested :
+                NativeControlDecision::CancelRejected;
 }
 
 NativeControlDecision ExperimentalNativeRegistrationController::poll_control_plane(
@@ -66,6 +70,8 @@ NativeControlDecision ExperimentalNativeRegistrationController::poll_control_pla
     if (native.command_generation != generation_ ||
         generation_ != host_->generation() ||
         !native.running || native.reactor_fault != LibreReactorFault::None) {
+        // A requested cancel is never charged as a failed login attempt.
+        if (cancel_requested_) return NativeControlDecision::CancellationRequested;
         if (pending_ && !terminal_observed_) {
             retry_.record_failed_attempt(monotonic_ms);
             terminal_observed_ = true;
@@ -74,12 +80,16 @@ NativeControlDecision ExperimentalNativeRegistrationController::poll_control_pla
     }
     if (!pending_) return NativeControlDecision::NoLiveGeneration;
     const auto kind = native.last_dispatch;
+    if (kind == RegistrationDispatchKind::Cancelled)
+        return NativeControlDecision::UserCancelled;
+    if (cancel_requested_) return NativeControlDecision::CancellationRequested;
+    // Once a submission was conclusively failed, stale callbacks cannot
+    // resurrect its status within the same generation.
+    if (terminal_observed_) return NativeControlDecision::TerminalNativeFailure;
     if (kind == RegistrationDispatchKind::Confirmed) {
         callback_unverified_seen_ = true;
         return NativeControlDecision::CallbackObservedUnverified;
     }
-    if (kind == RegistrationDispatchKind::Cancelled)
-        return NativeControlDecision::UserCancelled; // no failure charge
     const bool failed = kind == RegistrationDispatchKind::RegistrarRejected ||
         kind == RegistrationDispatchKind::DeadlineExpired ||
         kind == RegistrationDispatchKind::Failed ||
@@ -106,6 +116,7 @@ NativeControlDecision ExperimentalNativeRegistrationController::stop() {
     generation_ = 0;
     terminal_observed_ = false;
     callback_unverified_seen_ = false;
+    cancel_requested_ = false;
     return NativeControlDecision::Allowed;
 }
 void ExperimentalNativeRegistrationController::reset_retry_budget_with_explicit_consent() {
@@ -118,9 +129,10 @@ NativeControlView ExperimentalNativeRegistrationController::snapshot() const {
     result.control_thread_running = started_ && native.running;
     result.account_provisioned = native.account_provisioned;
     result.register_request_pending = pending_;
+    result.cancellation_requested = cancel_requested_;
     result.terminal_failure_seen = terminal_observed_;
     result.callback_unverified_seen = callback_unverified_seen_;
-    result.restart_required = terminal_observed_ ||
+    result.restart_required = terminal_observed_ || cancel_requested_ ||
         (pending_ && !native.running) ||
         native.last_dispatch == RegistrationDispatchKind::Cancelled;
     result.generation = result.control_thread_running ? generation_ : 0;

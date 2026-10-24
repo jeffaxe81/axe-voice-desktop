@@ -68,7 +68,9 @@ inline SipCredentialResult consume_sip_credential_on_owner(
         }
     } lease{handle};
 
-    if (!handle->CredentialBlob || handle->CredentialBlobSize == 0 ||
+    if (handle->Type != CRED_TYPE_GENERIC ||
+        !handle->TargetName || target != handle->TargetName ||
+        !handle->CredentialBlob || handle->CredentialBlobSize == 0 ||
         handle->CredentialBlobSize > 2048)
         return SipCredentialResult::InvalidSecret;
 
