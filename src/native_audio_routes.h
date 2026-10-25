@@ -22,6 +22,11 @@ inline AudioSelectionRefresh fixed_native_audio_selection(const std::vector<Audi
    return {static_cast<int>(i),id,false};
  return {-1,id,false}; // Never replace a session-bound endpoint silently.
 }
+inline int native_audio_combo_index(const std::vector<AudioEndpoint>& devices,const std::wstring& id){
+ if(id.empty())return 0; // Explicit Windows communications-default row.
+ for(std::size_t i=0;i<devices.size();++i)if(devices[i].id==id)return static_cast<int>(i)+1;
+ return -1;
+}
 inline NativeAudioRouteStatus native_audio_route_status(const NativeAudioRoute& route,const AudioInventory& inventory){
  if(!valid_native_audio_route(route))return NativeAudioRouteStatus::InvalidSelection;
  if(inventory.error!=AudioInventoryError::None)return NativeAudioRouteStatus::InventoryFailed;

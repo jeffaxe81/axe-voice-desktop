@@ -15,6 +15,13 @@ int main(){
  inventory.has_default_communications_input=true;inventory.has_default_communications_output=true;
  CHECK(axv::native_audio_route_status(selected,inventory)==axv::NativeAudioRouteStatus::Ready);
  CHECK(axv::native_audio_route_status({},inventory)==axv::NativeAudioRouteStatus::Ready);
+ const auto defaults=axv::fixed_native_audio_selection(inventory.input_devices,L"");
+ CHECK(defaults.available() && defaults.selected_id.empty());
+ CHECK(axv::native_audio_combo_index(inventory.input_devices,L"")==0);
+ CHECK(axv::native_audio_combo_index(inventory.input_devices,L"capture-id")==1);
+ CHECK(axv::native_audio_combo_index(inventory.input_devices,L"missing")==-1);
+ auto replacement_defaults=inventory.input_devices;replacement_defaults[0].id=L"new-default";
+ CHECK(axv::fixed_native_audio_selection(replacement_defaults,L"").selected_id.empty());
  CHECK(axv::native_audio_route_status({L"missing",L"playback-id"},inventory)==axv::NativeAudioRouteStatus::MissingCapture);
  CHECK(axv::native_audio_route_status({L"capture-id",L"missing"},inventory)==axv::NativeAudioRouteStatus::MissingPlayback);
  CHECK(axv::native_audio_route_status({L"playback-id",L"capture-id"},inventory)!=axv::NativeAudioRouteStatus::Ready);

@@ -12,6 +12,9 @@ int main(){
  profile=axv::native_account_config(account,L"");
  if(conf_configure_buf(reinterpret_cast<const uint8_t*>(profile.config.data()),profile.config.size()))return 3;
  valid=valid && !std::strcmp(audio.src_dev,"default") && !std::strcmp(audio.play_dev,"default");
+ profile=axv::native_account_config(account,L"",{std::wstring(127,L'c'),std::wstring(127,L'p')});
+ if(!profile.valid || conf_configure_buf(reinterpret_cast<const uint8_t*>(profile.config.data()),profile.config.size()))return 5;
+ valid=valid && std::strlen(audio.src_dev)==127 && std::strlen(audio.play_dev)==127 && audio.src_dev[126]=='c' && audio.play_dev[126]=='p';
  conf_close();libre_close();
  return valid?0:4;
 }
