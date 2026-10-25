@@ -92,7 +92,7 @@ $ProductArguments = @('-S',$Root,'-B',$ProductBuild,'-G','Visual Studio 17 2022'
     '-DAXV_BARESIP_VERSION=4.12.0',"-DAXV_LIBRE_INCLUDE_DIR=$Prefix/include/re",
     "-DAXV_LIBRE_LIBRARY=$ReLibrary","-DAXV_LIBRE_HEADER_SHA256=$ReHeaderHash",
     "-DAXV_LIBRE_LIBRARY_SHA256=$ReLibraryHash")
-if ($TlsMedia) { $ProductArguments += @('-DAXV_NATIVE_TLS_MEDIA=ON',"-DOPENSSL_ROOT_DIR=$Prefix",'-DOPENSSL_USE_STATIC_LIBS=OFF') }
+if ($TlsMedia) { $ProductArguments += @('-DAXV_NATIVE_TLS_MEDIA=ON','-DAXV_ENABLE_NATIVE_SIP=ON',"-DOPENSSL_ROOT_DIR=$Prefix",'-DOPENSSL_USE_STATIC_LIBS=OFF') }
 Invoke-Checked 'cmake' $ProductArguments
 Invoke-Checked 'cmake' @('--build',$ProductBuild,'--config','Release','--parallel','4','--target',
     'axv_native_baresip_sdk_abi_probe','axv_native_baresip_abi_probe','axv_native_libre_reactor_smoke')
@@ -100,6 +100,10 @@ if ($TlsMedia) {
     Invoke-Checked 'cmake' @('--build',$ProductBuild,'--config','Release','--parallel','4','--target','axv_native_tls_media_probe')
     Get-ChildItem (Join-Path $Prefix 'bin') -Filter '*.dll' | Copy-Item -Destination (Join-Path $ProductBuild 'Release')
     Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_tls_media_probe.exe') @()
+    Invoke-Checked 'cmake' @('--build',$ProductBuild,'--config','Release','--parallel','4','--target','axv_native_sip_engine_smoke','AXEVoice')
+    Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_sip_engine_smoke.exe') @()
+    Invoke-Checked 'python' @((Join-Path $Root 'tests/run_native_sip_loopback.py'),(Join-Path $ProductBuild 'Release/axv_native_sip_engine_smoke.exe'))
+    Invoke-Checked (Join-Path $ProductBuild 'Release/AXE-Voice.exe') @('--native-ui-smoke')
 }
 # The ABI executables are build-only. Also execute the local libre reactor;
 # it creates no Baresip UA, account, SIP registration or media session.

@@ -5,9 +5,13 @@ on:
     paths:
       - '.github/workflows/native-sdk-smoke.yml'
       - 'scripts/build-native-sdk-smoke.ps1'
+      - 'scripts/package-native-candidate.ps1'
       - 'CMakeLists.txt'
       - 'cmake/**'
-      - 'src/baresip*'
+      - 'src/**'
+      - 'installer/**'
+      - 'tests/run_native_sip_loopback.py'
+      - 'tests/native_sip_engine_smoke.cpp'
       - 'tests/native_libre_reactor_smoke.cpp'
       - 'tests/baresip_sdk_abi_probe.cpp'
       - 'tests/native_tls_media_probe.cpp'
@@ -24,6 +28,13 @@ jobs:
         profile: [abi, tls-media]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        id: sdk-cache
+        with:
+          path: |
+            build/native-sdk-deps-${{ matrix.profile }}/
+            build/native-sdk-${{ matrix.profile }}/prefix/
+          key: msvc2022-sdk-v1-${{ matrix.profile }}-re65555da-bs9cfab81-ssl8cf17aa
       - name: Build pinned MSVC candidate and run real libre reactor
         shell: pwsh
         run: |
@@ -32,6 +43,17 @@ jobs:
           } else {
             ./scripts/build-native-sdk-smoke.ps1
           }
+      - name: Build and verify candidate installer
+        if: matrix.profile == 'tls-media'
+        shell: pwsh
+        run: ./scripts/package-native-candidate.ps1
+      - name: Publish candidate installer
+        if: matrix.profile == 'tls-media'
+        uses: actions/upload-artifact@v4
+        with:
+          name: AXE-Voice-Native-Candidate-Setup
+          path: build/native-candidate-installer/*.exe
+          if-no-files-found: error
       - name: Publish candidate SDK with provenance and licenses
         uses: actions/upload-artifact@v4
         with:
@@ -44,3 +66,11 @@ jobs:
           name: AXE-native-SDK-probes-${{ matrix.profile }}
           path: build/native-sdk-${{ matrix.profile }}/product/Release/
           if-no-files-found: error
+      - name: Cache pinned source builds, including interrupted builds
+        if: always() && steps.sdk-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            build/native-sdk-deps-${{ matrix.profile }}/
+            build/native-sdk-${{ matrix.profile }}/prefix/
+          key: msvc2022-sdk-v1-${{ matrix.profile }}-re65555da-bs9cfab81-ssl8cf17aa
