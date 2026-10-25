@@ -133,14 +133,28 @@ private:
     };
     static constexpr std::size_t kMaxContexts = 512;
 
-    static void callback(enum bevent_ev type, struct bevent* event, void* arg) {
+    static void callback(enum bevent_ev type, struct bevent* event, void* arg) noexcept {
         auto* context = static_cast<CallbackContext*>(arg);
         if (!context || !context->owner) return;
-        // Lease covers the SDK lookup, callback reducer, and lifetime
-        // of the selected UA until stop() confirms callback quiescence.
-        auto lease = context->owner->lifecycle_.hold_native_callback(context->captured);
-        if (!lease) return;
-        context->owner->on_event(context->captured, type, event);
+        // No C++ exception may unwind through Baresip's C ABI callback.
+        // In particular, tracking native call identities allocates memory;
+        // allocation failure must revoke evidence rather than terminate the host.
+        try {
+            // Lease is released before leaving this scope, including failures.
+            // stop() still requires the upstream callback-quiescence contract.
+            auto lease = context->owner->lifecycle_.hold_native_callback(context->captured);
+            if (!lease) return;
+            context->owner->on_event(context->captured, type, event);
+        } catch (...) {
+            // An exception is NOT proof of a healthy native registration.
+            // Do not wait for callback quiescence from inside the callback.
+            try {
+                context->owner->fail_closed();
+            } catch (...) {
+                // ABI boundary must remain noexcept even on failed revocation.
+                // The SDK owner must explicitly stop/revoke this session.
+            }
+        }
     }
 
     bool same_epoch(BaresipCallbackLifecycle::CapturedSession captured) const {
