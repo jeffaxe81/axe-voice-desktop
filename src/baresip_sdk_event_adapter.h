@@ -251,7 +251,8 @@ private:
             const struct call* call = bevent_get_call(event);
             // Never accept pointer reuse in the same session. Otherwise a late
             // callback could confuse a new call with a previously closed one.
-            if (!call || active_call_ || seen_calls_.count(call) ||
+            if (!call || call_get_ua(call) != owner_ ||
+                active_call_ || seen_calls_.count(call) ||
                 seen_calls_.size() >= 4096 ||
                 native_key_ == std::numeric_limits<std::uint64_t>::max()) {
                 fail_closed();
@@ -272,7 +273,7 @@ private:
         case BEVENT_CALL_ESTABLISHED:
         case BEVENT_CALL_CLOSED: {
             const struct call* call = bevent_get_call(event);
-            if (!call || call != active_call_) {
+            if (!call || call != active_call_ || call_get_ua(call) != owner_) {
                 fail_closed();
                 return;
             }
