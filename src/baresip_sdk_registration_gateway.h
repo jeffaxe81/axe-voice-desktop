@@ -7,7 +7,8 @@
 namespace axv {
 enum class NativeRegistrationSubmission {
     InvalidAccount, BridgeUnavailable, SubmissionRejected,
-    Submitted, AlreadySubmitted, NativeSessionRevoked, WrongEventLoopThread
+    Submitted, AlreadySubmitted, NativeSessionRevoked, WrongEventLoopThread,
+    RegistrarRejectedSynchronously
 };
 
 // Experimental native-event-loop-thread-only registration submission.
@@ -46,6 +47,13 @@ public:
             bridge_.stop();
             return NativeRegistrationSubmission::NativeSessionRevoked;
         }
+        // A Baresip REGISTER_FAIL may fire *inside* ua_register(), even
+        // when that function itself returns zero. Surface the exact cause
+        // without temporarily admitting a rejected registration.
+        if (bridge_.native_register_fail_seen()) {
+            bridge_.stop();
+            return NativeRegistrationSubmission::RegistrarRejectedSynchronously;
+        }
         owner_ = selected;
         deadline_.clear(); // Never inherit a previous registration's deadline.
         return NativeRegistrationSubmission::Submitted;
@@ -57,6 +65,7 @@ public:
     bool arm_registration_deadline(std::uint64_t now_ms,
                                    std::uint64_t max_wait_ms) {
         return thread_guard_.is_owner() && submitted() &&
+               !bridge_.native_register_fail_seen() &&
                deadline_.arm(session(), now_ms, max_wait_ms);
     }
     RegistrationDeadlineVerdict poll_registration_deadline(std::uint64_t now_ms) {
@@ -102,7 +111,11 @@ public:
     }
 
     bool submitted() const {
-        return thread_guard_.is_owner() && owner_ != nullptr && bridge_.active();
+        return thread_guard_.is_owner() && owner_ != nullptr && bridge_.active() &&
+               !bridge_.native_register_fail_seen();
+    }
+    bool registrar_rejection_seen() const {
+        return thread_guard_.is_owner() && bridge_.native_register_fail_seen();
     }
     // Session identity does not mean the registrar accepted credentials.
     std::uint64_t session() const { return submitted() ? bridge_.session() : 0; }
