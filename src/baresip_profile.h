@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <sstream>
 #include <string>
 #include <system_error>
 #ifdef _WIN32
@@ -49,17 +50,21 @@ inline BaresipProfileStatus inspect_baresip_config_line(const std::string& line)
         key == "module_dir")
         return BaresipProfileStatus::UnsafeConfiguration;
     if (key == "module") {
-        // The account application module reads the accounts file and may
-        // issue ua_register automatically, bypassing WinCred owner admission.
-        // Native lab owns exactly one UA; refuse this loader altogether.
-        const auto value_at = active.find_first_not_of(" \\t=", end);
-        if (value_at == std::string::npos)
+        // The 'account' application module loads accounts and may register
+        // automatically, bypassing the owner-thread WinCred gate.
+        if (end == std::string::npos)
             return BaresipProfileStatus::UnsafeConfiguration;
-        const auto name_end = active.find_first_of(" \\t\\r\\n", value_at);
-        const std::string name = active.substr(value_at, name_end - value_at);
-        if (name.empty() || name.find_first_of("/\\\\\\\"'") != std::string::npos ||
-            (name_end != std::string::npos &&
-             active.find_first_not_of(" \\t\\r\\n", name_end) != std::string::npos))
+        std::string value = active.substr(end);
+        std::replace(value.begin(), value.end(), '=', ' ');
+        std::istringstream parsed(value);
+        std::string name, trailing;
+        if (!(parsed >> name) || (parsed >> trailing))
+            return BaresipProfileStatus::UnsafeConfiguration;
+        // No module paths or quote trickery in the isolated LAB profile.
+        if (name.find('/') != std::string::npos ||
+            name.find('\\') != std::string::npos ||
+            name.find('"') != std::string::npos ||
+            name.find('\'') != std::string::npos)
             return BaresipProfileStatus::UnsafeConfiguration;
         if (name == "account" || name == "account.so" ||
             name == "account.dll" || name == "account.dylib")
