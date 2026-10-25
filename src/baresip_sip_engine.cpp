@@ -5,6 +5,7 @@
 #include "baresip_sdk_call_port.h"
 #include "native_session_control.h"
 #include "native_audio_command_guard.h"
+#include "native_transfer.h"
 #include "baresip_sdk_secret.h"
 #include <atomic>
 #include <mutex>
@@ -44,7 +45,7 @@ struct BaresipSipEngine::Impl {
     BaresipNativeLibreReactor reactor{[this]{tick();},[this]{begin();},[this]{end();}};
     static inline std::atomic<Impl*> process_owner{nullptr};
     ~Impl(){reactor.stop();erase(password);}
-    void fail() { failed=true; adapter.stop(); if(owned){erase_sdk_account_password(ua_account(owned));ua_stop_all(true);owned=nullptr;} std::lock_guard<std::mutex> lock(mutex); view={RuntimeProcess::Failed,SipStatus::Failed}; command={};media={};last_hold_error=0;mute_rejected=false; }
+    void fail() { failed=true; adapter.stop(); if(owned){erase_sdk_account_password(ua_account(owned));ua_stop_all(true);owned=nullptr;} std::lock_guard<std::mutex> lock(mutex); view={RuntimeProcess::Failed,SipStatus::Failed}; command={};media={};last_hold_error=0;mute_rejected=false;audio_issue=NativeAudioRouteStatus::Ready; }
     bool checked(int error,const wchar_t* stage) {
         if(!error)return true;
         {std::lock_guard<std::mutex> lock(mutex);sdk_error=error;sdk_stage=stage;}
@@ -53,7 +54,7 @@ struct BaresipSipEngine::Impl {
     void publish_media(const SipRuntimeObservation& observed,BaresipSdkCallPort& calls) {
         auto current=observed.sip==SipStatus::InCall?calls.media_state(observed.call_id):NativeCallMediaState{};
         std::lock_guard<std::mutex> lock(mutex);
-        if(current.session!=media.session || current.call_id!=media.call_id){last_hold_error=0;mute_rejected=false;}
+        reset_native_call_feedback(media,current,last_hold_error,mute_rejected,audio_issue);
         current.hold_request_error=last_hold_error;
         media=current;
     }
@@ -94,6 +95,7 @@ struct BaresipSipEngine::Impl {
             view=observed; pending=std::move(command); command={};
         }
         if(!adapter.native_register_ok_seen() || !native_command_is_current(pending,observed)) return;
+        if(pending.action==Action::Transfer && !valid_native_transfer_uri(pending.destination))return;
         AudioInventory inventory;
         if(native_command_needs_audio_preflight(pending))
             inventory=inspect_windows_audio_devices(); // Owner thread, immediately before media creation.
@@ -106,6 +108,8 @@ struct BaresipSipEngine::Impl {
             if(!calls.answer(observed.call_id)) fail();
         } else if(pending.action==Action::Hangup && observed.call_id) {
             if(!calls.hangup(observed.call_id)) fail();
+        } else if(pending.action==Action::Transfer){
+            (void)calls.transfer(observed.call_id,pending.destination); // Local submission/failure lives in SDK readback.
         } else if(pending.action==Action::SetMute){
             const bool applied=calls.set_muted(observed.call_id,pending.desired);
             {std::lock_guard<std::mutex> lock(mutex);mute_rejected=!applied;}
@@ -126,7 +130,7 @@ struct BaresipSipEngine::Impl {
         owned=nullptr;
         if(claimed){conf_close(); if(core)baresip_close(); mod_close(); core=false; process_owner.store(nullptr); claimed=false;}
         erase(password);
-        std::lock_guard<std::mutex> lock(mutex); view={RuntimeProcess::Stopped,SipStatus::Disconnected}; command={};media={};last_hold_error=0;mute_rejected=false;
+        std::lock_guard<std::mutex> lock(mutex); view={RuntimeProcess::Stopped,SipStatus::Disconnected}; command={};media={};last_hold_error=0;mute_rejected=false;audio_issue=NativeAudioRouteStatus::Ready;
     }
     bool submit(Action a,std::string uri={},bool desired=false,const NativeCallMediaState* expected=nullptr) {
         {std::lock_guard<std::mutex> lock(mutex);
@@ -134,7 +138,8 @@ struct BaresipSipEngine::Impl {
             (a==Action::Dial && view.sip!=SipStatus::Registered) ||
             (a==Action::Answer && view.sip!=SipStatus::Ringing) ||
             (a==Action::Hangup && !view.call_id) ||
-            ((a==Action::SetMute || a==Action::SetHold) && (!expected || !native_media_controls_current(*expected,view) || !native_media_controls_current(media,view))))return false;
+            ((a==Action::SetMute || a==Action::SetHold || a==Action::Transfer) && (!expected || !native_media_controls_current(*expected,view) || !native_media_controls_current(media,view))) ||
+            (a==Action::Transfer && media.transfer!=NativeTransferState::None))return false;
          command={a,view.session,view.call_id,std::move(uri),desired};}
         // Native periodic timer is the fallback if the wake notification fails.
         (void)reactor.wake(); return true;
@@ -163,6 +168,10 @@ bool BaresipSipEngine::register_account(){
 bool BaresipSipEngine::start_call(const std::wstring& s){const auto uri=native_call_destination(s,impl_->account);return !uri.empty()&&impl_->submit(Impl::Action::Dial,uri);}
 bool BaresipSipEngine::set_muted(bool desired,const NativeCallMediaState& expected){return impl_->submit(Impl::Action::SetMute,{},desired,&expected);}
 bool BaresipSipEngine::set_held(bool desired,const NativeCallMediaState& expected){return impl_->submit(Impl::Action::SetHold,{},desired,&expected);}
+bool BaresipSipEngine::transfer_call(const std::wstring& destination,const NativeCallMediaState& expected){
+    const auto uri=native_transfer_destination(destination,impl_->account);
+    return !uri.empty() && impl_->submit(Impl::Action::Transfer,uri,false,&expected);
+}
 bool BaresipSipEngine::answer(){return impl_->submit(Impl::Action::Answer);}
 void BaresipSipEngine::hangup(){(void)impl_->submit(Impl::Action::Hangup);}
 void BaresipSipEngine::stop(){
@@ -174,6 +183,10 @@ std::wstring BaresipSipEngine::diagnostic()const {
     {std::lock_guard<std::mutex> lock(impl_->mutex);
      if(impl_->sdk_error)return L"Falha SDK em "+impl_->sdk_stage+L": "+std::to_wstring(impl_->sdk_error);
      if(impl_->audio_issue!=NativeAudioRouteStatus::Ready)return native_audio_route_feedback(impl_->audio_issue);
+     if(native_media_controls_current(impl_->media,impl_->view)){
+         if(impl_->media.transfer==NativeTransferState::Failed)return L"Pedido de transferencia falhou. Chamada preservada; continue ou encerre.";
+         if(impl_->media.transfer==NativeTransferState::Submitted)return L"Pedido de transferencia enviado ao SDK; confirmacao da central pendente.";
+     }
      if(impl_->last_hold_error)return L"Pedido de espera/retomada falhou no SDK. Estado local nao confirma a central; retome ou encerre.";
      if(impl_->mute_rejected)return L"Nao foi possivel alterar o mudo do microfone nesta chamada.";
      if(native_media_controls_current(impl_->media,impl_->view)){

@@ -19,6 +19,7 @@ public:
     bool answer();
     bool set_muted(bool desired,const NativeCallMediaState& expected);
     bool set_held(bool desired,const NativeCallMediaState& expected);
+    bool transfer_call(const std::wstring& destination,const NativeCallMediaState& expected);
     NativeCallMediaState media_state() const;
     void hangup() override;
     void stop();

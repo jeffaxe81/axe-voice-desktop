@@ -53,6 +53,8 @@ public:
         call_established_ = false;
         hangup_sent_ = false;
         answer_sent_ = false;
+        transfer_attempted_ = false;
+        transfer_failed_ = false;
         seen_calls_.clear();
         // Each native registration receives a *distinct immutable epoch*.
         // Contexts remain allocated until owner-proven callback quiescence.
@@ -101,6 +103,8 @@ public:
         call_established_ = false;
         hangup_sent_ = false;
         answer_sent_ = false;
+        transfer_attempted_ = false;
+        transfer_failed_ = false;
         seen_calls_.clear();
         // Only release the process-wide claim AFTER native unregistration
         // and callback admission quiescence, never while subscribed.
@@ -157,6 +161,8 @@ private:
         call_established_ = false;
         hangup_sent_ = false;
         answer_sent_ = false;
+        transfer_attempted_ = false;
+        transfer_failed_ = false;
     }
 
     void on_event(BaresipCallbackLifecycle::CapturedSession callback_session,
@@ -184,6 +190,7 @@ private:
         case BEVENT_CALL_OUTGOING:
         case BEVENT_CALL_ESTABLISHED:
         case BEVENT_CALL_CLOSED:
+        case BEVENT_CALL_TRANSFER_FAILED:
             break;
         default:
             return;
@@ -218,6 +225,10 @@ private:
             if (!lifecycle_.registration(callback_session, BaresipEventKind::Unregistering))
                 fail_closed();
             else sip_registered_ = false;
+            return;
+        case BEVENT_CALL_TRANSFER_FAILED:
+            if(transfer_attempted_ && active_call_ && bevent_get_call(event)==active_call_)
+                transfer_failed_=true;
             return;
         case BEVENT_CALL_INCOMING:
         case BEVENT_CALL_OUTGOING: {
@@ -254,6 +265,8 @@ private:
             call_established_ = false;
             hangup_sent_ = false;
             answer_sent_ = false;
+            transfer_attempted_ = false;
+            transfer_failed_ = false;
             seen_calls_.insert(call); // never queued, logged or persisted
             return;
         }
@@ -276,6 +289,8 @@ private:
                 active_incoming_ = false;
                 call_established_ = false;
                 answer_sent_ = false;
+                transfer_attempted_ = false;
+                transfer_failed_ = false;
                 hangup_sent_ = false;
             } else {
                 call_established_ = true;
@@ -308,5 +323,7 @@ private:
     bool call_established_ = false;
     bool hangup_sent_ = false;
     bool answer_sent_ = false;
+    bool transfer_attempted_ = false;
+    bool transfer_failed_ = false;
 };
 } // namespace axv

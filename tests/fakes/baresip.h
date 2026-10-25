@@ -13,7 +13,7 @@ enum bevent_ev {
   BEVENT_UNREGISTERING, BEVENT_SHUTDOWN, BEVENT_EXIT,
   BEVENT_CALL_INCOMING, BEVENT_CALL_OUTGOING,
   BEVENT_CALL_ESTABLISHED, BEVENT_CALL_CLOSED,
-  BEVENT_CALL_PROGRESS, BEVENT_AUDIO_ERROR, BEVENT_SIPSESS_FAILED,
+  BEVENT_CALL_PROGRESS, BEVENT_CALL_TRANSFER_FAILED, BEVENT_AUDIO_ERROR, BEVENT_SIPSESS_FAILED,
   BEVENT_SIPSESS_CONN, BEVENT_CALL_RTPESTAB, BEVENT_CALL_MENC
 };
 typedef void (bevent_h)(enum bevent_ev, struct bevent*, void*);
@@ -31,6 +31,7 @@ struct audio* call_audio(const struct call* selected);
 void audio_mute(struct audio* selected, bool muted);
 bool audio_ismuted(const struct audio* selected);
 int call_hold(struct call* selected, bool held);
+int call_transfer(struct call* selected,const char* destination);
 bool call_is_onhold(const struct call* selected);
 int ua_alloc(struct ua** selected, const char* aor);
 unsigned ua_destroy(struct ua* selected);

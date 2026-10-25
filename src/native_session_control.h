@@ -2,7 +2,7 @@
 #include "sip_event_projection.h"
 #include <string>
 namespace axv {
-enum class NativeCallAction {None,Dial,Answer,Hangup,SetMute,SetHold};
+enum class NativeCallAction {None,Dial,Answer,Hangup,SetMute,SetHold,Transfer};
 struct NativeCallCommand {
  NativeCallAction action=NativeCallAction::None;
  std::uint64_t session=0,call_id=0;
@@ -14,6 +14,7 @@ inline bool native_command_is_current(const NativeCallCommand& c,const SipRuntim
  switch(c.action){
  case NativeCallAction::Dial:return s.sip==SipStatus::Registered && !s.call_id;
  case NativeCallAction::Answer:return s.sip==SipStatus::Ringing && s.call_id;
+ case NativeCallAction::Transfer:
  case NativeCallAction::SetMute:
  case NativeCallAction::SetHold:return s.sip==SipStatus::InCall && s.call_id;
  case NativeCallAction::Hangup:return s.call_id && (s.sip==SipStatus::Calling||s.sip==SipStatus::Ringing||s.sip==SipStatus::InCall);
@@ -22,7 +23,7 @@ inline bool native_command_is_current(const NativeCallCommand& c,const SipRuntim
 }
 // UI double-clicks must not turn a declined duplicate into call teardown.
 class NativeCommandAdmission {
- std::uint64_t answer_session_=0,answer_call_=0,hangup_session_=0,hangup_call_=0;
+ std::uint64_t answer_session_=0,answer_call_=0,hangup_session_=0,hangup_call_=0,transfer_session_=0,transfer_call_=0;
 public:
  bool admit(const NativeCallCommand& c,const SipRuntimeObservation& s){
   if(!native_command_is_current(c,s))return false;
@@ -33,6 +34,10 @@ public:
   if(c.action==NativeCallAction::Hangup){
    if(hangup_session_==c.session && hangup_call_==c.call_id)return false;
    hangup_session_=c.session;hangup_call_=c.call_id;
+  }
+  if(c.action==NativeCallAction::Transfer){
+   if(transfer_session_==c.session && transfer_call_==c.call_id)return false;
+   transfer_session_=c.session;transfer_call_=c.call_id;
   }
   return true;
  }

@@ -5,7 +5,7 @@
 #include <cstdio>
 int main(int argc,char**argv) {
     axv::BaresipSipEngine engine;
-    if(engine.status()!=axv::SipStatus::Disconnected || engine.start_call(L"100") || engine.set_muted(true,{}) || engine.set_held(true,{}) || engine.media_state().available) return 1;
+    if(engine.status()!=axv::SipStatus::Disconnected || engine.start_call(L"100") || engine.set_muted(true,{}) || engine.set_held(true,{}) || engine.transfer_call(L"1002",{}) || engine.media_state().available) return 1;
     if(argc==1) {
         axv::SipAccount account{L"127.0.0.1",L"1001",5060,false};
         const axv::NativeAudioRoute route{L"capture-id",L"playback-id"};
@@ -41,7 +41,7 @@ int main(int argc,char**argv) {
     if(success && (engine.status()!=axv::SipStatus::Registered ||
        !axv::sip_proof_is_current(observed,observed.session))) return 4;
     if(!success && engine.status()!=axv::SipStatus::Failed) return 5;
-    if(engine.set_muted(true,{}) || engine.set_held(true,{}) || engine.media_state().available)return 13;
+    if(engine.set_muted(true,{}) || engine.set_held(true,{}) || engine.transfer_call(L"1002",{}) || engine.media_state().available)return 13;
     if(missing_audio){
         if(!engine.start_call(L"1002"))return 11;
         const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(3);

@@ -19,6 +19,15 @@ int main(){
  auto old=mute;old.call_id=2;CHECK(!axv::native_command_is_current(old,state));
  old=mute;old.session=1;CHECK(!axv::native_command_is_current(old,state));
  axv::NativeCallMediaState media{2,3,true,true,true};
+ int hold_error=5;bool mute_error=true;auto audio_error=axv::NativeAudioRouteStatus::MissingPlayback;
+ axv::reset_native_call_feedback(media,media,hold_error,mute_error,audio_error);
+ CHECK(hold_error==5 && mute_error && audio_error==axv::NativeAudioRouteStatus::MissingPlayback);
+ axv::reset_native_call_feedback(media,{},hold_error,mute_error,audio_error);
+ CHECK(hold_error==0 && !mute_error && audio_error==axv::NativeAudioRouteStatus::Ready);
+ auto replacement=media;replacement.call_id=4;
+ hold_error=5;mute_error=true;audio_error=axv::NativeAudioRouteStatus::MissingCapture;
+ axv::reset_native_call_feedback(media,replacement,hold_error,mute_error,audio_error);
+ CHECK(hold_error==0 && !mute_error && audio_error==axv::NativeAudioRouteStatus::Ready);
  CHECK(axv::native_media_controls_current(media,state));
  state.sip=axv::SipStatus::Ringing;CHECK(!axv::native_command_is_current(mute,state));CHECK(!axv::native_media_controls_current(media,state));
  state.sip=axv::SipStatus::InCall;state.call_id=4;CHECK(!axv::native_media_controls_current(media,state));

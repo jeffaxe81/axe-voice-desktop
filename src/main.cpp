@@ -727,6 +727,9 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     const HWND mute=GetDlgItem(GetParent(g_runtime_banner),kMuteFuture);
     const HWND hold=GetDlgItem(GetParent(g_runtime_banner),kHoldFuture);
     EnableWindow(mute,controls);EnableWindow(hold,controls);
+    const HWND transfer=GetDlgItem(GetParent(g_runtime_banner),kTransferFuture);
+    EnableWindow(transfer,controls && media.transfer==axv::NativeTransferState::None && axv::evaluate_destination(destination).valid());
+    SetWindowTextW(transfer,media.transfer==axv::NativeTransferState::Submitted?L"TRANSF. PEDIDA":media.transfer==axv::NativeTransferState::Failed?L"TRANSF. FALHOU":L"TRANSFERIR");
     SetWindowTextW(mute,controls && media.muted?L"MIC MUDO":L"MUDO");
     SetWindowTextW(hold,controls && media.local_hold?L"RETOMAR":L"ESPERA");
     const bool routes_locked=observed.process!=axv::RuntimeProcess::Stopped;
@@ -810,8 +813,13 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         }
         make_button(window, L"APAGAR", kBackspace, 39, 597, 170, 38, 0);
         make_button(window, L"LIMPAR", kClear, 218, 597, 171, 38, 0);
+#ifdef AXV_ENABLE_NATIVE_SIP
+        make_button(window,L"CHAMAR",kCallButton,39,651,170,51,0);
+        make_button(window,L"TRANSFERIR",kTransferFuture,219,651,170,51,0);
+#else
         make_button(window, L"CHAMAR  •  SIP INDISPONÍVEL", kCallButton,
                     39, 651, 350, 51, 0);
+#endif
 #ifdef AXV_ENABLE_NATIVE_SIP
         make_button(window,L"ATENDER",kAnswerNative,39,708,82,34,0);
 #else
@@ -1013,6 +1021,19 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             if (control == kClear) { edit_number(window, L'\0'); return 0; }
         }
 #ifdef AXV_ENABLE_NATIVE_SIP
+        if(LOWORD(wparam)==kTransferFuture && HIWORD(wparam)==BN_CLICKED){
+            const auto expected=g_displayed_media;
+            const auto call=native_engine().observation();
+            wchar_t target[129]{};GetWindowTextW(g_number,target,129);
+            if(!axv::native_media_controls_current(expected,call) || expected.transfer!=axv::NativeTransferState::None || !axv::evaluate_destination(target).valid()){
+                SetWindowTextW(g_status,L"Transferencia indisponivel. Informe destino valido em uma chamada estabelecida.");return 0;
+            }
+            const std::wstring review=L"Transferir esta chamada para:\n\n"+std::wstring(target)+L"\n\nTransferencia direta, sem consulta previa.";
+            if(MessageBoxW(window,review.c_str(),L"Revisar destino da transferencia",MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2)!=IDYES)return 0;
+            // The captured displayed identity remains fixed across the modal dialog.
+            if(!native_engine().transfer_call(target,expected))SetWindowTextW(g_status,L"Transferencia recusada: confira destino, TLS e chamada atual; um pedido por chamada.");
+            return 0;
+        }
         if((LOWORD(wparam)==kMuteFuture || LOWORD(wparam)==kHoldFuture) && HIWORD(wparam)==BN_CLICKED){
             const auto media=g_displayed_media; // Bind intent to what the user actually saw.
             const auto call=native_engine().observation();
@@ -1492,7 +1513,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0 || std::wcscmp(command_line,L"--native-ui-smoke")==0);
 #ifdef AXV_ENABLE_NATIVE_SIP
-    const wchar_t* title=L"AXE Voice | Candidato nativo 0.53";
+    const wchar_t* title=L"AXE Voice | Candidato nativo 0.54";
 #else
     const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
 #endif
@@ -1506,7 +1527,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
 #ifdef AXV_ENABLE_NATIVE_SIP
     if(command_line && std::wcscmp(command_line,L"--native-ui-smoke")==0) {
         bool ok=g_password && g_ca_file && GetDlgItem(window,kAnswerNative) &&
-            GetDlgItem(window,kMuteFuture) && GetDlgItem(window,kHoldFuture) &&
+            GetDlgItem(window,kMuteFuture) && GetDlgItem(window,kHoldFuture) && GetDlgItem(window,kTransferFuture) &&
+            !IsWindowEnabled(GetDlgItem(window,kTransferFuture)) &&
             !IsWindowEnabled(GetDlgItem(window,kMuteFuture)) && !IsWindowEnabled(GetDlgItem(window,kHoldFuture)) &&
             (GetWindowLongPtrW(g_password,GWL_STYLE)&ES_PASSWORD) &&
             !IsWindowEnabled(GetDlgItem(window,kCallButton));
@@ -1514,6 +1536,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         ok=ok && native_engine().status()==axv::SipStatus::Disconnected;
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kMuteFuture,BN_CLICKED),0);
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kHoldFuture,BN_CLICKED),0);
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kTransferFuture,BN_CLICKED),0);
         ok=ok && !native_engine().media_state().available && native_engine().status()==axv::SipStatus::Disconnected;
         std::vector<axv::AudioEndpoint> endpoints{{L"present",L"Microphone",true,false}};
         std::wstring missing=L"missing";

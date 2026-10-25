@@ -31,3 +31,5 @@ extern "C" void audio_mute(struct audio* selected,bool muted){if(selected)select
 extern "C" bool audio_ismuted(const struct audio* selected){return selected && selected->test_muted;}
 extern "C" int call_hold(struct call* selected,bool held){if(!selected)return 22;selected->test_held=held;return 0;}
 extern "C" bool call_is_onhold(const struct call* selected){return selected && selected->test_held;}
+
+extern "C" int call_transfer(struct call*,const char*){return 95;}
