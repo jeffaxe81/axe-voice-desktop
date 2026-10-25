@@ -138,6 +138,7 @@ constexpr int kStartupInTrayToggle = 3110;
 constexpr int kDeleteFavorite = 3111;
 constexpr int kRecallLastDestination = 3112;
 constexpr int kCopySafeDiagnostics = 3113;
+constexpr int kCopyReadinessReport = 3114;
 constexpr int kCopyDestination = 3120;
 constexpr int kPasteDestination = 3121;
 constexpr int kSelectAllDestination = 3122;
@@ -799,8 +800,7 @@ bool paste_dial_destination(HWND owner) {
     return true;
 }
 
-bool copy_safe_diagnostics(HWND owner) {
-    const std::wstring report = safe_desktop_diagnostics();
+bool copy_redacted_text(HWND owner, const std::wstring& report) {
     // PR #21: restrict even redacted text before transferring clipboard
     // ownership; do not allow arbitrary large blobs or empty reports.
     if (report.empty() || report.size() > 8192) return false;
@@ -818,6 +818,10 @@ bool copy_safe_diagnostics(HWND owner) {
     CloseClipboard();
     if (!transferred) GlobalFree(buffer);
     return transferred;
+}
+
+bool copy_safe_diagnostics(HWND owner) {
+    return copy_redacted_text(owner, safe_desktop_diagnostics());
 }
 
 void show_more_actions(HWND window) {
@@ -852,6 +856,7 @@ void show_more_actions(HWND window) {
                       (axv::desktop_autostart_starts_in_tray() ? MF_CHECKED : 0),
                 kStartupInTrayToggle, L"Iniciar minimizado na bandeja");
     AppendMenuW(menu, MF_STRING, kCopySafeDiagnostics, L"Copiar diagnostico local sem dados pessoais");
+    AppendMenuW(menu, MF_STRING, kCopyReadinessReport, L"Copiar checklist de prontidao sem dados pessoais");
     AppendMenuW(menu, MF_STRING, kSipPreflight, L"Pre-ativacao SIP segura (F3)");
     AppendMenuW(menu, MF_STRING, kSipVaultStatus, L"Verificar credencial SIP no Windows (F4)");
     AppendMenuW(menu, MF_STRING, kOpenCredentialManager, L"Abrir Gerenciador de Credenciais (F5)");
@@ -1612,6 +1617,15 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                     show_page(window, 0);
                     recall_destination(g_recent_destinations.front());
                 }
+                return 0;
+            }
+            if (control == kCopyReadinessReport) {
+                if (g_smoke_mode) return 0;
+                refresh_runtime_banner(g_baresip_process.poll());
+                // Six readiness booleans; never copy account or dial-field strings.
+                SetWindowTextW(g_status, copy_redacted_text(window, make_readiness_report())
+                    ? L"Checklist de prontidao copiado sem contas, destinos ou senhas."
+                    : L"Falha ao copiar checklist de prontidao.");
                 return 0;
             }
             if (control == kCopySafeDiagnostics) {
