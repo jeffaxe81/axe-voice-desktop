@@ -38,7 +38,7 @@ public:
         BaresipSdkEventAdapter* expected = nullptr;
         if (!process_owner_.compare_exchange_strong(expected, this))
             return false;
-        const auto session = lifecycle_.begin();
+        const auto session = lifecycle_.begin(reinterpret_cast<std::uintptr_t>(owned_ua));
         if (!session) {
             release_owner();
             return false;

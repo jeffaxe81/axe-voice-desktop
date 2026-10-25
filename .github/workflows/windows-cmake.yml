@@ -1,9 +1,9 @@
 name: AXE Voice Windows CI
 on:
   push:
-    branches: [main, "feature/**"]
-  pull_request:
     branches: [main]
+  pull_request:
+    branches: [main, "feature/**"]
   workflow_dispatch:
 jobs:
   build-and-test:

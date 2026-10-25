@@ -157,12 +157,19 @@ if(BUILD_TESTING)
   add_executable(test_baresip_call_correlation tests/test_baresip_call_correlation.cpp)
   target_compile_features(test_baresip_call_correlation PRIVATE cxx_std_17)
   add_test(NAME baresip_call_correlation COMMAND test_baresip_call_correlation)
+  add_executable(test_baresip_pipeline_hardening tests/test_baresip_pipeline_hardening.cpp)
+  target_compile_features(test_baresip_pipeline_hardening PRIVATE cxx_std_17)
+  add_test(NAME baresip_pipeline_hardening COMMAND test_baresip_pipeline_hardening)
   add_executable(test_baresip_callback_ingress tests/test_baresip_callback_ingress.cpp)
   target_compile_features(test_baresip_callback_ingress PRIVATE cxx_std_17)
   add_test(NAME baresip_callback_ingress COMMAND test_baresip_callback_ingress)
   add_executable(test_baresip_callback_lifecycle tests/test_baresip_callback_lifecycle.cpp)
   target_compile_features(test_baresip_callback_lifecycle PRIVATE cxx_std_17)
   add_test(NAME baresip_callback_lifecycle COMMAND test_baresip_callback_lifecycle)
+  add_test(NAME baresip_sdk_integrity_preflight COMMAND "${CMAKE_COMMAND}"
+    "-DAXV_REPOSITORY_ROOT=${CMAKE_CURRENT_SOURCE_DIR}"
+    "-DAXV_SCRATCH=${CMAKE_CURRENT_BINARY_DIR}/axv_sdk_integrity_test"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cmake/test_baresip_sdk_integrity.cmake")
   add_executable(test_baresip_sdk_event_adapter
     tests/test_baresip_sdk_event_adapter.cpp
     src/baresip_sdk_event_adapter.cpp)
