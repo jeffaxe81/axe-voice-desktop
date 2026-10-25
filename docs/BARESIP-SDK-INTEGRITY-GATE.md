@@ -55,3 +55,31 @@ sintética ainda pode satisfazer o teste de bytes.
   concluir homologação Windows 10/11 e distribuição assinada.
 
 **Não remover o comportamento fail-closed ou mesclar na main antes da homologação.**
+
+
+
+## Complemento: dependência libre/re e ABI real
+
+A integração opcional agora exige também `re.h` e a biblioteca MSVC
+`libre.lib` (ou outra biblioteca auditada compatível) com SHA-256 pinado.
+O CMake recusa arquivos ausentes, vazios, hashes divergentes e os dublês
+`tests/fakes`. A suíte padrão testa essas regras apenas com arquivos
+sintéticos; não baixa SDK real.
+
+O contrato C++ `src/baresip_sdk_abi_contract.h` exige as assinaturas
+públicas de Baresip e libre: eventos, registro, alocação de conta,
+`re_main`, `mqueue_alloc`/`mqueue_push` e demais funções. Ao ativar
+`AXV_BUILD_NATIVE_BARESIP_ADAPTER=ON`, o alvo
+`axv_native_baresip_abi_probe` força **linkagem real** dessas funções
+contra as duas bibliotecas e compara o macro `BARESIP_VERSION`.
+
+Forneça adicionalmente:
+- `AXV_LIBRE_INCLUDE_DIR`: pasta auditada que contém `re.h`
+- `AXV_LIBRE_LIBRARY`: caminho da biblioteca libre/re .lib auditada
+- `AXV_LIBRE_HEADER_SHA256` e `AXV_LIBRE_LIBRARY_SHA256`: hashes reais
+
+A linkagem poderá necessitar bibliotecas transitivas do mesmo build;
+falhas são bloqueantes e não podem ser mascaradas. O executável de prova
+de ABI não configura conta, inicia o loop ou registra SIP.
+A suíte da CI regular usa fake headers e **não substitui** esse teste
+de linkagem com SDK verdadeiro.

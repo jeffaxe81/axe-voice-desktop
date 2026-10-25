@@ -2,6 +2,7 @@
 // Optional, isolated laboratory bridge. NOT part of the AXEVoice executable.
 // Production requires the audited Baresip and libre SDKs and an event-loop
 // owner that serializes callbacks with stop() / unregister completion.
+#include <re.h> // Upstream Baresip public API requires libre declarations.
 #include <baresip.h>
 #include "baresip_callback_lifecycle.h"
 #include <cstddef>
@@ -86,6 +87,10 @@ public:
     void stop() {
         // Event-loop contract: no concurrent/in-flight SDK callbacks here.
         if (registered_) bevent_unregister(&BaresipSdkEventAdapter::callback);
+        // Keep registered_ and native owner/context stable until every callback
+        // which already entered has released its outer lease. Otherwise a
+        // concurrent active() read may race against this state change.
+        lifecycle_.revoke_and_wait();
         registered_ = false;
         lifecycle_.revoke_and_wait();
         owner_ = nullptr;
@@ -110,6 +115,10 @@ public:
         return active() ? captured_.mailbox_session : 0;
     }
 
+    bool native_register_ok_seen() const {
+        return active() && sip_registered_ && owner_ && ua_isregistered(owner_);
+    }
+
 private:
     // One owner for this SDK event-handler entry point. The upstream native
     // registry is keyed by the FUNCTION POINTER, not its context argument.
@@ -128,7 +137,10 @@ private:
     static void callback(enum bevent_ev type, struct bevent* event, void* arg) {
         auto* context = static_cast<CallbackContext*>(arg);
         if (context && context->owner)
-            context->owner->on_event(context->captured, type, event);
+            {
+            auto lease = context->owner->lifecycle_.hold_native_callback(context->captured);
+            if (lease) context->owner->on_event(context->captured, type, event);
+        }
     }
 
     bool same_epoch(BaresipCallbackLifecycle::CapturedSession captured) const {
@@ -195,7 +207,7 @@ private:
             else sip_registered_ = false;
             return;
         case BEVENT_REGISTER_OK:
-            if (!lifecycle_.registration(callback_session, BaresipEventKind::RegisterOk))
+            if (!ua_isregistered(owner_) || !lifecycle_.registration(callback_session, BaresipEventKind::RegisterOk))
                 fail_closed();
             else sip_registered_ = true;
             return;
@@ -211,6 +223,13 @@ private:
             return;
         case BEVENT_CALL_INCOMING:
         case BEVENT_CALL_OUTGOING: {
+            if (!native_register_ok_seen()) { fail_closed(); return; }
+            // MVP requires a still-registered native account before a call
+            // can enter the call-state pipeline; process-up alone is not proof.
+            if (!ua_isregistered(owner_)) {
+                fail_closed();
+                return;
+            }
             const struct call* call = bevent_get_call(event);
             // Never accept pointer reuse in the same session. Otherwise a late
             // callback could confuse a new call with a previously closed one.

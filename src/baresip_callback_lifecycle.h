@@ -119,6 +119,16 @@ public:
         return current_;
     }
 
+    // Cover the ENTIRE native callback, not only the few microseconds of
+    // mailbox publication. The owner must call this at callback ENTRY.
+    // This fence does not authenticate a raw C callback's original source.
+    BaresipCallbackFence::Lease hold_native_callback(CapturedSession captured) {
+        auto lease = fence_.admit(captured.fence_generation);
+        if (!lease || ingress_.session() != captured.mailbox_session)
+            return {};
+        return lease;
+    }
+
     bool registration(CapturedSession captured, BaresipEventKind event) {
         auto lease = fence_.admit(captured.fence_generation);
         return lease && ingress_.registration(captured.mailbox_session, captured.account_identity, event);
@@ -149,16 +159,37 @@ public:
         return lease && ingress_.session() == captured.mailbox_session;
     }
 
+    // Safe to call INSIDE a callback: revoke without waiting on its own lease.
+    // Normal stop() must still unregister the SDK handler and call
+    // revoke_and_wait() after the native event-loop reaches quiescence.
+    void reject_current() {
+        std::lock_guard<std::mutex> lock(lifecycle_);
+        fence_.close();
+        ingress_.revoke();
+    }
+
+    // Non-authorizing view of a captured session. Neither a process probe
+    // nor a native callback pointer proves registration or media security.
+    bool is_live(CapturedSession captured) {
+        auto lease = fence_.admit(captured.fence_generation);
+        return lease && ingress_.session() == captured.mailbox_session;
+    }
+
     // Unregister the native callback FIRST to prevent new native C API entries;
     // then use this operation to reject queued/stale work, drop pending events
     // and wait for callbacks already admitted to finish. Not callable from one
     // of those callbacks. The native adapter must serialize its registrations
     // with begin()/revoke_and_wait() and maintain object lifetime externally.
     void revoke_and_wait() {
-        std::lock_guard<std::mutex> lock(lifecycle_);
+        std::unique_lock<std::mutex> lock(lifecycle_);
         fence_.close();
         ingress_.revoke();
+        // Release lifecycle_ while waiting: an already admitted callback may
+        // enter fail_closed() -> reject_current(), which needs this mutex.
+        // current_ remains nonempty, so begin() cannot admit a new generation.
+        lock.unlock();
         fence_.wait();
+        lock.lock();
         current_ = {};
     }
 

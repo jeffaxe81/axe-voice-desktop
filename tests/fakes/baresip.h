@@ -1,4 +1,5 @@
 #pragma once
+#define BARESIP_VERSION "4.12.0"
 // Test-double SDK subset only. Never install or ship as a Baresip SDK header.
 #ifdef __cplusplus
 extern "C" {
@@ -25,6 +26,11 @@ int ua_connect(struct ua* ua, struct call** callp, const char* from_uri,
 int ua_answer(struct ua* ua, struct call* call, enum vidmode vmode);
 void ua_hangup(struct ua* ua, struct call* call, unsigned short scode,
                const char* reason);
+int ua_alloc(struct ua** selected, const char* aor);
+unsigned ua_destroy(struct ua* selected);
+int ua_register(struct ua* selected);
+void ua_unregister(struct ua* selected);
+bool ua_isregistered(const struct ua* selected);
 #ifdef __cplusplus
 }
 #endif
