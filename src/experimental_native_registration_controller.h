@@ -17,6 +17,7 @@ enum class NativeControlDecision {
 struct NativeControlView {
     bool control_thread_running = false;
     bool account_provisioned = false;
+    bool native_admission_open = false;
     bool register_request_pending = false;
     bool cancellation_requested = false;
     bool terminal_failure_seen = false;
