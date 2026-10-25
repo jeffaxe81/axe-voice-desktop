@@ -2,8 +2,7 @@
 // Compile-time type contract against audited Baresip and libre headers.
 // These declarations intentionally mirror the upstream public API; no SDK
 // calls occur here. SHA preflight separately pins local SDK bytes.
-#include <re.h>
-#include <baresip.h>
+#include "baresip_sdk_headers.h"
 #include <string_view>
 #include <type_traits>
 
