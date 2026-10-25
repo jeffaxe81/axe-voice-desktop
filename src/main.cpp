@@ -902,12 +902,15 @@ void update_swap_button() {
     const auto plan = axv::plan_audio_role_swap(
         g_audio_outputs, g_selected_output_id, g_selected_ringtone_id);
     EnableWindow(GetDlgItem(parent, kSwapAudioRolesButton),
-                 plan.can_swap && !g_preview_running.load() && !g_preview_pending);
+                 plan.can_swap && !g_preview_running.load() && !g_preview_pending &&
+                 !g_audio_inventory_worker.busy() && !g_audio_refresh_retry.pending());
 }
 
 void update_audio_preview_buttons(HWND window) {
     const bool running = g_preview_running.load();
-    const bool idle = !running && !g_preview_pending && !g_smoke_mode;
+    const bool idle = !running && !g_preview_pending && !g_smoke_mode &&
+                      !g_audio_inventory_worker.busy() &&
+                      !g_audio_refresh_retry.pending();
     const bool has_voice = axv::select_audio_preview_target(
         g_audio_outputs, g_selected_output_id, g_selected_ringtone_id,
         axv::AudioPreviewRole::Voice).available;
@@ -988,6 +991,21 @@ void refresh_audio_panel() {
     if (g_preview_running.load()) g_preview_cancel.store(true);
     (void)g_incoming_ring_coordinator.revoke(g_incoming_ring_sink);
     g_audio_inventory_worker.invalidate();
+    // A pending query is not an assertion that the last-known devices remain
+    // usable. Keep preferred IDs in RAM but disable route-changing controls
+    // until a fresh snapshot has been applied by the UI thread.
+    for (HWND combo : {g_input_audio_combo, g_output_audio_combo,
+                       g_ringtone_audio_combo}) {
+        if (combo) EnableWindow(combo, FALSE);
+    }
+    if (g_output_audio_combo) {
+        HWND parent = GetParent(g_output_audio_combo);
+        if (parent) {
+            EnableWindow(GetDlgItem(parent, kSwapAudioRolesButton), FALSE);
+            EnableWindow(GetDlgItem(parent, kTestVoiceButton), FALSE);
+            EnableWindow(GetDlgItem(parent, kTestRingtoneButton), FALSE);
+        }
+    }
     if (g_audio_inventory_worker.busy()) {
         g_audio_refresh_retry.defer();
         SetWindowTextW(g_headset_status,
