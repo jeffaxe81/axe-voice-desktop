@@ -1,10 +1,10 @@
-# AXE Voice Desktop — Windows LAB (v0.139.0, desenvolvimento)
+# AXE Voice Desktop — Windows LAB (v0.144.0, desenvolvimento)
 
 Protótipo de softphone corporativo Win32 com áudio local, preferências separadas para voz/toque, inventário de dispositivos Windows, atalhos de discador e pré-verificações SIP.
 
 **Estado real:** o aplicativo `AXEVoice.exe` mantém o motor `UnavailableSipEngine` e o botão Chamar bloqueado, pois não há prova de registro SIP autenticado, TLS de servidor validado, SRTP ou áudio de chamada. As credenciais SIP podem ser administradas no cofre Windows local; a integração do SDK Baresip para autenticação existe somente no alvo experimental, desabilitado por padrão e ainda não homologado.
 
-**O código v0.139 não foi compilado nem testado nesta rodada.** A arquitetura Baresip é trabalho de laboratório; não confundir o percentual de entregas de código com aceite operacional. A `main` mantém a base histórica MicroSIP/PJSIP; promoção exige os [critérios documentados](docs/AXEVOICE-SIP-SDK-HARDENING-V116-V120-UNTESTED.md).
+**O código v0.144 não foi compilado nem testado nesta rodada.** A arquitetura Baresip é trabalho de laboratório; não confundir o percentual de entregas de código com aceite operacional. A `main` mantém a base histórica MicroSIP/PJSIP; promoção exige os [critérios documentados](docs/AXEVOICE-SIP-SDK-HARDENING-V116-V120-UNTESTED.md).
 
 A evolução v0.126–v0.130 reforça o controle experimental das notificações nativas: exige a ordem REGISTERING/REGISTER_OK, conserva erros de registro por sessão, reconhece rejeição imediata e revoga a sessão se a confirmação de registro desaparecer. **Nenhuma dessas melhorias habilita chamadas no aplicativo.**
 
@@ -21,6 +21,16 @@ O adaptador Baresip experimental agora valida com `call_get_ua` a conta propriet
 O relatório de prontidão F2 passa a usar o formatador de indicadores booleanos da PR histórica #21, sem dados de identidade, senha ou destino. O diagnóstico local para área de transferência ganhou limite de 8.192 caracteres. Nenhuma das PRs antigas foi mesclada integralmente ou fechada.
 
 **Motor SIP nativo, autenticação, RTP e áudio real seguem indisponíveis no executável; nenhuma compilação ou teste nesta rodada.**
+
+## Rascunhos #30, #31 e #40 — integração seletiva v0.140–v0.144
+
+- Reconhece adicionalmente `DBT_CONFIGCHANGED` sem tratar a notificação como prova de mídia SIP.
+- Observa mudanças de dispositivos padrão do Windows Core Audio (`IMMNotificationClient`) para comunicação e multimídia; mensagens da COM apenas notificam a interface, sem dados de conta ou identificação de dispositivos.
+- Reutiliza o debounce, limita a atualização à aba de Áudio visível e interrompe os testes locais de saída antes da mudança de rota.
+- Faz `UnregisterEndpointNotificationCallback` ao destruir a janela; falha na inicialização mantém atualização manual e aviso genérico `WM_DEVICECHANGE`.
+- O filtro de callbacks Baresip verifica a geração e a sessão atual do mailbox antes de admitir um callback nativo.
+
+**Sem compilar nem executar testes nesta rodada**. Não implica homologação de headset, áudio real SIP ou autenticação com PABX. Os rascunhos históricos permanecem abertos porque o merge é parcial.
 
 ## Compilar e abrir no Windows
 
