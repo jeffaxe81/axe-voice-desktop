@@ -25,6 +25,8 @@
 #include "audio_selection_feedback.h"
 #include "audio_hotplug_policy.h"
 #include "audio_endpoint_watcher.h"
+#include "audio_inventory_async.h"
+#include "audio_manual_refresh.h"
 #include "audio_routing_preview.h"
 #include "ringtone_preview.h"
 #include "audio_role_swap.h"
@@ -170,6 +172,10 @@ std::wstring g_preferred_ringtone_id;
 axv::AudioHotplugPolicy g_audio_hotplug;
 // PR #40: COM callbacks post only a GUI wake-up. The UI owns refresh/debounce.
 axv::AudioEndpointWatcher g_audio_endpoint_watcher;
+// PR #30: bounded one-at-a-time Core Audio enumeration on a worker.
+// Worker holds no HWND or SIP state and never writes the UI.
+axv::AudioInventoryAsync g_audio_inventory_worker(axv::inspect_windows_audio_devices);
+axv::AudioManualRefresh g_audio_refresh_retry;
 std::thread g_preview_worker;
 std::atomic<bool> g_preview_running{false};
 std::atomic<bool> g_preview_cancel{false};
@@ -528,6 +534,12 @@ void bring_focused_control_into_view(HWND window,HWND control) {
 void show_page(HWND root, int page) {
     if (g_page != page) set_viewport_scroll(root,0);
     if (page != 2 && g_preview_running.load()) g_preview_cancel.store(true);
+    // Revoke stale Core Audio work when leaving the audio tab. An in-flight
+    // detached worker may finish but cannot publish into the next page.
+    if (page != 2) {
+        g_audio_inventory_worker.invalidate();
+        g_audio_refresh_retry.cancel();
+    }
     g_page = page;
     for (auto child : g_dial_controls) {
         const bool visible = page == 0 &&
@@ -731,7 +743,7 @@ std::wstring safe_desktop_diagnostics() {
         process == axv::ProcessStatus::Stopped ? L"stopped" :
         process == axv::ProcessStatus::Failed ? L"failed" :
         process == axv::ProcessStatus::Exited ? L"exited" : L"stopping";
-    return std::wstring(L"AXE Voice Desktop LAB 0.144\r\n") +
+    return std::wstring(L"AXE Voice Desktop LAB 0.149\r\n") +
         L"Processo Baresip: " + process_text +
         L"\r\nRegistro SIP confirmado: NAO\r\nChamada RTP/SRTP homologada: NAO\r\n" +
         L"Autostart: " + (axv::desktop_autostart_enabled() ? L"sim" : L"nao") +
@@ -890,12 +902,15 @@ void update_swap_button() {
     const auto plan = axv::plan_audio_role_swap(
         g_audio_outputs, g_selected_output_id, g_selected_ringtone_id);
     EnableWindow(GetDlgItem(parent, kSwapAudioRolesButton),
-                 plan.can_swap && !g_preview_running.load() && !g_preview_pending);
+                 plan.can_swap && !g_preview_running.load() && !g_preview_pending &&
+                 !g_audio_inventory_worker.busy() && !g_audio_refresh_retry.pending());
 }
 
 void update_audio_preview_buttons(HWND window) {
     const bool running = g_preview_running.load();
-    const bool idle = !running && !g_preview_pending && !g_smoke_mode;
+    const bool idle = !running && !g_preview_pending && !g_smoke_mode &&
+                      !g_audio_inventory_worker.busy() &&
+                      !g_audio_refresh_retry.pending();
     const bool has_voice = axv::select_audio_preview_target(
         g_audio_outputs, g_selected_output_id, g_selected_ringtone_id,
         axv::AudioPreviewRole::Voice).available;
@@ -924,13 +939,10 @@ void update_audio_preview_buttons(HWND window) {
     }
 }
 
-void refresh_audio_panel() {
-    // An explicit refresh or tab visit supersedes any pending hotplug hint.
-    g_audio_hotplug.acknowledge_manual_refresh();
-    if (g_preview_running.load()) g_preview_cancel.store(true);
-    // A new inventory can invalidate the prior incoming-ringtone route.
-    (void)g_incoming_ring_coordinator.revoke(g_incoming_ring_sink);
-    const auto inventory = axv::inspect_windows_audio_devices();
+void apply_audio_inventory(const axv::AudioInventory& inventory) {
+    // UI thread only. The result was captured by the worker for the current
+    // epoch and must never be shown after a tab switch or during playback.
+    if (g_page != 2 || g_preview_running.load() || g_preview_pending) return;
     if (inventory.error != axv::AudioInventoryError::None) {
         // Port of PR #18: a failed Core Audio query says nothing about device
         // removal. Disable previews and selectors, but keep both active and
@@ -968,6 +980,47 @@ void refresh_audio_panel() {
     update_audio_preview_buttons(GetParent(g_ringtone_audio_combo));
     SetWindowTextW(g_headset_status,
         axv::audio_routing_preview_feedback({microphone, speaker, ringtone}));
+}
+
+// New scans never run on the Win32 UI thread. Repeated button clicks,
+// device-change storms and tab reentry coalesce into at most one replacement
+// snapshot after the outstanding worker exits (PR #30).
+void refresh_audio_panel() {
+    g_audio_hotplug.acknowledge_manual_refresh();
+    if (g_smoke_mode || g_page != 2) return;
+    if (g_preview_running.load()) g_preview_cancel.store(true);
+    (void)g_incoming_ring_coordinator.revoke(g_incoming_ring_sink);
+    g_audio_inventory_worker.invalidate();
+    // A pending query is not an assertion that the last-known devices remain
+    // usable. Keep preferred IDs in RAM but disable route-changing controls
+    // until a fresh snapshot has been applied by the UI thread.
+    for (HWND combo : {g_input_audio_combo, g_output_audio_combo,
+                       g_ringtone_audio_combo}) {
+        if (combo) EnableWindow(combo, FALSE);
+    }
+    if (g_output_audio_combo) {
+        HWND parent = GetParent(g_output_audio_combo);
+        if (parent) {
+            EnableWindow(GetDlgItem(parent, kSwapAudioRolesButton), FALSE);
+            EnableWindow(GetDlgItem(parent, kTestVoiceButton), FALSE);
+            EnableWindow(GetDlgItem(parent, kTestRingtoneButton), FALSE);
+        }
+    }
+    if (g_audio_inventory_worker.busy()) {
+        g_audio_refresh_retry.defer();
+        SetWindowTextW(g_headset_status,
+            L"Consulta anterior em andamento; nova atualizacao agendada...");
+        return;
+    }
+    if (g_audio_inventory_worker.request()) {
+        g_audio_refresh_retry.started();
+        SetWindowTextW(g_headset_status,
+            L"Consultando dispositivos de audio sem bloquear a interface...");
+    } else {
+        g_audio_refresh_retry.defer();
+        SetWindowTextW(g_headset_status,
+            L"Consulta indisponivel; nova tentativa pendente...");
+    }
 }
 
 bool defer_route_while_preview_active(HWND window, const axv::AudioRouteChange& change) {
@@ -2117,6 +2170,23 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 if (route.kind != axv::AudioRouteChangeKind::None)
                     apply_audio_route_change(window, route);
             }
+            // Worker results never write controls directly. The timer is the
+            // only consumer and never applies a new audio route while the
+            // outgoing local preview is still active or stopping.
+            if (!g_smoke_mode && g_page == 2 && IsWindowVisible(window) &&
+                !IsIconic(window)) {
+                if (g_audio_refresh_retry.retry_ready(g_audio_inventory_worker.busy())) {
+                    if (g_audio_inventory_worker.request()) {
+                        g_audio_refresh_retry.started();
+                        SetWindowTextW(g_headset_status,
+                            L"Atualizando dispositivos apos consulta anterior...");
+                    }
+                } else if (!g_audio_refresh_retry.pending() &&
+                           !g_preview_running.load() && !g_preview_pending) {
+                    if (auto completed = g_audio_inventory_worker.take())
+                        apply_audio_inventory(*completed);
+                }
+            }
             refresh_runtime_banner(g_baresip_process.poll());
             if (g_shutdown.pending()) {
                 const auto state = g_baresip_process.poll();
@@ -2182,6 +2252,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         // Unregister before the HWND is invalidated; no native COM callback
         // may retain an owner pointer or submit any SIP work.
         g_audio_endpoint_watcher.stop();
+        g_audio_inventory_worker.invalidate();
+        g_audio_refresh_retry.cancel();
         (void)g_incoming_ring_coordinator.revoke(g_incoming_ring_sink);
         // Stop cooperatively before waiting; worker never posts to a dead HWND.
         g_preview_cancel.store(true);
@@ -2220,7 +2292,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.144",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.149",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VSCROLL,
         CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi)+GetSystemMetricsForDpi(SM_CXVSCROLL,g_dpi),
