@@ -1,0 +1,36 @@
+name: AXE Voice native SDK smoke
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/native-sdk-smoke.yml'
+      - 'scripts/build-native-sdk-smoke.ps1'
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+      - 'src/baresip*'
+      - 'tests/native_libre_reactor_smoke.cpp'
+      - 'tests/baresip_sdk_abi_probe.cpp'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  msvc-native-sdk:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned MSVC candidate and run real libre reactor
+        shell: pwsh
+        run: ./scripts/build-native-sdk-smoke.ps1
+      - name: Publish candidate SDK with provenance and licenses
+        uses: actions/upload-artifact@v4
+        with:
+          name: AXE-native-SDK-MSvc-ABI-only
+          path: build/native-sdk-prefix/
+          if-no-files-found: error
+      - name: Publish build-only ABI and reactor binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: AXE-native-SDK-probes
+          path: build/native-sdk-product/Release/axv_native_*.exe
+          if-no-files-found: error

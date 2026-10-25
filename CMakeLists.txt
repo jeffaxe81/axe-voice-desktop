@@ -86,7 +86,12 @@ if(AXV_BUILD_NATIVE_BARESIP_ADAPTER)
   foreach(_native_target IN ITEMS axv_native_baresip_adapter
       axv_native_baresip_sdk_abi_probe axv_native_baresip_abi_probe
       axv_native_libre_reactor_smoke)
-    target_compile_definitions(${_native_target} PRIVATE WIN32)
+    target_compile_definitions(${_native_target} PRIVATE WIN32 NOMINMAX WIN32_LEAN_AND_MEAN)
+    # Required by the static Windows libre profile; raw .lib paths do not
+    # propagate its upstream RE_LIBS interface automatically.
+    target_link_libraries(${_native_target} PRIVATE
+      qwave iphlpapi wsock32 ws2_32 dbghelp
+      winmm gdi32 crypt32 strmiids ole32 oleaut32)
   endforeach()
 endif()
 add_executable(AXEVoice WIN32 src/main.cpp)
@@ -410,6 +415,7 @@ if(BUILD_TESTING)
   add_test(NAME sip_event_projection_legacy COMMAND test_sip_event_projection_legacy)
 endif()
 
+if(BUILD_TESTING)
 # Each test belongs to exactly one quality gate. Fail the CI on empty tiers.
 get_property(axv_registered_tests DIRECTORY PROPERTY TESTS)
 foreach(axv_test IN LISTS axv_registered_tests)
@@ -427,6 +433,7 @@ set_tests_properties(integration_sip_safety baresip_sdk_abi_probe windows_proces
   baresip_registration_command_dispatcher baresip_registration_command_races
   baresip_registration_lab_worker
   call_command_authorization sip_command_executor sip_command_watchdog PROPERTIES LABELS "integration")
+endif()
 set_target_properties(AXEVoice PROPERTIES OUTPUT_NAME "AXE-Voice")
 
 

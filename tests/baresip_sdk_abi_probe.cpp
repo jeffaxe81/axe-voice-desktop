@@ -1,7 +1,10 @@
-#include <re.h> // Real Baresip headers require libre public declarations first.
-#include <baresip.h>
+#include "../src/baresip_sdk_headers.h"
 #include "../src/baresip_sdk_event_adapter.h"
 #include <type_traits>
+#include <unordered_set>
+#if defined(debug) || defined(info) || defined(warning) || defined(loglv) || defined(log)
+#error Baresip logging macros leaked into the C++ ABI probe
+#endif
 
 // Link/ABI probe: CI uses only a fake SDK. The optional real-SDK executable
 // is BUILT but NEVER RUN by the default build or by CTest.

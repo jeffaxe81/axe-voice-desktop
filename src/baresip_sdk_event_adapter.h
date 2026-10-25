@@ -2,8 +2,7 @@
 // Optional, isolated laboratory bridge. NOT part of the AXEVoice executable.
 // Production requires the audited Baresip and libre SDKs and an event-loop
 // owner that serializes callbacks with stop() / unregister completion.
-#include <re.h> // Upstream Baresip public API requires libre declarations.
-#include <baresip.h>
+#include "baresip_sdk_headers.h"
 #include "baresip_callback_lifecycle.h"
 #include <cstddef>
 #include <cstdint>
