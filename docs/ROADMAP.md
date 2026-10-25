@@ -61,3 +61,5 @@ SHA-256: `9c1ff942ae1ae56bdfcdd04c3d6e242a056d7f0dd50bb19f6e13226e7c819b83`
 
 ## Projeto 2 — Mobile
 Registrado para etapa posterior. Não iniciar antes de liberação formal do Projeto 1.
+
+- [x] 0.55: toque local de chamadas recebidas verificadas, saída independente e cancelamento por chamada. [Escopo e limites](integration/NATIVE-RINGTONE.md).

@@ -1,4 +1,4 @@
-AXE Voice Native Candidate 0.54.0
+AXE Voice Native Candidate 0.55.0
 
 This is a validation build, not a production-approved release.
 Enter server, extension, port and session password in Settings, then Register.
@@ -7,7 +7,7 @@ TLS requires a trusted CA PEM file. Plain UDP is unencrypted; select it only acc
 SIP TLS does not encrypt RTP. This candidate does not claim SRTP support.
 Select microphone and voice output in the Audio panel before registration. Those WASAPI endpoint IDs are fixed for the session; stop/re-register to change them.
 Without explicit selections, Windows default communications capture/playback devices are used.
-Missing selected endpoints block new calls/answering; reconnect or stop and choose another endpoint. Ring preview remains independent.
+Missing selected endpoints block new calls/answering; reconnect or stop and choose another endpoint. Incoming ringtone uses an independent output; its empty selection follows the Windows multimedia default. Missing explicit ringtone outputs do not fall back. Answer/decline silences the current alert, including when the SIP action fails; the visual call remains available.
 Physical headset audio, bidirectional RTP and actual Digitro PBX calls require acceptance testing.
 Third-party license texts are included under licenses/.
 The installer and executable are unsigned. File hashes identify artifacts, not publisher certification.

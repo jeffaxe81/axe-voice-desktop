@@ -1,4 +1,4 @@
-# Release candidata nativa0.54 — checklist atual
+# Release candidata nativa0.55 — checklist atual
 
 ## Implementações
 - [x] Motor Baresip/libre e OpenSSL fixados, registro/callbacks e comandos chamar/atender/encerrar no candidato.
@@ -13,9 +13,12 @@ Os testes Windows/SDK/instalador são exigidos no commit final antes de merge. C
 
 - [x] Limpeza do aviso de áudio ao encerrar/trocar chamada e pedido de transferência direta com revisão de destino e identidade da chamada (0.54).
 
+- [x] Toque de chamada recebida verificada, saída independente, cancelamento e ações vinculadas à chamada exibida (0.55).
+
 ## Homologação externa pendente
 - [ ] Registrar a conta descartável na central Dígitro identificada.
 - [ ] Confirmar chamadas originadas e recebidas entre dois endpoints reais.
+- [ ] Confirmar audibilidade do toque, parada ao atender/recusar e desconexão/reconexão da saída de toque no Windows físico.
 - [ ] Confirmar voz nos dois sentidos e headset escolhido; desconexão/reconexão física.
 - [ ] Confirmar silêncio do microfone em mudo e espera/retomada aceitas pela central.
 - [ ] Confirmar REFER/NOTIFY, destino final e áudio após transferência direta na central.

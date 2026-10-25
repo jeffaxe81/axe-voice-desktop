@@ -28,8 +28,10 @@ struct ScopedFormat {
     ~ScopedFormat() { if (ptr) CoTaskMemFree(ptr); }
 };
 
-TonePreviewState render_preview(const std::wstring& endpoint_id) {
-    if (endpoint_id.empty() || endpoint_id.size() > 4096)
+TonePreviewState render_preview(const std::wstring& endpoint_id,const std::atomic<bool>* cancel,bool multimedia_default) {
+    const auto cancelled=[cancel]{return cancel && cancel->load();};
+    if(cancelled())return TonePreviewState::Cancelled;
+    if ((endpoint_id.empty() && !multimedia_default) || endpoint_id.size() > 4096 || endpoint_id.find(L'\0')!=std::wstring::npos)
         return TonePreviewState::MissingDevice;
 
     // This is a short-lived worker, not the UI thread. Baresip has no role.
@@ -43,8 +45,10 @@ TonePreviewState render_preview(const std::wstring& endpoint_id) {
             return TonePreviewState::Failed;
 
         ScopedCom<IMMDevice> device;
-        if (FAILED(enumerator->GetDevice(endpoint_id.c_str(), device.put())) || !device)
-            return TonePreviewState::MissingDevice;
+        const HRESULT selected=endpoint_id.empty()
+            ?enumerator->GetDefaultAudioEndpoint(eRender,eMultimedia,device.put())
+            :enumerator->GetDevice(endpoint_id.c_str(),device.put());
+        if(FAILED(selected) || !device)return TonePreviewState::MissingDevice;
         DWORD state = 0;
         if (FAILED(device->GetState(&state)) || state != DEVICE_STATE_ACTIVE)
             return TonePreviewState::MissingDevice;
@@ -97,13 +101,15 @@ TonePreviewState render_preview(const std::wstring& endpoint_id) {
                 reinterpret_cast<void**>(sink.put()))) || !sink)
             return TonePreviewState::Failed;
 
+        if(cancelled())return TonePreviewState::Cancelled;
         if (FAILED(audio->Start())) return TonePreviewState::Failed;
         TonePreviewState result = TonePreviewState::Failed;
         UINT32 submitted = 0;
         const UINT32 total = tone_total_frames(spec);
-        // Bound the loop: a stopped/disconnected endpoint must never hang UI
-        // shutdown. The generation is private to this one preview request.
+        // Bound polling for a disconnected endpoint. Device API blocking
+        // and acoustic cancellation latency still require hardware acceptance.
         for (int attempt = 0; attempt < 130 && submitted < total; ++attempt) {
+            if(cancelled()){result=TonePreviewState::Cancelled;break;}
             UINT32 padding = 0;
             if (FAILED(audio->GetCurrentPadding(&padding)) || padding > capacity)
                 break;
@@ -120,13 +126,13 @@ TonePreviewState render_preview(const std::wstring& endpoint_id) {
                 if (!filled || FAILED(released)) break;
                 submitted += chunk;
             } else {
-                Sleep(10);
+                Sleep(5);
             }
             if (submitted == total) {
                 // Give Windows time to drain the remaining shared-mode
                 // buffer before stopping playback.
-                Sleep(220);
-                result = TonePreviewState::Played;
+                for(int wait=0;wait<44 && !cancelled();++wait)Sleep(5);
+                result = cancelled()?TonePreviewState::Cancelled:TonePreviewState::Played;
                 break;
             }
         }
@@ -140,24 +146,26 @@ TonePreviewState render_preview(const std::wstring& endpoint_id) {
 }
 } // namespace
 
-TonePreviewState play_windows_tone_on_endpoint(const std::wstring& endpoint_id) {
-    return render_preview(endpoint_id);
+TonePreviewState play_windows_tone_on_endpoint(const std::wstring& endpoint_id,const std::atomic<bool>* cancel,bool multimedia_default) {
+    return render_preview(endpoint_id,cancel,multimedia_default);
 }
 
 TonePreviewPlayer::~TonePreviewPlayer() {
+    request_stop();
     if (worker_.joinable()) worker_.join();
 }
-bool TonePreviewPlayer::start(const std::wstring& endpoint_id) {
-    if (endpoint_id.empty() || state_.load() == TonePreviewState::Playing)
+bool TonePreviewPlayer::start(const std::wstring& endpoint_id,bool multimedia_default) {
+    if ((endpoint_id.empty() && !multimedia_default) || endpoint_id.size()>4096 || endpoint_id.find(L'\0')!=std::wstring::npos || state_.load() == TonePreviewState::Playing)
         return false;
     if (worker_.joinable()) worker_.join();
+    cancel_.store(false);
     state_.store(TonePreviewState::Playing);
     try {
-        worker_ = std::thread([this, id = endpoint_id] {
+        worker_ = std::thread([this, id = endpoint_id,multimedia_default] {
             TonePreviewState result = TonePreviewState::Failed;
-            try { result = play_windows_tone_on_endpoint(id); }
+            try { result = play_windows_tone_on_endpoint(id,&cancel_,multimedia_default); }
             catch (...) { result = TonePreviewState::Failed; }
-            state_.store(result);
+            state_.store(cancel_.load()?TonePreviewState::Cancelled:result);
         });
     } catch (...) {
         state_.store(TonePreviewState::Failed);
@@ -177,6 +185,8 @@ const wchar_t* tone_preview_feedback(TonePreviewState state) {
         return L"Saida do toque desconectada. Atualize dispositivos.";
     case TonePreviewState::UnsupportedFormat:
         return L"Formato de audio nao suportado para este teste.";
+    case TonePreviewState::Cancelled:
+        return L"Teste de toque interrompido.";
     case TonePreviewState::Failed:
         return L"Falha no teste de toque. Confira a saida do Windows.";
     }

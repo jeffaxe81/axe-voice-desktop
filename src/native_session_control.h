@@ -21,6 +21,11 @@ inline bool native_command_is_current(const NativeCallCommand& c,const SipRuntim
  default:return false;
  }
 }
+inline bool native_displayed_call_command_current(NativeCallAction action,const SipRuntimeObservation& displayed,const SipRuntimeObservation& current){
+ if(action!=NativeCallAction::Answer && action!=NativeCallAction::Hangup)return false;
+ const NativeCallCommand command{action,displayed.session,displayed.call_id,{}};
+ return native_command_is_current(command,displayed) && native_command_is_current(command,current);
+}
 // UI double-clicks must not turn a declined duplicate into call teardown.
 class NativeCommandAdmission {
  std::uint64_t answer_session_=0,answer_call_=0,hangup_session_=0,hangup_call_=0,transfer_session_=0,transfer_call_=0;
