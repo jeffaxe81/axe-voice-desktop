@@ -86,12 +86,27 @@ public:
                 queue_.invalidate();
                 return {RegistrationDispatchKind::SupersededDuringDispatch,submitted};
             }
+            // A synchronous REGISTER_FAIL is not a generic submission
+            // error. Preserve the native registrar rejection for diagnostics.
+            const bool rejected =
+                submitted == NativeRegistrationSubmission::RegistrarRejectedSynchronously ||
+                gateway_.registrar_rejection_seen();
+            if (rejected) {
+                gateway_.stop();
+                queue_.invalidate();
+                return {RegistrationDispatchKind::RegistrarRejected,submitted};
+            }
             if (submitted!=NativeRegistrationSubmission::Submitted ||
                 !gateway_.arm_registration_deadline(
                     monotonic_ms,command.timeout_ms)) {
+                // A failure can arrive between submit and arming a
+                // deadline; retain its provenance before tearing down.
+                const bool rejected_while_arming = gateway_.registrar_rejection_seen();
                 gateway_.stop();
                 queue_.invalidate();
-                return {RegistrationDispatchKind::Failed,submitted};
+                return {rejected_while_arming ?
+                            RegistrationDispatchKind::RegistrarRejected :
+                            RegistrationDispatchKind::Failed,submitted};
             }
             if (!queue_.still_admitted(batch)) {
                 gateway_.stop();

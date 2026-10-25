@@ -7,7 +7,8 @@
 namespace axv {
 enum class NativeRegistrationSubmission {
     InvalidAccount, BridgeUnavailable, SubmissionRejected,
-    Submitted, AlreadySubmitted, NativeSessionRevoked, WrongEventLoopThread
+    Submitted, AlreadySubmitted, NativeSessionRevoked, WrongEventLoopThread,
+    RegistrarRejectedSynchronously
 };
 
 // Experimental native-event-loop-thread-only registration submission.
@@ -46,7 +47,15 @@ public:
             bridge_.stop();
             return NativeRegistrationSubmission::NativeSessionRevoked;
         }
+        // A Baresip REGISTER_FAIL may fire *inside* ua_register(), even
+        // when that function itself returns zero. Surface the exact cause
+        // without temporarily admitting a rejected registration.
+        if (bridge_.native_register_fail_seen()) {
+            bridge_.stop();
+            return NativeRegistrationSubmission::RegistrarRejectedSynchronously;
+        }
         owner_ = selected;
+        confirmation_observed_ = false;
         deadline_.clear(); // Never inherit a previous registration's deadline.
         return NativeRegistrationSubmission::Submitted;
     }
@@ -57,6 +66,7 @@ public:
     bool arm_registration_deadline(std::uint64_t now_ms,
                                    std::uint64_t max_wait_ms) {
         return thread_guard_.is_owner() && submitted() &&
+               !bridge_.native_register_fail_seen() &&
                deadline_.arm(session(), now_ms, max_wait_ms);
     }
     RegistrationDeadlineVerdict poll_registration_deadline(std::uint64_t now_ms) {
@@ -68,10 +78,18 @@ public:
             stop();
             return RegistrationDeadlineVerdict::RegistrarRejected;
         }
+        // The watchdog deadline may have been cleared after REGISTER_OK.
+        // A later lost UA/session must still fence native registration;
+        // the earlier confirmation can never authorize persistent status.
+        if (confirmation_observed_ && !bridge_.native_register_ok_seen()) {
+            stop();
+            return RegistrationDeadlineVerdict::SessionRevoked;
+        }
         const auto decision = deadline_.check(bridge_.session(), now_ms,
                                              bridge_.native_register_ok_seen());
         switch (decision) {
         case RegistrationDeadlineVerdict::CallbackConfirmed:
+            confirmation_observed_ = true;
             deadline_.clear();
             break;
         case RegistrationDeadlineVerdict::Expired:
@@ -90,6 +108,7 @@ public:
     bool stop() {
         if (!thread_guard_.is_owner()) return false;
         deadline_.clear();
+        confirmation_observed_ = false;
         if (owner_) {
             // Terminal events can invalidate/destroy the selected UA.
             // Skip native dereference when the owning epoch is revoked.
@@ -102,7 +121,11 @@ public:
     }
 
     bool submitted() const {
-        return thread_guard_.is_owner() && owner_ != nullptr && bridge_.active();
+        return thread_guard_.is_owner() && owner_ != nullptr && bridge_.active() &&
+               !bridge_.native_register_fail_seen();
+    }
+    bool registrar_rejection_seen() const {
+        return thread_guard_.is_owner() && bridge_.native_register_fail_seen();
     }
     // Session identity does not mean the registrar accepted credentials.
     std::uint64_t session() const { return submitted() ? bridge_.session() : 0; }
@@ -111,5 +134,6 @@ private:
     BaresipNativeThreadGuard thread_guard_{};
     struct ua* owner_ = nullptr;
     RegistrationDeadline deadline_{};
+    bool confirmation_observed_ = false; // native owner thread only
 };
 } // namespace axv
