@@ -18,6 +18,7 @@ enum class BaresipProfileStatus {
     UnsafePath,
     UnsafeFile,
     AccountsConfigured,
+    AutoAccountModule,
     InsecureRemoteControl,
     UnsafeConfiguration,
     OversizedConfiguration,
@@ -47,6 +48,23 @@ inline BaresipProfileStatus inspect_baresip_config_line(const std::string& line)
     if (key == "include" || key == "module_path" || key == "module_preload" ||
         key == "module_dir")
         return BaresipProfileStatus::UnsafeConfiguration;
+    if (key == "module") {
+        // The account application module reads the accounts file and may
+        // issue ua_register automatically, bypassing WinCred owner admission.
+        // Native lab owns exactly one UA; refuse this loader altogether.
+        const auto value_at = active.find_first_not_of(" \\t=", end);
+        if (value_at == std::string::npos)
+            return BaresipProfileStatus::UnsafeConfiguration;
+        const auto name_end = active.find_first_of(" \\t\\r\\n", value_at);
+        const std::string name = active.substr(value_at, name_end - value_at);
+        if (name.empty() || name.find_first_of("/\\\\\\\"'") != std::string::npos ||
+            (name_end != std::string::npos &&
+             active.find_first_not_of(" \\t\\r\\n", name_end) != std::string::npos))
+            return BaresipProfileStatus::UnsafeConfiguration;
+        if (name == "account" || name == "account.so" ||
+            name == "account.dll" || name == "account.dylib")
+            return BaresipProfileStatus::AutoAccountModule;
+    }
     // Conservative: block even if the suspicious name appears in an unknown
     // directive. This is not a full Baresip configuration grammar.
     if (active.find("ctrl_tcp") != std::string::npos ||
@@ -123,6 +141,7 @@ inline const wchar_t* baresip_profile_diagnostic(BaresipProfileStatus status) {
     case BaresipProfileStatus::UnsafePath: return L"Pasta de perfil insegura ou inacessível.";
     case BaresipProfileStatus::UnsafeFile: return L"Perfil contém arquivos redirecionados ou inválidos.";
     case BaresipProfileStatus::AccountsConfigured: return L"Contas SIP já configuradas: inicialização automática bloqueada.";
+    case BaresipProfileStatus::AutoAccountModule: return L"Modulo de contas automaticas Baresip bloqueado no laboratorio.";
     case BaresipProfileStatus::InsecureRemoteControl: return L"Controle remoto não auditado detectado: execução bloqueada.";
     case BaresipProfileStatus::UnsafeConfiguration: return L"Configuração Baresip não segura: include, caminho externo ou conteúdo inválido.";
     case BaresipProfileStatus::OversizedConfiguration: return L"Perfil Baresip excede o limite de leitura segura (128 KiB).";
