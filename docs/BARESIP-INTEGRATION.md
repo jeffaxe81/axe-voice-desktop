@@ -48,3 +48,13 @@ O novo `src/sip_event_projection.h` conserva o estado SIP confirmado entre ticks
 `BoundBaresipState` exige `account_token` fixado por sessão e `call_token` monotônico, descartando eventos de conta errada, chamadas encerradas ou concorrentes. A projeção do estado na UI exige conta selecionada e rejeita a geração inteira quando a conta é trocada sem reiniciar o motor. Ainda não há fonte nativa: a UI envia `SipEvidence::None` e token 0.
 
 A identidade deve ser emitida exclusivamente por um futuro adaptador Baresip/re versionado. Nunca deve derivar diretamente de texto de stdout, número, URI, cabeçalhos de SIP ou ponteiro após destruição da chamada. **Nenhuma chamada real está habilitada**; CTest verifica apenas regras sintéticas.
+## v0.37 — Ingresso condicionado de callbacks nativos (não operacional)
+
+O novo `src/baresip_native_ingress.h` acrescenta uma camada portável de **pré-admissão** de eventos para um futuro adaptador `bevent_h` auditado. Ela exige uma identidade opaca de conta, geração monotônica do mailbox e identidade estável por chamada; rejeita eventos de sessões, contas ou chamadas diferentes. Quando detecta uma divergência ou overflow, **descarta a fila inteira e bloqueia a sessão** até desmontagem explícita.
+
+A API é sincronizada para callbacks de workers e teardown, mas **não autentica os eventos por si mesma**. A operação `bind_validated_account` pressupõe validação nativa da UA e do ciclo de vida por componente ainda inexistente. Eventos alheios ao subconjunto reconhecido não podem criar evidência de registro; não há inclusão de SDK, chamada de rede, armazenamento de dados SIP nem habilitação de `SipEvidence::VerifiedNativeApi`.
+
+O CTest `baresip_native_ingress` usa identidades e eventos *sintéticos* (inclusive replay, mismatch e overflow). O executável Windows ainda utiliza `UnavailableSipEngine`; a camada não é instanciada pela UI. Para ativá-la, são necessários SDK/re versionados e auditados, callback real `bevent_h`, teardown sem corridas, vinculação a UA/call concretos e homologação com PABX/headset. Referência de API para revisão (não é pin de dependência): https://github.com/baresip/baresip/blob/main/include/baresip.h .
+
+
+**Compatibilidade com o redutor de chamadas v0.36:** o novo ingresso traduz identidades opacas de objetos de chamada em identificadores numéricos monotônicos por geração e propaga `call_id` explícito para o mailbox. Os CTests legados de redutor/projeção agora enviam tokens de chamada sintéticos, acompanhando esse contrato; não habilitam chamadas reais.

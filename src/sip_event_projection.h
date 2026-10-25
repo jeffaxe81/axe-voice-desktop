@@ -29,7 +29,7 @@ public:
             bound_.observation.process = process;
             return bound_.observation;
         }
-        if (batch.overflow) {
+        if (batch.overflow || batch.size > batch.events.size()) {
             reject(batch.session,process);
             return bound_.observation;
         }
