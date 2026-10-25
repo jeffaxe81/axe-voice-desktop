@@ -8,9 +8,14 @@ A main recebeu os sete PRs de laboratório em25/10/2026. Consulte [situação, e
 - [x] 0.52: seleções de microfone/voz aplicadas ao WASAPI; rota fixada por sessão; bloqueio antes de chamar/atender se o endpoint faltar. [Escopo e validação](integration/NATIVE-AUDIO-ROUTING.md).
 - [x] 0.53: mudo do microfone e pedidos de espera/retomada locais, com leitura real do SDK e comandos vinculados à chamada exibida. [Escopo e limites](integration/NATIVE-MUTE-HOLD.md).
 - [x] 0.54: aviso antigo de áudio corrigido; transferência direta com revisão do destino, uma tentativa por chamada e falha lida do SDK. [Escopo e limites](integration/NATIVE-TRANSFER.md).
+- [x] 0.55: toque local de chamadas recebidas verificadas, saída independente e cancelamento por chamada. [Escopo e limites](integration/NATIVE-RINGTONE.md).
+- [x] 0.55.1: diagnóstico F2 separa disponibilidade de discagem e homologação física.
+- [x] 0.56: cópia local de diagnóstico sem dados da conta. [Escopo e limites](integration/NATIVE-DIAGNOSTIC-COPY.md).
 - [ ] Homologar registro/chamadas na Dígitro e áudio bidirecional com headset físico.
 - [ ] Validar troca de dispositivos durante chamada antes de permitir roteamento ao vivo.
 - [ ] Implementar SRTP se exigido pela implantação; TLS de SIP não criptografa RTP.
+
+A homologação na Dígitro e no headset foi mantida pendente por solicitação do usuário em25/10/2026.
 
 A build padrão segue sem SDK; o instalador nativo continua candidato. Os gates automatizados de cada PR não substituem aceite da central/hardware. O roteiro abaixo pertence à fundação histórica MicroSIP.
 
@@ -61,5 +66,3 @@ SHA-256: `9c1ff942ae1ae56bdfcdd04c3d6e242a056d7f0dd50bb19f6e13226e7c819b83`
 
 ## Projeto 2 — Mobile
 Registrado para etapa posterior. Não iniciar antes de liberação formal do Projeto 1.
-
-- [x] 0.55: toque local de chamadas recebidas verificadas, saída independente e cancelamento por chamada. [Escopo e limites](integration/NATIVE-RINGTONE.md).

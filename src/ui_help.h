@@ -10,6 +10,8 @@ inline constexpr wchar_t kFrontendHelp[] =
     L"Ctrl+R: Atualizar dispositivos (apenas em Audio)\n"
     L"Esc: Voltar ao teclado    F1: Esta ajuda\n"
     L"F2: Checklist local de prontidao\n"
+    L"Ctrl+Shift+D: Copiar status local sem dados da conta.\n"
+    L"O texto permanece na area de transferencia ate ser substituido.\n"
     L"Roda do mouse e rolagem vertical em telas pequenas.\n\n"
     L"Os campos validam somente a sintaxe local.\n"
     L"Sem registro SIP real, nao e possivel fazer, receber\n"
@@ -32,11 +34,13 @@ inline constexpr const wchar_t* frontend_help_text() {
         L"Selecione microfone e voz na aba Audio antes de REGISTRAR.\n"
         L"A rota fica fixa na sessao; pare o motor para trocar dispositivos.\n"
         L"Sem selecao, usa o padrao de comunicacao do Windows.\n"
-        L"Dispositivo ausente bloqueia nova chamada/atendimento. Toque: previa local.\n"
+        L"Dispositivo ausente bloqueia nova chamada/atendimento. Toque: chamada recebida, saida independente.\n"
         L"TLS protege a sinalizacao SIP; este candidato nao oferece SRTP.\n"
         L"Chamadas na central e audio fisico ainda exigem homologacao.\n\n"
         L"Ctrl+1: Teclado  Ctrl+2: Ajustes  Ctrl+3: Audio\n"
-        L"F1: Ajuda  F2: Prontidao  Ctrl+M: MINI/MAX";
+        L"F1: Ajuda  F2: Prontidao  Ctrl+M: MINI/MAX\n"
+        L"Ctrl+Shift+D / COPIAR STATUS: copia local sem dados da conta.\n"
+        L"O texto permanece na area de transferencia ate ser substituido.";
 #else
  return kFrontendHelp;
 #endif
