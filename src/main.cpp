@@ -24,6 +24,7 @@
 #include "audio_devices.h"
 #include "audio_selection_feedback.h"
 #include "audio_hotplug_policy.h"
+#include "audio_endpoint_watcher.h"
 #include "audio_routing_preview.h"
 #include "ringtone_preview.h"
 #include "audio_role_swap.h"
@@ -77,6 +78,7 @@ constexpr int kSwapAudioRolesButton = 1015;
 constexpr int kStartBaresipButton = 1010;
 constexpr int kStopBaresipButton = 1011;
 constexpr UINT_PTR kProcessTimer = 1012;
+constexpr UINT kAudioEndpointNotify = WM_APP + 42;
 constexpr int kShowDial = 2001;
 constexpr int kShowSettings = 2002;
 constexpr int kTheme = 2003;
@@ -166,6 +168,8 @@ std::wstring g_preferred_input_id;
 std::wstring g_preferred_output_id;
 std::wstring g_preferred_ringtone_id;
 axv::AudioHotplugPolicy g_audio_hotplug;
+// PR #40: COM callbacks post only a GUI wake-up. The UI owns refresh/debounce.
+axv::AudioEndpointWatcher g_audio_endpoint_watcher;
 std::thread g_preview_worker;
 std::atomic<bool> g_preview_running{false};
 std::atomic<bool> g_preview_cancel{false};
@@ -1384,11 +1388,26 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         show_page(window, 0);
         apply_compact_layout(window);
         refresh_runtime_banner(g_baresip_process.poll());
+        // Audio observer is optional: WM_DEVICECHANGE and manual refresh
+        // remain available if Windows Core Audio notifications cannot start.
+        if (!g_smoke_mode)
+            (void)g_audio_endpoint_watcher.start(window, kAudioEndpointNotify);
         SetTimer(window, kProcessTimer, 100, nullptr);
         g_controls_ready = true;
         sync_viewport_scroll(window);
         return 0;
     }
+    case kAudioEndpointNotify:
+        // Core Audio may switch default communication OR multimedia outputs
+        // without sending WM_DEVICECHANGE. No device IDs enter this message.
+        // Reuse the same bounded GUI debounce; never enumerate inside COM.
+        if (!g_smoke_mode) {
+            (void)g_audio_hotplug.notify(7u, GetTickCount64());
+            if (g_page == 2 && g_headset_status)
+                SetWindowTextW(g_headset_status,
+                    L"Alteracao de audio detectada; atualizacao pendente...");
+        }
+        return 0;
     case WM_DEVICECHANGE:
         // Generic Win32 device changes are hints, NOT proof of audio hotplug.
         // Do not enumerate here: the UI timer coalesces notifications.
@@ -2160,6 +2179,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         DestroyWindow(window);
         return 0;
     case WM_DESTROY:
+        // Unregister before the HWND is invalidated; no native COM callback
+        // may retain an owner pointer or submit any SIP work.
+        g_audio_endpoint_watcher.stop();
         (void)g_incoming_ring_coordinator.revoke(g_incoming_ring_sink);
         // Stop cooperatively before waiting; worker never posts to a dead HWND.
         g_preview_cancel.store(true);
