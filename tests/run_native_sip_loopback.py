@@ -115,11 +115,11 @@ def scenario(exe, mode, context=None, ca=None):
             raise AssertionError(f'{mode}: native engine exit {result.returncode}; REGISTERs={len(received)} authenticated={len(accepted)} fixture_errors={errors}; {result.stdout[-1000:]} {result.stderr[-1000:]}')
         if errors:
             raise AssertionError(errors)
-        if mode == 'success' and len(accepted)<2:
+        if mode in ('success', 'missing-audio') and len(accepted)<2:
             raise AssertionError('No authenticated REGISTER accepted')
         if mode in ('wrong-host', 'untrusted') and received:
             raise AssertionError('SIP REGISTER reached an invalid TLS peer')
-        if mode != 'success' and accepted:
+        if mode not in ('success', 'missing-audio') and accepted:
             raise AssertionError('Unexpected successful authentication')
         print(f'PASS {"TLS" if ca else "UDP"} {mode}', flush=True)
     finally:
@@ -132,7 +132,7 @@ def scenario(exe, mode, context=None, ca=None):
 
 if __name__ == '__main__':
     exe = sys.argv[1]
-    for mode in ('success', 'wrong-password', 'timeout'):
+    for mode in ('success', 'wrong-password', 'timeout', 'missing-audio'):
         scenario(exe, mode)
     with tempfile.TemporaryDirectory(prefix='axe-tls-') as directory:
         root = pathlib.Path(directory)

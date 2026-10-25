@@ -6,12 +6,24 @@
 int main(int argc,char**argv) {
     axv::BaresipSipEngine engine;
     if(engine.status()!=axv::SipStatus::Disconnected || engine.start_call(L"100")) return 1;
-    if(argc==1) { engine.stop(); return 0; }
+    if(argc==1) {
+        axv::SipAccount account{L"127.0.0.1",L"1001",5060,false};
+        const axv::NativeAudioRoute route{L"capture-id",L"playback-id"};
+        if(!engine.configure_authenticated(account,L"","fixture-only",1500,route))return 8;
+        const auto applied=engine.selected_audio_route();
+        if(applied.capture_id!=route.capture_id || applied.playback_id!=route.playback_id)return 9;
+        engine.stop();
+        if(!engine.selected_audio_route().capture_id.empty())return 10;
+        return 0;
+    }
     axv::SipAccount account{L"127.0.0.1",L"1001",static_cast<unsigned short>(std::atoi(argv[1])),false};
-    const bool success=std::string(argv[2])=="success";
+    const std::string mode=argv[2];
+    const bool missing_audio=mode=="missing-audio";
+    const bool success=mode=="success" || missing_audio;
+    const axv::NativeAudioRoute route=missing_audio?axv::NativeAudioRoute{L"missing-capture-device",L"missing-playback-device"}:axv::NativeAudioRoute{};
     std::wstring ca;
     if(argc>3) {std::string path=argv[3];ca.assign(path.begin(),path.end());account.use_tls=true;}
-    if(!engine.configure_authenticated(account,ca,(std::string(argv[2])=="wrong-password")?"wrong-secret":"local-test-secret",1500)) return 2;
+    if(!engine.configure_authenticated(account,ca,(std::string(argv[2])=="wrong-password")?"wrong-secret":"local-test-secret",1500,route)) return 2;
     if(!engine.register_account()) return 3;
     const auto until=std::chrono::steady_clock::now()+std::chrono::seconds(8);
     while(std::chrono::steady_clock::now()<until) {
@@ -29,6 +41,19 @@ int main(int argc,char**argv) {
     if(success && (engine.status()!=axv::SipStatus::Registered ||
        !axv::sip_proof_is_current(observed,observed.session))) return 4;
     if(!success && engine.status()!=axv::SipStatus::Failed) return 5;
+    if(missing_audio){
+        if(!engine.start_call(L"1002"))return 11;
+        const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(3);
+        bool denied=false;
+        while(std::chrono::steady_clock::now()<deadline){
+            const auto diagnostic=engine.diagnostic();
+            denied=diagnostic==axv::native_audio_route_feedback(axv::NativeAudioRouteStatus::MissingCapture) ||
+                   diagnostic==axv::native_audio_route_feedback(axv::NativeAudioRouteStatus::InventoryFailed);
+            if(denied)break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+        if(!denied || engine.status()!=axv::SipStatus::Registered || engine.observation().call_id)return 12;
+    }
     engine.stop();
     if(engine.status()!=axv::SipStatus::Disconnected || engine.start_call(L"100") || engine.observation().session) return 6;
     // Restart creates a fresh callback epoch and destroys SDK state safely.

@@ -4,6 +4,7 @@
 #include "baresip_native_libre_reactor.h"
 #include "baresip_sdk_call_port.h"
 #include "native_session_control.h"
+#include "native_audio_command_guard.h"
 #include "baresip_sdk_secret.h"
 #include <atomic>
 #include <mutex>
@@ -20,6 +21,8 @@ struct BaresipSipEngine::Impl {
     mutable std::mutex mutex;
     SipAccount account;
     NativeAccountConfig config;
+    NativeAudioRoute audio_route;
+    NativeAudioRouteStatus audio_issue=NativeAudioRouteStatus::Ready;
     std::string password;
     NativeCallCommand command;
     NativeCommandAdmission admission;
@@ -78,7 +81,13 @@ struct BaresipSipEngine::Impl {
             std::lock_guard<std::mutex> lock(mutex);
             view=observed; pending=std::move(command); command={};
         }
-        if(!adapter.native_register_ok_seen() || !admission.admit(pending,observed)) return;
+        if(!adapter.native_register_ok_seen() || !native_command_is_current(pending,observed)) return;
+        AudioInventory inventory;
+        if(pending.action==Action::Dial || pending.action==Action::Answer)
+            inventory=inspect_windows_audio_devices(); // Owner thread, immediately before media creation.
+        const auto decision=admit_native_audio_command(admission,pending,observed,audio_route,inventory);
+        {std::lock_guard<std::mutex> lock(mutex);audio_issue=decision.audio;}
+        if(!decision.allowed)return;
         BaresipSdkCallPort calls(adapter);
         if(pending.action==Action::Dial && observed.sip==SipStatus::Registered && !observed.call_id) {
             if(ua_connect(owned,nullptr,nullptr,pending.destination.c_str(),VIDMODE_OFF)) fail();
@@ -112,11 +121,13 @@ struct BaresipSipEngine::Impl {
 BaresipSipEngine::BaresipSipEngine():impl_(std::make_unique<Impl>()){}
 BaresipSipEngine::~BaresipSipEngine(){stop();}
 SipRuntimeObservation BaresipSipEngine::observation()const {std::lock_guard<std::mutex> lock(impl_->mutex);return impl_->view;}
+NativeAudioRoute BaresipSipEngine::selected_audio_route()const {std::lock_guard<std::mutex> lock(impl_->mutex);return impl_->audio_route;}
 SipStatus BaresipSipEngine::status()const{return observation().sip;}
 bool BaresipSipEngine::configure(const SipAccount&){return false;} // explicit authentication is required
-bool BaresipSipEngine::configure_authenticated(const SipAccount& a,const std::wstring& ca,std::string password,unsigned timeout) {
-    const auto cfg=native_account_config(a,ca);
+bool BaresipSipEngine::configure_authenticated(const SipAccount& a,const std::wstring& ca,std::string password,unsigned timeout,const NativeAudioRoute& audio) {
+    const auto cfg=native_account_config(a,ca,audio);
     if(impl_->reactor.snapshot().running || !cfg.valid || password.empty() || password.size()>1024 || password.find('\0')!=std::string::npos || timeout<100 || timeout>60000) {erase(password);return false;}
+    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->audio_route=audio;impl_->audio_issue=NativeAudioRouteStatus::Ready;}
     impl_->account=a;impl_->config=cfg;erase(impl_->password);impl_->password=password;erase(password);impl_->configured=true;impl_->timeout_ms=timeout;return true;
 }
 bool BaresipSipEngine::register_account(){
@@ -132,11 +143,12 @@ void BaresipSipEngine::hangup(){(void)impl_->submit(Impl::Action::Hangup);}
 void BaresipSipEngine::stop(){
     {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->view={RuntimeProcess::Stopping,SipStatus::Disconnected};impl_->command={};}
     impl_->reactor.stop();impl_->configured=false;erase(impl_->password);
-    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->view={RuntimeProcess::Stopped,SipStatus::Disconnected};}
+    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->view={RuntimeProcess::Stopped,SipStatus::Disconnected};impl_->audio_route={};impl_->audio_issue=NativeAudioRouteStatus::Ready;}
 }
 std::wstring BaresipSipEngine::diagnostic()const {
     {std::lock_guard<std::mutex> lock(impl_->mutex);
-     if(impl_->sdk_error)return L"Falha SDK em "+impl_->sdk_stage+L": "+std::to_wstring(impl_->sdk_error);}
+     if(impl_->sdk_error)return L"Falha SDK em "+impl_->sdk_stage+L": "+std::to_wstring(impl_->sdk_error);
+     if(impl_->audio_issue!=NativeAudioRouteStatus::Ready)return native_audio_route_feedback(impl_->audio_issue);}
     switch(status()) {
     case SipStatus::Registered:return L"Registro SIP confirmado por callback nativo. Midia ainda nao homologada.";
     case SipStatus::Registering:return L"Registro SIP em andamento; aguardando a central.";

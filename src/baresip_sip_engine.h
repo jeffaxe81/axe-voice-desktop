@@ -1,6 +1,7 @@
 #pragma once
 #include "sip_engine.h"
 #include "sip_runtime_observation.h"
+#include "native_audio_routes.h"
 #include <memory>
 namespace axv {
 // Candidate native implementation. All SDK pointers stay on its owner thread.
@@ -11,13 +12,14 @@ public:
     SipStatus status() const override;
     bool configure(const SipAccount&) override;
     bool configure_authenticated(const SipAccount&,const std::wstring& ca_file,
-                                 std::string password,unsigned timeout_ms=15000);
+                                 std::string password,unsigned timeout_ms=15000,const NativeAudioRoute& audio_route={});
     bool register_account() override;
     bool start_call(const std::wstring&) override;
     bool answer();
     void hangup() override;
     void stop();
     SipRuntimeObservation observation() const;
+    NativeAudioRoute selected_audio_route() const;
     std::wstring diagnostic() const override;
 private:
     struct Impl;

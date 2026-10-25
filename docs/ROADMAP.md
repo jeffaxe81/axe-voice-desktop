@@ -2,7 +2,15 @@
 
 A main recebeu os sete PRs de laboratório em25/10/2026. Consulte [situação, evidências e próxima entrega](AXEVOICE-RELEASE-PROMOTION.md) e [resolução dos conflitos](integration/OPEN-PRS-RESOLUTION.md).
 
-Próximo marco: SDK nativo auditado e gates de ABI/quiescência, antes de habilitar registro e chamadas reais na GUI. O roteiro abaixo pertence à fundação histórica MicroSIP.
+## Candidato nativo — próximas releases
+
+- [x] SDK auditado, registro/TLS local, GUI e instalador candidato (PR #132).
+- [x] 0.52: seleções de microfone/voz aplicadas ao WASAPI; rota fixada por sessão; bloqueio antes de chamar/atender se o endpoint faltar. [Escopo e validação](integration/NATIVE-AUDIO-ROUTING.md).
+- [ ] Homologar registro/chamadas na Dígitro e áudio bidirecional com headset físico.
+- [ ] Validar troca de dispositivos durante chamada antes de permitir roteamento ao vivo.
+- [ ] Implementar SRTP se exigido pela implantação; TLS de SIP não criptografa RTP.
+
+A build padrão segue sem SDK; o instalador nativo continua candidato. Os gates automatizados de cada PR não substituem aceite da central/hardware. O roteiro abaixo pertence à fundação histórica MicroSIP.
 
 ---
 

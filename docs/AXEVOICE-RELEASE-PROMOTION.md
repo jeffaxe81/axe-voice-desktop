@@ -6,7 +6,7 @@ Atualizado em25/10/2026.
 
 Os sete PRs abertos #12, #14, #15, #23, #31, #36 e #39 foram integrados à main pelo merge `3eb43ba6972c37a64a501dbf473f208d78738b78`. Não há PR aberto restante após essa integração. As decisões de conflitos estão em [OPEN-PRS-RESOLUTION.md](integration/OPEN-PRS-RESOLUTION.md).
 
-A main agora inclui o bootstrap Win32/Baresip de laboratório e seus componentes experimentais isolados. O projeto CMake identifica0.51.0; a branch experimental separada v0.154 não foi incorporada integralmente por esse merge. Fontes privadas locais de outro fluxo não foram publicadas.
+A main agora inclui o bootstrap Win32/Baresip de laboratório e seus componentes experimentais isolados. O projeto CMake identifica0.52.0; a branch experimental separada v0.154 não foi incorporada integralmente por esse merge. Fontes privadas locais de outro fluxo não foram publicadas.
 
 ## Evidência do merge
 
@@ -25,7 +25,7 @@ Esses resultados comprovam os gates executados, não cobertura integral nem func
 
 A entrega do PR #132 conecta o SDK à interface em uma build candidata opcional (`AXV_ENABLE_NATIVE_SIP=ON`). Os gates passaram no Windows:70 testes gerais, registro Digest local/renovação/erros/timeout, TLS confiável e rejeição de CA/hostname inválidos, GUI nativa e instalação/desinstalação. [Evidências e download](integration/NATIVE-RELEASE-CANDIDATE.md).
 
-A build padrão continua SDK-free. O candidato ainda não foi homologado para chamadas na Dígitro ou áudio bidirecional/headset físico, não oferece SRTP e não é uma release de produção. Os campos de senha e CA e os comandos registrar/chamar/atender/encerrar estão conectados no candidato; seleções de áudio da aba permanecem prévias, com chamadas usando o padrão de comunicação do Windows.
+A build padrão continua SDK-free. O candidato ainda não foi homologado para chamadas na Dígitro ou áudio bidirecional/headset físico, não oferece SRTP e não é uma release de produção. Os campos de senha e CA e os comandos registrar/chamar/atender/encerrar estão conectados no candidato. Na0.52 (PR #133), as seleções de microfone/voz são aplicadas ao registrar; o modo padrão do Windows permanece explícito, e endpoints ausentes bloqueiam novas chamadas/atendimento. A rota fica fixa até parar o motor; toque permanece prévia local. [Escopo0.52](integration/NATIVE-AUDIO-ROUTING.md).
 
 ## Próxima entrega técnica
 

@@ -21,6 +21,7 @@
 #include "baresip_modules.h"
 #include "audio_devices.h"
 #include "audio_selection_feedback.h"
+#include "native_audio_routes.h"
 #include "audio_routing_preview.h"
 #include "audio_test_tone_win32.h"
 #include "windows_process.h"
@@ -609,14 +610,15 @@ void edit_number(HWND root, wchar_t action) {
     (void)root;
 }
 
-// Audio preferences are previews only: they never configure or contact Baresip.
+// Native capture/playback selections are applied at registration; ringtone is a local preview.
 axv::AudioSelectionRefresh fill_audio_combo(
     HWND combo, const std::vector<axv::AudioEndpoint>& devices,
-    std::wstring& selected_id, bool ringtone = false) {
-    const auto selection = ringtone
+    std::wstring& selected_id, bool ringtone = false, bool fixed_route = false, bool native_route = false) {
+    const auto selection = (fixed_route || native_route) ? axv::fixed_native_audio_selection(devices,selected_id) : ringtone
         ? axv::refresh_ringtone_selection(devices, selected_id)
         : axv::refresh_audio_selection(devices, selected_id);
     SendMessageW(combo, CB_RESETCONTENT, 0, 0);
+    if(native_route)SendMessageW(combo,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(L"[WINDOWS] Padrao de comunicacao"));
     for (const auto& device : devices) {
         const std::wstring prefix = ringtone
             ? (device.default_multimedia ? L"[PADRAO TOQUE] " : L"")
@@ -624,20 +626,30 @@ axv::AudioSelectionRefresh fill_audio_combo(
         const std::wstring title = prefix + device.name;
         SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(title.c_str()));
     }
-    EnableWindow(combo, selection.index >= 0);
-    if (selection.index >= 0) {
-        SendMessageW(combo, CB_SETCURSEL, static_cast<WPARAM>(selection.index), 0);
+    EnableWindow(combo, !fixed_route && (native_route || selection.index >= 0));
+    const int row=native_route?axv::native_audio_combo_index(devices,selected_id):selection.index;
+    if (row >= 0) {
+        SendMessageW(combo, CB_SETCURSEL, static_cast<WPARAM>(row), 0);
     }
     selected_id = selection.selected_id;
     return selection;
 }
 
 void refresh_audio_panel() {
+    bool fixed_routes=false,native_routes=false;
+#ifdef AXV_ENABLE_NATIVE_SIP
+    native_routes=true;
+    fixed_routes=native_engine().observation().process!=axv::RuntimeProcess::Stopped;
+    if(fixed_routes){
+        const auto route=native_engine().selected_audio_route();
+        g_selected_input_id=route.capture_id;g_selected_output_id=route.playback_id;
+    }
+#endif
     const auto inventory = axv::inspect_windows_audio_devices();
     if (inventory.error != axv::AudioInventoryError::None) {
         g_audio_inputs.clear(); g_audio_outputs.clear();
-        fill_audio_combo(g_input_audio_combo, g_audio_inputs, g_selected_input_id);
-        fill_audio_combo(g_output_audio_combo, g_audio_outputs, g_selected_output_id);
+        fill_audio_combo(g_input_audio_combo, g_audio_inputs, g_selected_input_id,false,fixed_routes,native_routes);
+        fill_audio_combo(g_output_audio_combo, g_audio_outputs, g_selected_output_id,false,fixed_routes,native_routes);
         fill_audio_combo(g_ringtone_audio_combo, g_audio_outputs, g_selected_ringtone_id, true);
         EnableWindow(GetDlgItem(GetParent(g_ringtone_audio_combo), kTestRingtoneButton), FALSE);
         SetWindowTextW(g_headset_status, L"Falha ao consultar os dispositivos do Windows.");
@@ -646,15 +658,21 @@ void refresh_audio_panel() {
     g_audio_inputs = inventory.input_devices;
     g_audio_outputs = inventory.output_devices;
     const auto microphone = fill_audio_combo(
-        g_input_audio_combo, g_audio_inputs, g_selected_input_id);
+        g_input_audio_combo, g_audio_inputs, g_selected_input_id,false,fixed_routes,native_routes);
     const auto speaker = fill_audio_combo(
-        g_output_audio_combo, g_audio_outputs, g_selected_output_id);
+        g_output_audio_combo, g_audio_outputs, g_selected_output_id,false,fixed_routes,native_routes);
     const auto ringtone = fill_audio_combo(
         g_ringtone_audio_combo, g_audio_outputs, g_selected_ringtone_id, true);
     EnableWindow(GetDlgItem(GetParent(g_ringtone_audio_combo), kTestRingtoneButton),
         ringtone.available() && g_tone_preview.state() != axv::TonePreviewState::Playing);
     SetWindowTextW(g_headset_status,
         axv::audio_routing_preview_feedback({microphone, speaker, ringtone}));
+#ifdef AXV_ENABLE_NATIVE_SIP
+    const auto route_status=axv::native_audio_route_status({g_selected_input_id,g_selected_output_id},inventory);
+    SetWindowTextW(g_headset_status,route_status==axv::NativeAudioRouteStatus::Ready
+        ? (fixed_routes?L"Rota da sessao fixada. Pare o motor para trocar; teste com headset pendente.":L"Microfone e saida serao aplicados no proximo registro.")
+        :axv::native_audio_route_feedback(route_status));
+#endif
 }
 
 axv::RuntimeProcess observed_process(axv::ProcessStatus status, bool stopping) {
@@ -702,6 +720,13 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     SetWindowTextW(button,L"CHAMAR");
     EnableWindow(GetDlgItem(GetParent(g_runtime_banner),kAnswerNative),observed.sip==axv::SipStatus::Ringing);
     EnableWindow(GetDlgItem(GetParent(g_runtime_banner),kHangupFuture),observed.call_id!=0);
+    const bool routes_locked=observed.process!=axv::RuntimeProcess::Stopped;
+    EnableWindow(g_input_audio_combo,!routes_locked && SendMessageW(g_input_audio_combo,CB_GETCOUNT,0,0)>0);
+    EnableWindow(g_output_audio_combo,!routes_locked && SendMessageW(g_output_audio_combo,CB_GETCOUNT,0,0)>0);
+    static std::wstring last_native_diagnostic;
+    const auto diagnostic=native_engine().diagnostic();
+    if(diagnostic!=last_native_diagnostic){SetWindowTextW(g_process_status,diagnostic.c_str());last_native_diagnostic=diagnostic;}
+
 #endif
 }
 std::wstring make_readiness_report() {
@@ -847,7 +872,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_button(window, L"TESTAR TOQUE", kTestRingtoneButton,
                     219, 507, 170, 43, 2);
 #ifdef AXV_ENABLE_NATIVE_SIP
-        make_label(window,L"Previa local. Chamadas usam o padrao de comunicacao do Windows.",39,566,350,40,2,g_font_small);
+        make_label(window,L"Microfone e voz aplicados ao registrar. Pare o motor para alterar. Toque: previa local.",39,566,350,40,2,g_font_small);
 #else
         make_label(window, L"Preferencias locais. Ainda sem roteamento Baresip.",
                    39, 566, 350, 40, 2, g_font_small);
@@ -996,10 +1021,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             std::string password(bytes>1?static_cast<std::size_t>(bytes):0,'\0');
             if(bytes>1) {WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,secret,-1,password.data(),bytes,nullptr,nullptr);password.pop_back();}
             SecureZeroMemory(secret,sizeof(secret)); SetWindowTextW(g_password,L"");
-            const bool configured=native_engine().configure_authenticated(account,ca,password);
+            const bool configured=native_engine().configure_authenticated(account,ca,password,15000,{g_selected_input_id,g_selected_output_id});
             if(!password.empty())SecureZeroMemory(password.data(),password.size()); password.clear();
             const bool accepted=configured && native_engine().register_account();
-            SetWindowTextW(g_process_status,accepted?L"Registro solicitado; aguardando confirmacao da central.":L"Dados/CA/senha invalidos ou motor ativo. Pare o motor e confira os dados.");
+            SetWindowTextW(g_process_status,accepted?L"Registro solicitado; aguardando confirmacao da central.":L"Dados, CA, senha ou audio invalidos; pare o motor ativo e confira os dados.");
             return 0;
 #endif
             if (g_shutdown.pending()) {
@@ -1084,19 +1109,32 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             const int id = LOWORD(wparam);
             if (id == kInputAudioCombo || id == kOutputAudioCombo ||
                 id == kRingtoneAudioCombo) {
+#ifdef AXV_ENABLE_NATIVE_SIP
+                if(id!=kRingtoneAudioCombo && native_engine().observation().process!=axv::RuntimeProcess::Stopped)return 0;
+#endif
                 HWND combo = id == kInputAudioCombo ? g_input_audio_combo :
                              id == kOutputAudioCombo ? g_output_audio_combo : g_ringtone_audio_combo;
                 const auto& devices = id == kInputAudioCombo ? g_audio_inputs : g_audio_outputs;
-                const LRESULT index = SendMessageW(combo, CB_GETCURSEL, 0, 0);
+                LRESULT index = SendMessageW(combo, CB_GETCURSEL, 0, 0);
+                std::wstring& selected = id == kInputAudioCombo ? g_selected_input_id :
+                    id == kOutputAudioCombo ? g_selected_output_id : g_selected_ringtone_id;
+#ifdef AXV_ENABLE_NATIVE_SIP
+                if(id!=kRingtoneAudioCombo){
+                    if(index==0){selected.clear();SetWindowTextW(g_headset_status,L"Padrao de comunicacao do Windows sera aplicado ao registrar.");return 0;}
+                    --index;
+                }
+#endif
                 if (index >= 0 && static_cast<std::size_t>(index) < devices.size()) {
-                    std::wstring& selected = id == kInputAudioCombo ? g_selected_input_id :
-                        id == kOutputAudioCombo ? g_selected_output_id : g_selected_ringtone_id;
                     selected = devices[static_cast<std::size_t>(index)].id;
                     const auto routing = axv::preview_audio_routing(
                         g_audio_inputs, g_audio_outputs,
                         g_selected_input_id, g_selected_output_id, g_selected_ringtone_id);
+#ifdef AXV_ENABLE_NATIVE_SIP
+                    SetWindowTextW(g_headset_status,L"Microfone e saida serao aplicados no proximo registro; toque e uma previa local.");
+#else
                     SetWindowTextW(g_headset_status,
                         axv::audio_routing_preview_feedback(routing));
+#endif
                     EnableWindow(GetDlgItem(window, kTestRingtoneButton),
                         routing.ringtone_output.available() &&
                         g_tone_preview.state() != axv::TonePreviewState::Playing);
@@ -1432,7 +1470,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0 || std::wcscmp(command_line,L"--native-ui-smoke")==0);
 #ifdef AXV_ENABLE_NATIVE_SIP
-    const wchar_t* title=L"AXE Voice | Candidato nativo 0.51";
+    const wchar_t* title=L"AXE Voice | Candidato nativo 0.52";
 #else
     const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
 #endif
@@ -1450,6 +1488,21 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             !IsWindowEnabled(GetDlgItem(window,kCallButton));
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCallButton,BN_CLICKED),0);
         ok=ok && native_engine().status()==axv::SipStatus::Disconnected;
+        std::vector<axv::AudioEndpoint> endpoints{{L"present",L"Microphone",true,false}};
+        std::wstring missing=L"missing";
+        const auto fixed=fill_audio_combo(g_input_audio_combo,endpoints,missing,false,true,true);
+        ok=ok && !fixed.available() && missing==L"missing" && !IsWindowEnabled(g_input_audio_combo);
+        std::wstring selected=L"present";
+        const auto editable=fill_audio_combo(g_input_audio_combo,endpoints,selected,false,false,true);
+        ok=ok && editable.available() && IsWindowEnabled(g_input_audio_combo);
+        std::wstring windows_default;
+        fill_audio_combo(g_input_audio_combo,endpoints,windows_default,false,false,true);
+        ok=ok && windows_default.empty() && SendMessageW(g_input_audio_combo,CB_GETCURSEL,0,0)==0;
+        g_audio_inputs=endpoints;g_selected_input_id=L"present";
+        fill_audio_combo(g_input_audio_combo,endpoints,g_selected_input_id,false,false,true);
+        SendMessageW(g_input_audio_combo,CB_SETCURSEL,0,0);
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kInputAudioCombo,CBN_SELCHANGE),reinterpret_cast<LPARAM>(g_input_audio_combo));
+        ok=ok && g_selected_input_id.empty();
         // A missing CA must reject TLS before any registration starts.
         axv::SipAccount a{L"127.0.0.1",L"1001",5061,true};
         ok=ok && !native_engine().configure_authenticated(a,L"","fixture-only");

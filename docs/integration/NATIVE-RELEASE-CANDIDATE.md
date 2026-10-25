@@ -1,4 +1,6 @@
-# Native release candidate — acceptance record
+# Native candidate0.51 — acceptance record
+
+Historical record for PR #132 and its tested0.51 installer. For selected WASAPI endpoint routing in0.52, see [native audio routing](NATIVE-AUDIO-ROUTING.md).
 
 The default build remains the unavailable SDK-free GUI. `AXV_ENABLE_NATIVE_SIP=ON` adds an authenticated native candidate, requires the audited SDK gates plus TLS/media profile, and is packaged separately. It is not a production release.
 
