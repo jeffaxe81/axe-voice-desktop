@@ -1,3 +1,35 @@
+# AXE Voice — situação após integração na main
+
+Atualizado em25/10/2026.
+
+## Estado atual
+
+Os sete PRs abertos #12, #14, #15, #23, #31, #36 e #39 foram integrados à main pelo merge `3eb43ba6972c37a64a501dbf473f208d78738b78`. Não há PR aberto restante após essa integração. As decisões de conflitos estão em [OPEN-PRS-RESOLUTION.md](integration/OPEN-PRS-RESOLUTION.md).
+
+A main agora inclui o bootstrap Win32/Baresip de laboratório e seus componentes experimentais isolados. O projeto CMake identifica0.51.0; a branch experimental separada v0.154 não foi incorporada integralmente por esse merge. Fontes privadas locais de outro fluxo não foram publicadas.
+
+## Evidência do merge
+
+- CI Windows da integração: [40159743060](https://github.com/jeffaxe81/axe-voice-desktop/actions/runs/40159743060),67/67 testes aprovados (38 unitários,2 caixa-preta,27 integração).
+- CI Windows após merge, no SHA exato da main: [40159853827](https://github.com/jeffaxe81/axe-voice-desktop/actions/runs/40159853827), concluída com sucesso, com artefato AXE-Voice-Windows-Release.
+- Integridade MicroSIP após merge: [40159853861](https://github.com/jeffaxe81/axe-voice-desktop/actions/runs/40159853861), aprovada.
+- Compilação cruzada Windows completa e61/61 testes portáveis foram executados durante a reconciliação.
+
+Esses resultados comprovam os gates executados, não cobertura integral nem funcionamento SIP/RTP com uma central real. O executável GUI mantém a fronteira de SIP indisponível; o adaptador nativo permanece isolado/opcional. Não classificar esta entrega como softphone de produção.
+
+## Próxima entrega técnica
+
+1. Inventariar e fixar SDK Baresip/libre, licenças e módulos para o alvo nativo isolado.
+2. Compilar e executar os gates de ABI/quiescência com esses SDKs, preservando bloqueio da GUI até evidência válida.
+3. Configurar uma conta descartável e central identificada para registro/chamada reais; não inferir configuração Dígitro a partir de testes sintéticos.
+4. Comprovar mídia bidirecional, headset e política TLS/SRTP antes de declarar telefonia operacional.
+
+O roteiro histórico abaixo registra decisões anteriores à integração e não descreve o estado atual dos PRs ou os testes do merge.
+
+---
+
+## Histórico anterior à integração
+
 # AXE Voice — critérios para promoção à main
 
 Data da revisão: 25/10/2026.

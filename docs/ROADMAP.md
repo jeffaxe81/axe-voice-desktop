@@ -1,3 +1,11 @@
+# Roadmap atual da main
+
+A main recebeu os sete PRs de laboratório em25/10/2026. Consulte [situação, evidências e próxima entrega](AXEVOICE-RELEASE-PROMOTION.md) e [resolução dos conflitos](integration/OPEN-PRS-RESOLUTION.md).
+
+Próximo marco: SDK nativo auditado e gates de ABI/quiescência, antes de habilitar registro e chamadas reais na GUI. O roteiro abaixo pertence à fundação histórica MicroSIP.
+
+---
+
 # Roadmap
 
 ## P1.1 — Fundação
