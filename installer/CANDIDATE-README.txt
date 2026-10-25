@@ -1,4 +1,4 @@
-AXE Voice Native Candidate 0.52.0
+AXE Voice Native Candidate 0.53.0
 
 This is a validation build, not a production-approved release.
 Enter server, extension, port and session password in Settings, then Register.
@@ -11,3 +11,5 @@ Missing selected endpoints block new calls/answering; reconnect or stop and choo
 Physical headset audio, bidirectional RTP and actual Digitro PBX calls require acceptance testing.
 Third-party license texts are included under licenses/.
 The installer and executable are unsigned. File hashes identify artifacts, not publisher certification.
+
+During an established native call, MUTE changes the SDK microphone flag; HOLD/RESUME requests local hold state. A local hold flag is not confirmation of remote SIP negotiation. Validate microphone silence and peer hold/resume behavior on the target PBX/headset. Transfer remains unavailable.

@@ -59,6 +59,13 @@ extern "C" void ua_hangup(ua* account, call* current,
     emit(BEVENT_CALL_CLOSED, account, current);
 }
 
+static int g_mutes=0,g_holds=0,g_hold_error=0;
+extern "C" audio* call_audio(const call* current){return current?&const_cast<call*>(current)->test_audio:nullptr;}
+extern "C" void audio_mute(audio* current,bool muted){if(current){++g_mutes;current->test_muted=muted;}}
+extern "C" bool audio_ismuted(const audio* current){return current && current->test_muted;}
+extern "C" bool call_is_onhold(const call* current){return current && current->test_held;}
+extern "C" int call_hold(call* current,bool held){if(!current)return 22;++g_holds;current->test_held=held;return g_hold_error;}
+
 int main() {
     using namespace axv;
     BaresipEventMailbox mailbox;
@@ -68,6 +75,7 @@ int main() {
     ua account{1};
     call first{&account, 11}, second{&account, 22}, third{&account, 33};
 
+    if(prestart.set_muted(1,true) || prestart.set_held(1,true)==0 || prestart.media_state(1).available)return 29;
     if (prestart.originate(L"sip:alice@example.org") ||
         prestart.answer(1) || prestart.hangup(1)) return 1;
     if (!adapter.start(&account)) return 2;
@@ -92,6 +100,7 @@ int main() {
     if (outgoing.size != 1 ||
         outgoing.events[0].kind != BaresipEventKind::CallOutgoing ||
         outgoing.events[0].call_id != 1) return 9;
+    if(port.set_muted(1,true) || port.set_held(1,true)==0)return 39;
     if (port.answer(1) || port.hangup(0) || port.hangup(2) ||
         g_answers || g_hangups) return 10;
     if (!port.hangup(1) || g_hangups != 1 || port.hangup(1)) return 11;
@@ -109,6 +118,22 @@ int main() {
     if (established.size != 1 ||
         established.events[0].kind != BaresipEventKind::CallEstablished ||
         established.events[0].call_id != 2) return 16;
+    auto media=port.media_state(2);
+    if(!media.available || media.muted || media.local_hold) return 30;
+    if(port.set_muted(1,true) || port.set_held(1,true)==0)return 31;
+    if(!port.set_muted(2,true) || !port.media_state(2).muted)return 32;
+    if(!port.set_muted(2,true) || g_mutes!=1)return 33;
+    if(!port.set_muted(2,false) || port.media_state(2).muted || g_mutes!=2)return 34;
+    if(port.set_held(2,true) || !port.media_state(2).local_hold)return 35;
+    if(port.set_held(2,true) || g_holds!=1)return 36;
+    g_hold_error=5;
+    if(port.set_held(2,false)!=5 || port.media_state(2).local_hold)return 37;
+    g_hold_error=0;
+    std::atomic<bool> invalid_media_access{false};
+    std::thread media_outsider([&]{
+        if(port.media_state(2).available || port.set_muted(2,true) || port.set_held(2,true)==0)invalid_media_access=true;
+    });media_outsider.join();
+    if(invalid_media_access || g_mutes!=2 || g_holds!=2)return 38;
     if (!port.hangup(2) || g_hangups != 2 || port.hangup(2))
         return 17;
     mailbox.drain();

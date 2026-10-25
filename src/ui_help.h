@@ -24,6 +24,8 @@ inline constexpr const wchar_t* frontend_help_text() {
         L"Clique REGISTRAR e aguarde SIP REGISTRADO.\n"
         L"No teclado, informe o ramal e use CHAMAR.\n"
         L"Para receber, use ATENDER; para terminar, ENCERRAR.\n"
+        L"Em chamada, MUDO/MIC MUDO controla o microfone no SDK.\n"
+        L"ESPERA/RETOMAR solicita o estado local; confirme na central.\n"
         L"Pare o motor antes de trocar os dados da conta.\n\n"
         L"Selecione microfone e voz na aba Audio antes de REGISTRAR.\n"
         L"A rota fica fixa na sessao; pare o motor para trocar dispositivos.\n"

@@ -5,7 +5,8 @@
 extern "C" {
 #endif
 struct ua { unsigned test_id; };
-struct call { struct ua* owner; unsigned test_id; };
+struct audio { bool test_muted = false; };
+struct call { struct ua* owner; unsigned test_id; bool test_held = false; struct audio test_audio{}; };
 struct bevent { struct ua* owner; struct call* active_call; };
 enum bevent_ev {
   BEVENT_REGISTERING, BEVENT_REGISTER_OK, BEVENT_REGISTER_FAIL,
@@ -26,6 +27,11 @@ int ua_connect(struct ua* ua, struct call** callp, const char* from_uri,
 int ua_answer(struct ua* ua, struct call* call, enum vidmode vmode);
 void ua_hangup(struct ua* ua, struct call* call, unsigned short scode,
                const char* reason);
+struct audio* call_audio(const struct call* selected);
+void audio_mute(struct audio* selected, bool muted);
+bool audio_ismuted(const struct audio* selected);
+int call_hold(struct call* selected, bool held);
+bool call_is_onhold(const struct call* selected);
 int ua_alloc(struct ua** selected, const char* aor);
 unsigned ua_destroy(struct ua* selected);
 int ua_register(struct ua* selected);

@@ -2,17 +2,20 @@
 #include "sip_event_projection.h"
 #include <string>
 namespace axv {
-enum class NativeCallAction {None,Dial,Answer,Hangup};
+enum class NativeCallAction {None,Dial,Answer,Hangup,SetMute,SetHold};
 struct NativeCallCommand {
  NativeCallAction action=NativeCallAction::None;
  std::uint64_t session=0,call_id=0;
  std::string destination;
+ bool desired=false;
 };
 inline bool native_command_is_current(const NativeCallCommand& c,const SipRuntimeObservation& s){
  if(!sip_proof_is_current(s,c.session) || c.call_id!=s.call_id)return false;
  switch(c.action){
  case NativeCallAction::Dial:return s.sip==SipStatus::Registered && !s.call_id;
  case NativeCallAction::Answer:return s.sip==SipStatus::Ringing && s.call_id;
+ case NativeCallAction::SetMute:
+ case NativeCallAction::SetHold:return s.sip==SipStatus::InCall && s.call_id;
  case NativeCallAction::Hangup:return s.call_id && (s.sip==SipStatus::Calling||s.sip==SipStatus::Ringing||s.sip==SipStatus::InCall);
  default:return false;
  }
