@@ -235,6 +235,10 @@ if(BUILD_TESTING)
   add_executable(test_ui_contrast_policy tests/test_ui_contrast_policy.cpp)
   target_compile_features(test_ui_contrast_policy PRIVATE cxx_std_17)
   add_test(NAME ui_contrast_policy COMMAND test_ui_contrast_policy)
+  # Historical #36 pure viewport-policy assertions, not yet executed here.
+  add_executable(test_ui_viewport_policy tests/test_ui_viewport_policy.cpp)
+  target_compile_features(test_ui_viewport_policy PRIVATE cxx_std_17)
+  add_test(NAME ui_viewport_policy COMMAND test_ui_viewport_policy)
   add_test(NAME ui_smoke COMMAND $<TARGET_FILE:AXEVoice> --ui-smoke)
   add_executable(test_ui_blackbox tests/test_ui_blackbox.cpp)
   target_compile_features(test_ui_blackbox PRIVATE cxx_std_17)
@@ -275,6 +279,15 @@ if(BUILD_TESTING)
   add_executable(test_sip_event_projection tests/test_sip_event_projection.cpp)
   target_compile_features(test_sip_event_projection PRIVATE cxx_std_17)
   add_test(NAME sip_event_projection COMMAND test_sip_event_projection)
+  # Historical #39 regression sources restored for future CTest runs.
+  # This merge does not execute these tests or assert that they pass.
+  add_executable(test_sip_batch_bounds tests/test_sip_batch_bounds.cpp)
+  target_compile_features(test_sip_batch_bounds PRIVATE cxx_std_17)
+  add_test(NAME sip_batch_bounds COMMAND test_sip_batch_bounds)
+  add_executable(test_sip_dial_matrix tests/test_sip_dial_matrix.cpp)
+  target_compile_features(test_sip_dial_matrix PRIVATE cxx_std_17)
+  target_link_libraries(test_sip_dial_matrix PRIVATE axv_sip_address)
+  add_test(NAME sip_dial_matrix COMMAND test_sip_dial_matrix)
   add_executable(test_sip_runtime_session_guard tests/test_sip_runtime_session_guard.cpp)
   target_compile_features(test_sip_runtime_session_guard PRIVATE cxx_std_17)
   add_test(NAME sip_runtime_session_guard COMMAND test_sip_runtime_session_guard)
@@ -457,7 +470,8 @@ endforeach()
 set_tests_properties(ui_smoke ui_blackbox PROPERTIES LABELS "blackbox")
 set_tests_properties(integration_sip_safety baresip_sdk_abi_probe windows_process sip_runtime_session_guard
   baresip_sdk_provenance
-  sip_event_projection baresip_event_mailbox baresip_callback_ingress
+  sip_event_projection sip_batch_bounds sip_dial_matrix
+  baresip_event_mailbox baresip_callback_ingress
   baresip_callback_lifecycle baresip_sdk_event_adapter baresip_sdk_single_owner baresip_sdk_epochs
   baresip_sdk_callback_quiescence
   call_command_authorization sip_command_executor integration_incoming_ringtone
