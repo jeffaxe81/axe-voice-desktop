@@ -1,0 +1,9 @@
+# Native candidate0.53 — microphone mute and local hold/resume
+
+Continue the disabled release call controls using the current Windows/C++17/Baresip4.12 candidate. Add microphone mute/unmute and local hold/resume requests on an established selected call. Transfer remains disabled.
+
+Chosen design: explicit boolean desired-state commands, bound to current native session/call tokens and dispatched only on the SDK owner thread. Repeated desired-state commands are idempotent; stale/cross-thread/non-established calls are rejected. The SDK call port resolves its owned call and reads audio_ismuted/call_is_onhold into a pointer-free media snapshot. Clear that snapshot when call/session changes. Buttons use actual SDK local flags, not optimistic UI toggles.
+
+call_hold changes Baresip's local on_hold flag before call_modify and can return an error. Therefore hold is reported as local intent/request, never remote confirmation. Preserve local readback and show command failure without falsely claiming central acceptance; hangup remains available. Mute confirms only the SDK microphone-mute flag, not acoustic silence on physical hardware. Resume requires the existing fresh audio-route preflight; mute/hold/hangup do not depend on device availability. Do not let failed resume preflight consume an idempotence token.
+
+The native four-button row becomes Answer/Hold/Mute/Hangup; default SDK-free GUI remains unchanged. Validation: session policy tests; SDK port fixtures for wrong token/thread/session, duplicate desired states and hold failure after local mutation; real SDK compile/link ABI gates; native lifecycle/no-call rejection and GUI smoke; existing71-test suite, seven native scenarios and installer install/uninstall. Actual Digitro call/hold negotiation and microphone audibility remain external acceptance.

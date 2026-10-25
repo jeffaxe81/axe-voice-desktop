@@ -6,6 +6,7 @@ A main recebeu os sete PRs de laboratório em25/10/2026. Consulte [situação, e
 
 - [x] SDK auditado, registro/TLS local, GUI e instalador candidato (PR #132).
 - [x] 0.52: seleções de microfone/voz aplicadas ao WASAPI; rota fixada por sessão; bloqueio antes de chamar/atender se o endpoint faltar. [Escopo e validação](integration/NATIVE-AUDIO-ROUTING.md).
+- [x] 0.53: mudo do microfone e pedidos de espera/retomada locais, com leitura real do SDK e comandos vinculados à chamada exibida. [Escopo e limites](integration/NATIVE-MUTE-HOLD.md).
 - [ ] Homologar registro/chamadas na Dígitro e áudio bidirecional com headset físico.
 - [ ] Validar troca de dispositivos durante chamada antes de permitir roteamento ao vivo.
 - [ ] Implementar SRTP se exigido pela implantação; TLS de SIP não criptografa RTP.

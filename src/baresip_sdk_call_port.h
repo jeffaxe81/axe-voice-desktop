@@ -1,6 +1,8 @@
 #pragma once
 #include "baresip_sdk_event_adapter.h"
 #include "sip_command_executor.h"
+#include "native_call_media.h"
+#include <cerrno>
 #include <cstdint>
 #include <string>
 #include <thread>
@@ -8,7 +10,7 @@
 namespace axv {
 
 // Experimental concrete SipNativeCommandPort for a pinned Baresip SDK.
-// NOT LINKED INTO AXEVoice.exe, does not grant VerifiedNativeApi, and must be
+// Used by the optional native candidate; does not itself grant provenance. Must be
 // called solely on the serialized Baresip event-loop owner thread.
 // The SipCommandExecutor verifies live SIP state, action and replay sequence;
 // this port separately verifies native session/call ownership before SDK calls.
@@ -67,12 +69,36 @@ public:
         return true;
     }
 
+    NativeCallMediaState media_state(std::uint64_t token) const {
+        auto* owned=resolve(token);
+        if(!owned || !adapter_.call_established_ || adapter_.hangup_sent_)return {};
+        auto* audio=call_audio(owned);
+        if(!audio)return {};
+        return {captured_session_,token,true,audio_ismuted(audio),call_is_onhold(owned)};
+    }
+    bool set_muted(std::uint64_t token,bool desired) {
+        auto* owned=resolve(token);
+        if(!owned || !adapter_.call_established_ || adapter_.hangup_sent_)return false;
+        auto* audio=call_audio(owned);
+        if(!audio)return false;
+        if(audio_ismuted(audio)!=desired)audio_mute(audio,desired);
+        return audio_ismuted(audio)==desired;
+    }
+    int set_held(std::uint64_t token,bool desired) {
+        auto* owned=resolve(token);
+        if(!owned || !adapter_.call_established_ || adapter_.hangup_sent_)return EINVAL;
+        // Pinned SDK changes the LOCAL flag before sending/modifying SDP.
+        // Return errors to caller; readback is not remote SIP confirmation.
+        if(call_is_onhold(owned)==desired)return 0;
+        return call_hold(owned,desired);
+    }
+
 private:
     bool owns_session() const {
         return std::this_thread::get_id() == owner_thread_ &&
                captured_session_ != 0 && adapter_.active() &&
                adapter_.captured_.mailbox_session == captured_session_ &&
-               adapter_.owner_ != nullptr && adapter_.sip_registered_;
+               adapter_.owner_ != nullptr && adapter_.native_register_ok_seen();
     }
     struct call* resolve(std::uint64_t token) const {
         if (!owns_session() || !token ||

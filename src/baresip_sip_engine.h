@@ -2,6 +2,7 @@
 #include "sip_engine.h"
 #include "sip_runtime_observation.h"
 #include "native_audio_routes.h"
+#include "native_call_media.h"
 #include <memory>
 namespace axv {
 // Candidate native implementation. All SDK pointers stay on its owner thread.
@@ -16,6 +17,9 @@ public:
     bool register_account() override;
     bool start_call(const std::wstring&) override;
     bool answer();
+    bool set_muted(bool desired,const NativeCallMediaState& expected);
+    bool set_held(bool desired,const NativeCallMediaState& expected);
+    NativeCallMediaState media_state() const;
     void hangup() override;
     void stop();
     SipRuntimeObservation observation() const;

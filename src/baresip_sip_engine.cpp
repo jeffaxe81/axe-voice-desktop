@@ -25,6 +25,9 @@ struct BaresipSipEngine::Impl {
     NativeAudioRouteStatus audio_issue=NativeAudioRouteStatus::Ready;
     std::string password;
     NativeCallCommand command;
+    NativeCallMediaState media;
+    int last_hold_error=0;
+    bool mute_rejected=false;
     NativeCommandAdmission admission;
     SipRuntimeObservation view{RuntimeProcess::Stopped,SipStatus::Disconnected};
     int sdk_error=0;
@@ -41,11 +44,18 @@ struct BaresipSipEngine::Impl {
     BaresipNativeLibreReactor reactor{[this]{tick();},[this]{begin();},[this]{end();}};
     static inline std::atomic<Impl*> process_owner{nullptr};
     ~Impl(){reactor.stop();erase(password);}
-    void fail() { failed=true; adapter.stop(); if(owned){erase_sdk_account_password(ua_account(owned));ua_stop_all(true);owned=nullptr;} std::lock_guard<std::mutex> lock(mutex); view={RuntimeProcess::Failed,SipStatus::Failed}; command={}; }
+    void fail() { failed=true; adapter.stop(); if(owned){erase_sdk_account_password(ua_account(owned));ua_stop_all(true);owned=nullptr;} std::lock_guard<std::mutex> lock(mutex); view={RuntimeProcess::Failed,SipStatus::Failed}; command={};media={};last_hold_error=0;mute_rejected=false; }
     bool checked(int error,const wchar_t* stage) {
         if(!error)return true;
         {std::lock_guard<std::mutex> lock(mutex);sdk_error=error;sdk_stage=stage;}
         fail();return false;
+    }
+    void publish_media(const SipRuntimeObservation& observed,BaresipSdkCallPort& calls) {
+        auto current=observed.sip==SipStatus::InCall?calls.media_state(observed.call_id):NativeCallMediaState{};
+        std::lock_guard<std::mutex> lock(mutex);
+        if(current.session!=media.session || current.call_id!=media.call_id){last_hold_error=0;mute_rejected=false;}
+        current.hold_request_error=last_hold_error;
+        media=current;
     }
     void begin() {
         Impl* expected=nullptr;
@@ -76,6 +86,8 @@ struct BaresipSipEngine::Impl {
            observed.sip==SipStatus::Failed || (!adapter.native_register_ok_seen() && now_ms()>=deadline)) {fail();return;}
         if(adapter.native_register_ok_seen()) deadline=UINT64_MAX;
         else if(deadline==UINT64_MAX) deadline=now_ms()+timeout_ms;
+        BaresipSdkCallPort calls(adapter);
+        publish_media(observed,calls);
         NativeCallCommand pending;
         {
             std::lock_guard<std::mutex> lock(mutex);
@@ -83,19 +95,28 @@ struct BaresipSipEngine::Impl {
         }
         if(!adapter.native_register_ok_seen() || !native_command_is_current(pending,observed)) return;
         AudioInventory inventory;
-        if(pending.action==Action::Dial || pending.action==Action::Answer)
+        if(native_command_needs_audio_preflight(pending))
             inventory=inspect_windows_audio_devices(); // Owner thread, immediately before media creation.
         const auto decision=admit_native_audio_command(admission,pending,observed,audio_route,inventory);
         {std::lock_guard<std::mutex> lock(mutex);audio_issue=decision.audio;}
         if(!decision.allowed)return;
-        BaresipSdkCallPort calls(adapter);
         if(pending.action==Action::Dial && observed.sip==SipStatus::Registered && !observed.call_id) {
             if(ua_connect(owned,nullptr,nullptr,pending.destination.c_str(),VIDMODE_OFF)) fail();
         } else if(pending.action==Action::Answer && observed.sip==SipStatus::Ringing) {
             if(!calls.answer(observed.call_id)) fail();
         } else if(pending.action==Action::Hangup && observed.call_id) {
             if(!calls.hangup(observed.call_id)) fail();
+        } else if(pending.action==Action::SetMute){
+            const bool applied=calls.set_muted(observed.call_id,pending.desired);
+            {std::lock_guard<std::mutex> lock(mutex);mute_rejected=!applied;}
+        } else if(pending.action==Action::SetHold){
+            const auto before=calls.media_state(observed.call_id);
+            if(before.available && before.local_hold!=pending.desired){
+                const int error=calls.set_held(observed.call_id,pending.desired);
+                {std::lock_guard<std::mutex> lock(mutex);last_hold_error=error;}
+            }
         }
+        publish_media(observed,calls);
     }
     void end() {
         // No SDK callback can race this: all SDK work is serialized by re_main.
@@ -105,15 +126,16 @@ struct BaresipSipEngine::Impl {
         owned=nullptr;
         if(claimed){conf_close(); if(core)baresip_close(); mod_close(); core=false; process_owner.store(nullptr); claimed=false;}
         erase(password);
-        std::lock_guard<std::mutex> lock(mutex); view={RuntimeProcess::Stopped,SipStatus::Disconnected}; command={};
+        std::lock_guard<std::mutex> lock(mutex); view={RuntimeProcess::Stopped,SipStatus::Disconnected}; command={};media={};last_hold_error=0;mute_rejected=false;
     }
-    bool submit(Action a,std::string uri={}) {
+    bool submit(Action a,std::string uri={},bool desired=false,const NativeCallMediaState* expected=nullptr) {
         {std::lock_guard<std::mutex> lock(mutex);
          if(view.process!=RuntimeProcess::Running || command.action!=Action::None ||
             (a==Action::Dial && view.sip!=SipStatus::Registered) ||
             (a==Action::Answer && view.sip!=SipStatus::Ringing) ||
-            (a==Action::Hangup && !view.call_id))return false;
-         command={a,view.session,view.call_id,std::move(uri)};}
+            (a==Action::Hangup && !view.call_id) ||
+            ((a==Action::SetMute || a==Action::SetHold) && (!expected || !native_media_controls_current(*expected,view) || !native_media_controls_current(media,view))))return false;
+         command={a,view.session,view.call_id,std::move(uri),desired};}
         // Native periodic timer is the fallback if the wake notification fails.
         (void)reactor.wake(); return true;
     }
@@ -122,6 +144,7 @@ BaresipSipEngine::BaresipSipEngine():impl_(std::make_unique<Impl>()){}
 BaresipSipEngine::~BaresipSipEngine(){stop();}
 SipRuntimeObservation BaresipSipEngine::observation()const {std::lock_guard<std::mutex> lock(impl_->mutex);return impl_->view;}
 NativeAudioRoute BaresipSipEngine::selected_audio_route()const {std::lock_guard<std::mutex> lock(impl_->mutex);return impl_->audio_route;}
+NativeCallMediaState BaresipSipEngine::media_state()const {std::lock_guard<std::mutex> lock(impl_->mutex);return impl_->media;}
 SipStatus BaresipSipEngine::status()const{return observation().sip;}
 bool BaresipSipEngine::configure(const SipAccount&){return false;} // explicit authentication is required
 bool BaresipSipEngine::configure_authenticated(const SipAccount& a,const std::wstring& ca,std::string password,unsigned timeout,const NativeAudioRoute& audio) {
@@ -138,17 +161,25 @@ bool BaresipSipEngine::register_account(){
     return impl_->reactor.start();
 }
 bool BaresipSipEngine::start_call(const std::wstring& s){const auto uri=native_call_destination(s,impl_->account);return !uri.empty()&&impl_->submit(Impl::Action::Dial,uri);}
+bool BaresipSipEngine::set_muted(bool desired,const NativeCallMediaState& expected){return impl_->submit(Impl::Action::SetMute,{},desired,&expected);}
+bool BaresipSipEngine::set_held(bool desired,const NativeCallMediaState& expected){return impl_->submit(Impl::Action::SetHold,{},desired,&expected);}
 bool BaresipSipEngine::answer(){return impl_->submit(Impl::Action::Answer);}
 void BaresipSipEngine::hangup(){(void)impl_->submit(Impl::Action::Hangup);}
 void BaresipSipEngine::stop(){
     {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->view={RuntimeProcess::Stopping,SipStatus::Disconnected};impl_->command={};}
     impl_->reactor.stop();impl_->configured=false;erase(impl_->password);
-    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->view={RuntimeProcess::Stopped,SipStatus::Disconnected};impl_->audio_route={};impl_->audio_issue=NativeAudioRouteStatus::Ready;}
+    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->view={RuntimeProcess::Stopped,SipStatus::Disconnected};impl_->media={};impl_->last_hold_error=0;impl_->mute_rejected=false;impl_->audio_route={};impl_->audio_issue=NativeAudioRouteStatus::Ready;}
 }
 std::wstring BaresipSipEngine::diagnostic()const {
     {std::lock_guard<std::mutex> lock(impl_->mutex);
      if(impl_->sdk_error)return L"Falha SDK em "+impl_->sdk_stage+L": "+std::to_wstring(impl_->sdk_error);
-     if(impl_->audio_issue!=NativeAudioRouteStatus::Ready)return native_audio_route_feedback(impl_->audio_issue);}
+     if(impl_->audio_issue!=NativeAudioRouteStatus::Ready)return native_audio_route_feedback(impl_->audio_issue);
+     if(impl_->last_hold_error)return L"Pedido de espera/retomada falhou no SDK. Estado local nao confirma a central; retome ou encerre.";
+     if(impl_->mute_rejected)return L"Nao foi possivel alterar o mudo do microfone nesta chamada.";
+     if(native_media_controls_current(impl_->media,impl_->view)){
+         if(impl_->media.local_hold)return L"Espera local solicitada ao SDK; confirme o comportamento na central.";
+         if(impl_->media.muted)return L"Microfone em mudo no SDK; valide o silencio com o headset.";
+     }}
     switch(status()) {
     case SipStatus::Registered:return L"Registro SIP confirmado por callback nativo. Midia ainda nao homologada.";
     case SipStatus::Registering:return L"Registro SIP em andamento; aguardando a central.";
