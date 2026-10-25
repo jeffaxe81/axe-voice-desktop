@@ -18,9 +18,11 @@ No private source publication; no password in config/AOR/log; no false registrat
 - Missing hardware: surface audio failure and keep production acceptance pending.
 
 ## Tasks
-- [ ] Account and destination boundary: write failing behavioral tests, implement strict native config conversion, run portable tests.
-- [ ] Native engine: real lifecycle and loopback registration tests first; implement owner-side configuration/authentication, callback snapshots and call command gating; verify real SDK tests.
-- [ ] GUI candidate: add password/CA and register/answer/hangup controls; connect snapshot/status path; run default and candidate GUI smoke.
-- [ ] TLS and media: exercise trusted/untrusted/hostname handshake locally; record explicit physical media/PBX dependencies.
-- [ ] Installer: package matching candidate executable/DLLs/licenses and test silent install/uninstall in Windows CI.
+- [x] Account and destination boundary: write failing behavioral tests, implement strict native config conversion, run portable tests.
+- [x] Native engine: real lifecycle and loopback registration tests first; implement owner-side configuration/authentication, callback snapshots and call command gating; verify real SDK tests.
+- [x] GUI candidate: add password/CA and register/answer/hangup controls; connect snapshot/status path; run default and candidate GUI smoke.
+- [x] TLS and media: exercise trusted/untrusted/hostname handshake locally; record explicit physical media/PBX dependencies.
+- [x] Installer: package matching candidate executable/DLLs/licenses and test silent install/uninstall in Windows CI.
 - [ ] Review and verification: run existing suite plus candidate CI, fix findings, merge exact approved head and update release acceptance record.
+
+Automated code acceptance: e977367, Windows70/70 + native CI40191814868 including six Digest/TLS scenarios and installer smoke. Actual PBX/media/hardware acceptance remains explicitly external and incomplete. Final review fixes and verification are recorded in the acceptance document; merge follows exact-head checks.

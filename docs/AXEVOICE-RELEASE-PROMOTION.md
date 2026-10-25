@@ -21,10 +21,16 @@ Esses resultados comprovam os gates executados, não cobertura integral nem func
 
 [A auditoria inicial](integration/NATIVE-SDK-AUDIT-20261025.md) compilou os probes com cabeçalhos reais Baresip/libre4.12 e executou o reactor com libre real no Linux, inclusive ASan/UBSan. Encontrou e corrigiu ordem de includes e requisitos de plataforma dos alvos opcionais. O candidato MinGW permanece rejeitado pelo gate MSVC; SIP da GUI continua bloqueado. Isso não aprova SDK Windows, PABX ou áudio real.
 
+## Candidato nativo com instalador
+
+A entrega do PR #132 conecta o SDK à interface em uma build candidata opcional (`AXV_ENABLE_NATIVE_SIP=ON`). Os gates passaram no Windows:70 testes gerais, registro Digest local/renovação/erros/timeout, TLS confiável e rejeição de CA/hostname inválidos, GUI nativa e instalação/desinstalação. [Evidências e download](integration/NATIVE-RELEASE-CANDIDATE.md).
+
+A build padrão continua SDK-free. O candidato ainda não foi homologado para chamadas na Dígitro ou áudio bidirecional/headset físico, não oferece SRTP e não é uma release de produção. Os campos de senha e CA e os comandos registrar/chamar/atender/encerrar estão conectados no candidato; seleções de áudio da aba permanecem prévias, com chamadas usando o padrão de comunicação do Windows.
+
 ## Próxima entrega técnica
 
-1. Inventariar e fixar SDK Baresip/libre, licenças e módulos para o alvo nativo isolado.
-2. Compilar e executar os gates de ABI/quiescência com esses SDKs, preservando bloqueio da GUI até evidência válida.
+1. SDK e candidato GUI/instalador possuem evidência automatizada; manter os gates e registrar alterações de dependências.
+2. Continuar a validação de callbacks e chamadas com o candidato; não promover a produção apenas por testes locais.
 3. Configurar uma conta descartável e central identificada para registro/chamada reais; não inferir configuração Dígitro a partir de testes sintéticos.
 4. Comprovar mídia bidirecional, headset e política TLS/SRTP antes de declarar telefonia operacional.
 
