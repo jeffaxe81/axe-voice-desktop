@@ -121,8 +121,13 @@ public:
     // Lease spanning the entire native C callback, including SDK argument
     // reads; shutdown waits for this lease after handler unregistration.
     BaresipCallbackFence::Lease hold_native_callback(CapturedSession captured) {
-        return captured ? fence_.admit(captured.fence_generation)
-                        : BaresipCallbackFence::Lease{};
+        if (!captured) return {};
+        auto lease = fence_.admit(captured.fence_generation);
+        // PR #31: guard both the fence epoch and the ingress session.
+        // A callback from a revoked mailbox cannot enter the native reducer.
+        if (!lease || ingress_.session() != captured.mailbox_session)
+            return {};
+        return lease;
     }
 
     bool registration(CapturedSession captured, BaresipEventKind event) {
