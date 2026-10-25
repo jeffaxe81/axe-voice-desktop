@@ -36,8 +36,11 @@ if ($TlsMedia) {
     $VsRoot = (& $Vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
     if ($LASTEXITCODE -ne 0 -or !$VsRoot) { throw 'MSVC development environment not found' }
     $DevCmd = Join-Path $VsRoot 'Common7/Tools/VsDevCmd.bat'
-    $Command = '""{0}" -no_logo -arch=x64 -host_arch=x64 >nul && set"' -f $DevCmd
-    $ToolEnvironment = & cmd.exe /d /s /c $Command
+    # A batch file avoids nested cmd/PowerShell quoting of Program Files paths.
+    $ImportTools = Join-Path $Work 'import-msvc.cmd'
+    @('@echo off', ('call "{0}" -no_logo -arch=x64 -host_arch=x64 >nul' -f $DevCmd),
+      'if errorlevel 1 exit /b 1', 'set') | Set-Content $ImportTools -Encoding ascii
+    $ToolEnvironment = & cmd.exe /d /c $ImportTools
     if ($LASTEXITCODE -ne 0) { throw 'Could not initialize MSVC x64 tools' }
     foreach ($Line in $ToolEnvironment) {
         if ($Line -match '^([^=]+)=(.*)$') {
