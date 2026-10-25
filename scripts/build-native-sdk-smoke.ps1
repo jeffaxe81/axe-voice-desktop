@@ -42,7 +42,7 @@ Invoke-Checked 'cmake' (@('-S',$Baresip,'-B',$BsBuild) + $Common + @('-DSTATIC=O
 Invoke-Checked 'cmake' @('--build',$BsBuild,'--config','Release','--parallel','4')
 Invoke-Checked 'cmake' @('--install',$BsBuild,'--config','Release')
 $Header = Join-Path $Prefix 'include/baresip.h'
-$Library = Join-Path $Prefix 'lib/baresip.lib'
+$Library = Join-Path $Prefix 'lib/libbaresip.lib'
 $ReHeader = Join-Path $Prefix 'include/re/re.h'
 $ReLibrary = Join-Path $Prefix 'lib/re-static.lib'
 function Get-Hash([string]$Path) { return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }

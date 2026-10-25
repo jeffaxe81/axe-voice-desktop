@@ -9,6 +9,7 @@ on:
       - 'cmake/**'
       - 'src/baresip*'
       - 'tests/native_libre_reactor_smoke.cpp'
+      - 'tests/baresip_sdk_abi_probe.cpp'
   workflow_dispatch:
 permissions:
   contents: read
