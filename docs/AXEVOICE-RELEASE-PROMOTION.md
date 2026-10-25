@@ -5,7 +5,7 @@ Data da revisão: 24/10/2026.
 ## Escopo de segurança
 
 - `main` contém a base histórica do projeto MicroSIP/PJSIP e **não** o motor nativo experimental Baresip do desenvolvimento.
-- A branch de integração `feature/axevoice-v073-sip-activation-gate` alcançou a versão de código `0.134.0`, após a PR #110 de reconciliação parcial das PRs Draft #16, #18 e #39. É uma base de **laboratório não homologada**; essa versão não foi promovida ao executável de `main`.
+- A branch de integração `feature/axevoice-v073-sip-activation-gate` alcançou a versão de código `0.139.0`, após a PR #112 de reconciliação parcial das PRs Draft #21 e #28. É uma base de **laboratório não homologada**; essa versão não foi promovida ao executável de `main`.
 - A divergência foi originalmente observada em 372 commits de desenvolvimento e 221 arquivos; os valores mudam com novos commits. O histórico de Baresip não é substituto da validação de build/ABI da arquitetura na `main`.
 - O alvo nativo de SDK e o WinCred LAB são **OFF por padrão** na branch experimental. O `AXEVoice.exe` não tem prova de autenticação, mídia ou chamadas SIP.
 - **Não há autorização técnica para ativar produção ou discagem por um merge.** `main` é a base reservada para promoção após aceite.
@@ -40,6 +40,8 @@ A API do GitHub retornou **13 PRs Draft com conflitos** nas suas bases históric
 - PR #110: a branch de desenvolvimento recebeu a validação de tamanho de lotes SIP e proteção das preferências de áudio após erro/reconexão, a partir de trechos das PRs históricas #39, #18 e #16.
 - A documentação de v0.134 está [registrada na main](development/AXEVOICE-DRAFT-RECONCILIATION-V131-V134-UNTESTED.md). As PRs antigas permanecem abertas; isso não constitui merge integral nem homologação.
 - Nenhuma execução de testes, build Windows ou SIP/PABX ocorreu nesta rodada.
+
+- PR #112: melhoria de propriedade da chamada Baresip pela API `call_get_ua` e exportação de prontidão com indicadores booleanos, portadas seletivamente das PRs #28 e #21. [Registro v0.139](development/AXEVOICE-DRAFT-RECONCILIATION-V135-V139-UNTESTED.md). Continua sem testes e sem chamadas SIP liberadas.
 
 ## Situação de PRs antigas
 
