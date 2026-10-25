@@ -6,6 +6,13 @@ $Prefix=Join-Path $Root 'build/native-sdk-tls-media/prefix'
 $Binaries=Join-Path $Root 'build/native-sdk-tls-media/product/Release'
 $Stage=Join-Path $Root 'build/native-candidate-stage'
 $Output=Join-Path $Root 'build/native-candidate-installer'
+# Reject stale ABI-only provenance or an SDK-free product cache before staging.
+$Manifest=Get-Content (Join-Path $Prefix 'CANDIDATE-MANIFEST.json') -Raw | ConvertFrom-Json
+$Cache=Get-Content (Join-Path $Root 'build/native-sdk-tls-media/product/CMakeCache.txt') -Raw
+if($Manifest.gui_native_sdk -ne 'ON/native candidate' -or $Manifest.tls -ne $true -or
+   $Manifest.production_approved -ne $false -or $Cache -notmatch '(?m)^AXV_ENABLE_NATIVE_SIP:BOOL=ON\r?$') {
+    throw 'Candidate provenance does not match the native TLS GUI build'
+}
 New-Item -ItemType Directory -Force $Stage,$Output | Out-Null
 Copy-Item (Join-Path $Binaries 'AXE-Voice.exe') $Stage
 Get-ChildItem (Join-Path $Prefix 'bin') -Filter '*.dll' | Copy-Item -Destination $Stage

@@ -47,7 +47,7 @@ if(AXV_BUILD_NATIVE_BARESIP_ADAPTER)
   include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/axv_verify_baresip_sdk.cmake")
   include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/axv_verify_libre_sdk.cmake")
 
-  # SDK remains entirely optional and is NEVER linked into AXEVoice GUI.
+  # Adapter/probes stay separate; SDK reaches the GUI only via AXV_ENABLE_NATIVE_SIP.
   add_library(axv_native_baresip_adapter STATIC src/baresip_sdk_event_adapter.cpp)
   target_include_directories(axv_native_baresip_adapter PRIVATE
     "${AXV_LIBRE_INCLUDE_DIR}" "${AXV_BARESIP_INCLUDE_DIR}")

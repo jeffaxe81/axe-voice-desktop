@@ -129,7 +129,7 @@ $Files = @{}
 Get-ChildItem $Prefix -Recurse -File | Where-Object { $_.Extension -in @('.h','.lib','.dll') } | ForEach-Object {
     $Files[$_.FullName.Substring($Prefix.Length+1).Replace('\','/')] = Get-Hash $_.FullName
 }
-@{ profile="MSVC x64 $Flavor candidate only"; tls=[bool]$TlsMedia; audio_modules=@($Modules -split ';' | Where-Object { $_ }); gui_native_sdk='OFF/not linked';
+@{ profile="MSVC x64 $Flavor candidate only"; tls=[bool]$TlsMedia; audio_modules=@($Modules -split ';' | Where-Object { $_ }); gui_native_sdk=$(if ($TlsMedia) { 'ON/native candidate' } else { 'OFF/not linked' });
    baresip_commit=$BaresipCommit; libre_commit=$ReCommit; version='4.12.0';
    baresip_header_sha256=$HeaderHash; baresip_library_sha256=$LibraryHash;
    libre_header_sha256=$ReHeaderHash; libre_library_sha256=$ReLibraryHash;
