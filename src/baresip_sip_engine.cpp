@@ -23,6 +23,8 @@ struct BaresipSipEngine::Impl {
     std::string password;
     NativeCallCommand command;
     SipRuntimeObservation view{RuntimeProcess::Stopped,SipStatus::Disconnected};
+    int sdk_error=0;
+    std::wstring sdk_stage;
     bool configured=false,core=false,ua_initialized=false,claimed=false,failed=false;
     unsigned timeout_ms=15000;
     std::uint64_t deadline=0;
@@ -36,24 +38,32 @@ struct BaresipSipEngine::Impl {
     static inline std::atomic<Impl*> process_owner{nullptr};
     ~Impl(){reactor.stop();erase(password);}
     void fail() { failed=true; adapter.stop(); if(owned){erase_sdk_account_password(ua_account(owned));ua_stop_all(true);owned=nullptr;} std::lock_guard<std::mutex> lock(mutex); view={RuntimeProcess::Failed,SipStatus::Failed}; command={}; }
+    bool checked(int error,const wchar_t* stage) {
+        if(!error)return true;
+        {std::lock_guard<std::mutex> lock(mutex);sdk_error=error;sdk_stage=stage;}
+        fail();return false;
+    }
     void begin() {
         Impl* expected=nullptr;
         if(!process_owner.compare_exchange_strong(expected,this)){fail();return;}
         claimed=true;
         log_enable_stdout(false); log_enable_info(false); log_enable_debug(false);
         // Configure entirely from memory; no account or password file is created.
-        if(conf_configure_buf(reinterpret_cast<const uint8_t*>(config.config.data()),config.config.size())){fail();return;}
+        if(!checked(conf_configure_buf(reinterpret_cast<const uint8_t*>(config.config.data()),config.config.size()),L"config"))return;
         core=true; // close partially initialized core too
-        if(baresip_init(conf_config())){fail();return;}
+        if(!checked(baresip_init(conf_config()),L"baresip_init"))return;
         ua_initialized=true;
-        if(ua_init("AXE-Voice-candidate",!account.use_tls,false,account.use_tls) ||
-           mod_add(&g711_module,&exports_g711) || mod_add(&wasapi_module,&exports_wasapi) ||
-           ua_alloc(&owned,config.aor.c_str())){fail();return;}
+        if(!checked(ua_init("AXE-Voice-candidate",!account.use_tls,false,account.use_tls),L"ua_init") ||
+           !checked(mod_add(&g711_module,&exports_g711),L"g711") ||
+           !checked(mod_add(&wasapi_module,&exports_wasapi),L"wasapi") ||
+           !checked(ua_alloc(&owned,config.aor.c_str()),L"ua_alloc"))return;
         const int auth=account_set_auth_pass(ua_account(owned),password.c_str());
         erase(password);
-        if(auth || account_set_regint(ua_account(owned),600) || ua_update_account(owned) || !adapter.start(owned)) {fail();return;}
+        if(!checked(auth,L"auth") || !checked(account_set_regint(ua_account(owned),600),L"regint") ||
+           !checked(ua_update_account(owned),L"ua_update"))return;
+        if(!adapter.start(owned)){fail();return;}
         deadline=now_ms()+timeout_ms;
-        if(ua_register(owned)) fail();
+        checked(ua_register(owned),L"ua_register");
     }
     void tick() {
         if(failed || !owned) return;
@@ -111,6 +121,7 @@ bool BaresipSipEngine::configure_authenticated(const SipAccount& a,const std::ws
 bool BaresipSipEngine::register_account(){
     if(!impl_->configured || impl_->reactor.snapshot().running)return false;
     impl_->configured=false;impl_->failed=false;
+    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->sdk_error=0;impl_->sdk_stage.clear();}
     {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->view={RuntimeProcess::Running,SipStatus::Registering};}
     return impl_->reactor.start();
 }
@@ -123,6 +134,8 @@ void BaresipSipEngine::stop(){
     {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->view={RuntimeProcess::Stopped,SipStatus::Disconnected};}
 }
 std::wstring BaresipSipEngine::diagnostic()const {
+    {std::lock_guard<std::mutex> lock(impl_->mutex);
+     if(impl_->sdk_error)return L"Falha SDK em "+impl_->sdk_stage+L": "+std::to_wstring(impl_->sdk_error);}
     switch(status()) {
     case SipStatus::Registered:return L"Registro SIP confirmado por callback nativo. Midia ainda nao homologada.";
     case SipStatus::Registering:return L"Registro SIP em andamento; aguardando a central.";

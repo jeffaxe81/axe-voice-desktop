@@ -2,6 +2,7 @@
 #include <chrono>
 #include <thread>
 #include <cstdlib>
+#include <cstdio>
 int main(int argc,char**argv) {
     axv::BaresipSipEngine engine;
     if(engine.status()!=axv::SipStatus::Disconnected || engine.start_call(L"100")) return 1;
@@ -20,6 +21,9 @@ int main(int argc,char**argv) {
     }
     if(success) std::this_thread::sleep_for(std::chrono::milliseconds(3500)); // include registrar refresh
     const auto observed=engine.observation();
+    std::fprintf(stderr,"native status=%d process=%d evidence=%d session=%llu\n",
+        static_cast<int>(observed.sip),static_cast<int>(observed.process),static_cast<int>(observed.evidence),static_cast<unsigned long long>(observed.session));
+    std::fwprintf(stderr,L"%ls\n",engine.diagnostic().c_str());
     if(success && (engine.status()!=axv::SipStatus::Registered ||
        !axv::sip_proof_is_current(observed,observed.session))) return 4;
     if(!success && engine.status()!=axv::SipStatus::Failed) return 5;

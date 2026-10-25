@@ -112,7 +112,7 @@ def scenario(exe, mode, context=None, ca=None):
     try:
         result = subprocess.run(args, timeout=25, capture_output=True, text=True)
         if result.returncode:
-            raise AssertionError(f'{mode}: native engine exit {result.returncode}; {result.stdout[-1000:]} {result.stderr[-1000:]}')
+            raise AssertionError(f'{mode}: native engine exit {result.returncode}; REGISTERs={len(received)} authenticated={len(accepted)} fixture_errors={errors}; {result.stdout[-1000:]} {result.stderr[-1000:]}')
         if errors:
             raise AssertionError(errors)
         if mode == 'success' and len(accepted)<2:
