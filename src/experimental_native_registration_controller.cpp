@@ -28,10 +28,26 @@ NativeControlDecision ExperimentalNativeRegistrationController::request_registra
     if (!host_) return NativeControlDecision::NotConfigured;
     if (!started_ || !generation_ || generation_ != host_->generation())
         return NativeControlDecision::NoLiveGeneration;
+    // Bad API input is not a wrong password; reject it without charging the
+    // retry budget, queuing a native command or altering a live generation.
+    if (timeout_ms < RegistrationCommandQueue::kMinTimeoutMs ||
+        timeout_ms > RegistrationCommandQueue::kMaxTimeoutMs)
+        return NativeControlDecision::InvalidTimeout;
+    if (cancel_requested_)
+        return NativeControlDecision::CancellationRequested;
+    if (terminal_observed_)
+        return NativeControlDecision::TerminalNativeFailure;
     if (pending_) {
         const auto current = poll_control_plane(monotonic_ms);
         return current == NativeControlDecision::NativePending
             ? NativeControlDecision::AlreadyPending : current;
+    }
+    const auto native = host_->snapshot();
+    if (!native.running || !native.account_provisioned ||
+        native.reactor_fault != LibreReactorFault::None ||
+        native.command_generation != generation_) {
+        terminal_observed_ = true; // stop/restart required; no retry queued
+        return NativeControlDecision::TerminalNativeFailure;
     }
     const auto admission = retry_.check(monotonic_ms);
     if (admission == NativeRetryAdmission::Exhausted)
