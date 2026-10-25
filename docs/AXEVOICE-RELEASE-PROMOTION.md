@@ -17,6 +17,10 @@ A main agora inclui o bootstrap Win32/Baresip de laboratório e seus componentes
 
 Esses resultados comprovam os gates executados, não cobertura integral nem funcionamento SIP/RTP com uma central real. O executável GUI mantém a fronteira de SIP indisponível; o adaptador nativo permanece isolado/opcional. Não classificar esta entrega como softphone de produção.
 
+## Avanço da auditoria de SDK
+
+[A auditoria inicial](integration/NATIVE-SDK-AUDIT-20261025.md) compilou os probes com cabeçalhos reais Baresip/libre4.12 e executou o reactor com libre real no Linux, inclusive ASan/UBSan. Encontrou e corrigiu ordem de includes e requisitos de plataforma dos alvos opcionais. O candidato MinGW permanece rejeitado pelo gate MSVC; SIP da GUI continua bloqueado. Isso não aprova SDK Windows, PABX ou áudio real.
+
 ## Próxima entrega técnica
 
 1. Inventariar e fixar SDK Baresip/libre, licenças e módulos para o alvo nativo isolado.

@@ -1,0 +1,37 @@
+{
+  "status": "candidate, not approved for main native MSVC gate",
+  "upstream": {
+    "baresip": "9cfab81550acc4bd38d6580d79b45cc6eea65cd6",
+    "libre": "65555dad439de9d6a81b3ee6092b9c096585249b"
+  },
+  "version": "4.12.0",
+  "toolchain": "LLVM-MinGW 20261006 UCRT x64",
+  "artifacts": {
+    "baresip_header": {
+      "name": "include/baresip.h",
+      "sha256": "f55db2d555ca535cee13b4967912325516d8a69405f4b5ef9dc5d5f6dd23062c"
+    },
+    "baresip_archive": {
+      "name": "lib/libbaresip.a",
+      "sha256": "646cedfa331fa8a698ff3321861653f4d3095239197dda59e4d8f5ef194dcac7"
+    },
+    "libre_header": {
+      "name": "include/re/re.h",
+      "sha256": "8aec3df0625e67e2230ab5c2686b7ed575b680c2e1ee771599d77681b7a719f8"
+    },
+    "libre_archive": {
+      "name": "lib/libre.a",
+      "sha256": "a6f1b5f08abb3dc585f9aebf0ed743dd6183aad40d12641f37037820f517ce68"
+    }
+  },
+  "baresip_local_patch_sha256": "aeceaea345e8b0fe3aab342a66e7c3f8e955deb7255d596a6efc9e7fe632d614",
+  "evidence": {
+    "real_header_compilation": "ABI contract, callback probe, adapter, reactor passed",
+    "windows_static_link": "both ABI probes passed; requires winpthread and Windows system libraries",
+    "windows_execution": "not performed",
+    "linux_real_libre_reactor": "exit0",
+    "linux_real_libre_reactor_asan_ubsan": "exit0 with leak detection",
+    "msvc_gate": "correctly rejects candidate .a; unchanged",
+    "gui_native_sdk": "OFF, not linked, no SIP enabled"
+  }
+}
