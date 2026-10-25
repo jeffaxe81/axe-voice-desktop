@@ -10,27 +10,37 @@ on:
       - 'src/baresip*'
       - 'tests/native_libre_reactor_smoke.cpp'
       - 'tests/baresip_sdk_abi_probe.cpp'
+      - 'tests/native_tls_media_probe.cpp'
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   msvc-native-sdk:
     runs-on: windows-2022
-    timeout-minutes: 25
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [abi, tls-media]
     steps:
       - uses: actions/checkout@v4
       - name: Build pinned MSVC candidate and run real libre reactor
         shell: pwsh
-        run: ./scripts/build-native-sdk-smoke.ps1
+        run: |
+          if ('${{ matrix.profile }}' -eq 'tls-media') {
+            ./scripts/build-native-sdk-smoke.ps1 -TlsMedia
+          } else {
+            ./scripts/build-native-sdk-smoke.ps1
+          }
       - name: Publish candidate SDK with provenance and licenses
         uses: actions/upload-artifact@v4
         with:
-          name: AXE-native-SDK-MSvc-ABI-only
-          path: build/native-sdk-prefix/
+          name: AXE-native-SDK-MSvc-${{ matrix.profile }}
+          path: build/native-sdk-${{ matrix.profile }}/prefix/
           if-no-files-found: error
       - name: Publish build-only ABI and reactor binaries
         uses: actions/upload-artifact@v4
         with:
-          name: AXE-native-SDK-probes
-          path: build/native-sdk-product/Release/axv_native_*.exe
+          name: AXE-native-SDK-probes-${{ matrix.profile }}
+          path: build/native-sdk-${{ matrix.profile }}/product/Release/
           if-no-files-found: error
