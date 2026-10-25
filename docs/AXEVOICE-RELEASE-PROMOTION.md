@@ -5,7 +5,7 @@ Data da revisão: 24/10/2026.
 ## Escopo de segurança
 
 - `main` contém a base histórica do projeto MicroSIP/PJSIP e **não** o motor nativo experimental Baresip do desenvolvimento.
-- A branch de integração `feature/axevoice-v073-sip-activation-gate` alcançou a versão de código `0.144.0`, após a PR #114 de reconciliação parcial das PRs Draft #30, #31 e #40. É uma base de **laboratório não homologada**; essa versão não foi promovida ao executável de `main`.
+- A branch de integração `feature/axevoice-v073-sip-activation-gate` alcançou a versão de código `0.149.0`, após a PR #116 de reconciliação parcial da PR Draft #30 (consulta assíncrona de dispositivos). É uma base de **laboratório não homologada**; essa versão não foi promovida ao executável de `main`.
 - A divergência foi originalmente observada em 372 commits de desenvolvimento e 221 arquivos; os valores mudam com novos commits. O histórico de Baresip não é substituto da validação de build/ABI da arquitetura na `main`.
 - O alvo nativo de SDK e o WinCred LAB são **OFF por padrão** na branch experimental. O `AXEVoice.exe` não tem prova de autenticação, mídia ou chamadas SIP.
 - **Não há autorização técnica para ativar produção ou discagem por um merge.** `main` é a base reservada para promoção após aceite.
@@ -44,6 +44,8 @@ A API do GitHub retornou **13 PRs Draft com conflitos** nas suas bases históric
 - PR #112: melhoria de propriedade da chamada Baresip pela API `call_get_ua` e exportação de prontidão com indicadores booleanos, portadas seletivamente das PRs #28 e #21. [Registro v0.139](development/AXEVOICE-DRAFT-RECONCILIATION-V135-V139-UNTESTED.md). Continua sem testes e sem chamadas SIP liberadas.
 
 - PR #114: observador opcional de dispositivos padrão Windows Core Audio e eMultimedia/eCommunications, novo aviso DBT_CONFIGCHANGED, e proteção de geração/sessão nos callbacks Baresip. [Registro v0.144](development/AXEVOICE-AUDIO-WATCHER-CALLBACK-FENCE-V140-V144-UNTESTED.md). **Somente no desenvolvimento**, sem build/testes executados nem media real SIP autorizada.
+
+- PR #116: a branch de desenvolvimento recebeu a consulta assíncrona dos endpoints Windows com descarte de geração obsoleta, agrupamento de atualizações e aplicação pela UI; porta parcial da PR histórica #30. [Registro v0.149](development/AXEVOICE-ASYNC-AUDIO-V145-V149-UNTESTED.md). **Sem build/testes**, sem habilitar SIP, e a PR #30 original permanece aberta.
 
 ## Situação de PRs antigas
 
