@@ -138,13 +138,36 @@ constexpr int kStartupInTrayToggle = 3110;
 constexpr int kDeleteFavorite = 3111;
 constexpr int kRecallLastDestination = 3112;
 constexpr int kCopySafeDiagnostics = 3113;
-constexpr int kCopyReadinessReport = 3114;
-constexpr int kResetAudioSession = 3115;
+constexpr int kCopyReadinessReport = 3125;
+constexpr int kResetAudioSession = 3126;
 constexpr int kCopyDestination = 3120;
 constexpr int kPasteDestination = 3121;
 constexpr int kSelectAllDestination = 3122;
 constexpr int kUndoDialEdit = 3123;
 constexpr int kResetDialWorkspace = 3124;
+// Guard against accidental dispatch to an unrelated sensitive action.
+// Menu command IDs share one Win32 WM_COMMAND namespace; a collision can
+// misroute a SIP vault action to a clipboard or headset reset operation.
+constexpr bool unique_axv_menu_commands() {
+    constexpr int ids[] = {
+        kTrayOpen, kTrayExit, kMoreButton, kSaveFavorite, kLoadFavorite,
+        kShowRecent, kPrivacyDial, kCloseToTrayToggle, kAutostartToggle,
+        kClearRecent, kExplicitExit, kSipPreflight, kSipVaultStatus,
+        kOpenCredentialManager, kRemoveSipVaultCredential, kSipNextSteps,
+        kStartupInTrayToggle, kDeleteFavorite, kRecallLastDestination,
+        kCopySafeDiagnostics, kCopyReadinessReport, kResetAudioSession,
+        kCopyDestination, kPasteDestination, kSelectAllDestination,
+        kUndoDialEdit, kResetDialWorkspace
+    };
+    for (unsigned i = 0; i < sizeof(ids)/sizeof(ids[0]); ++i)
+        for (unsigned j = i + 1; j < sizeof(ids)/sizeof(ids[0]); ++j)
+            if (ids[i] == ids[j]) return false;
+    return true;
+}
+static_assert(unique_axv_menu_commands(),
+              "AXE Voice menu action IDs must be unique");
+static_assert(kRecentPickStart > kResetAudioSession,
+              "Recent-destination command range must not overlap the menu");
 HWND g_number = nullptr;
 HWND g_number_label = nullptr;
 HWND g_status = nullptr;
