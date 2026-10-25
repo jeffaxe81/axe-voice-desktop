@@ -4,6 +4,9 @@
 int main() {
     axv::SipAccount account{L"pbx.example",L"1001",5060,false};
     auto cfg=axv::native_account_config(account,L"");
+    axv::SipAccount local{L"127.0.0.1",L"1001",5060,false};
+    CHECK(axv::native_account_config(local,L"").config.find("net_interface 127.0.0.1")!=std::string::npos);
+    CHECK(cfg.config.find("net_interface")==std::string::npos);
     CHECK(cfg.valid && cfg.aor=="<sip:1001@pbx.example:5060;transport=udp>;regint=0;audio_codecs=PCMU/8000/1,PCMA/8000/1");
     CHECK(axv::native_call_destination(L"101",account)=="sip:101@pbx.example:5060;transport=udp");
     CHECK(axv::native_call_destination(L"sip:200@elsewhere.example",account)=="sip:200@elsewhere.example");
