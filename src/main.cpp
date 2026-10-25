@@ -2,6 +2,7 @@
 #include <shlobj.h>
 #include <shellapi.h>
 #include <commctrl.h>
+#include <dbt.h>
 #include "baresip_profile.h"
 #include "sip_address.h"
 #include "sip_engine.h"
@@ -22,6 +23,7 @@
 #include "baresip_modules.h"
 #include "audio_devices.h"
 #include "audio_selection_feedback.h"
+#include "audio_hotplug_policy.h"
 #include "audio_routing_preview.h"
 #include "ringtone_preview.h"
 #include "audio_role_swap.h"
@@ -157,6 +159,7 @@ std::vector<axv::AudioEndpoint> g_audio_outputs;
 std::wstring g_selected_input_id;
 std::wstring g_selected_output_id;
 std::wstring g_selected_ringtone_id;
+axv::AudioHotplugPolicy g_audio_hotplug;
 std::thread g_preview_worker;
 std::atomic<bool> g_preview_running{false};
 std::atomic<bool> g_preview_cancel{false};
@@ -909,6 +912,8 @@ void update_audio_preview_buttons(HWND window) {
 }
 
 void refresh_audio_panel() {
+    // An explicit refresh or tab visit supersedes any pending hotplug hint.
+    g_audio_hotplug.acknowledge_manual_refresh();
     if (g_preview_running.load()) g_preview_cancel.store(true);
     // A new inventory can invalidate the prior incoming-ringtone route.
     (void)g_incoming_ring_coordinator.revoke(g_incoming_ring_sink);
@@ -1354,6 +1359,16 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         sync_viewport_scroll(window);
         return 0;
     }
+    case WM_DEVICECHANGE:
+        // Generic Win32 device changes are hints, NOT proof of audio hotplug.
+        // Do not enumerate here: the UI timer coalesces notifications.
+        if (g_audio_hotplug.notify(static_cast<unsigned>(wparam), GetTickCount64())) {
+            if (g_page == 2 && !g_smoke_mode && g_headset_status)
+                SetWindowTextW(g_headset_status,
+                    L"Possivel mudanca de dispositivos; atualizacao pendente...");
+            return TRUE;
+        }
+        break;
     case WM_COMMAND:
         if (lparam && (HIWORD(wparam)==EN_SETFOCUS ||
                        HIWORD(wparam)==BN_SETFOCUS ||
@@ -2023,6 +2038,15 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
     }
     case WM_TIMER:
         if (wparam == kProcessTimer) {
+            if (!g_smoke_mode && g_audio_hotplug.take_if_due(
+                    GetTickCount64(), g_page == 2 && IsWindowVisible(window) &&
+                    !IsIconic(window))) {
+                // Stop local preview cooperatively before touching its route.
+                const axv::AudioRouteChange update{
+                    axv::AudioRouteChangeKind::Refresh, {}};
+                if (!defer_route_while_preview_active(window, update))
+                    refresh_audio_panel();
+            }
             if (g_preview_pending && !g_preview_running.load()) {
                 if (g_preview_worker.joinable()) g_preview_worker.join();
                 g_preview_pending = false;
@@ -2144,7 +2168,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.114",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.115",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VSCROLL,
         CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi)+GetSystemMetricsForDpi(SM_CXVSCROLL,g_dpi),
