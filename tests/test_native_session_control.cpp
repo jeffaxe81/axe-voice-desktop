@@ -18,4 +18,8 @@ int main(){
  b.events[0]={axv::BaresipEventKind::CallEstablished,1,1};s=axv::project_native_sdk_batch(projection,b,true);CHECK(s.sip==axv::SipStatus::InCall);
  b.events[0]={axv::BaresipEventKind::RegisterOk,1,0};s=axv::project_native_sdk_batch(projection,b,true);CHECK(s.sip==axv::SipStatus::InCall && s.call_id==1);
  s=axv::project_native_sdk_batch(projection,b,false);CHECK(s.evidence==axv::SipEvidence::None);
+ axv::SipEventProjection lost;
+ b.size=2;b.events[0]={axv::BaresipEventKind::Registering,1,0};b.events[1]={axv::BaresipEventKind::RegisterOk,1,0};
+ s=axv::project_native_sdk_batch(lost,b,true);CHECK(s.sip==axv::SipStatus::Registered);
+ b.size=0;s=axv::project_native_sdk_batch(lost,b,false);CHECK(s.evidence==axv::SipEvidence::None);
 }

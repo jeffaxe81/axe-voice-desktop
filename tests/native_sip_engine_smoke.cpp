@@ -23,7 +23,9 @@ int main(int argc,char**argv) {
     const auto observed=engine.observation();
     std::fprintf(stderr,"native status=%d process=%d evidence=%d session=%llu\n",
         static_cast<int>(observed.sip),static_cast<int>(observed.process),static_cast<int>(observed.evidence),static_cast<unsigned long long>(observed.session));
-    std::fwprintf(stderr,L"%ls\n",engine.diagnostic().c_str());
+    const auto text=engine.diagnostic();
+    const std::string diagnostic(text.begin(),text.end());
+    std::fprintf(stderr,"%s\n",diagnostic.c_str());
     if(success && (engine.status()!=axv::SipStatus::Registered ||
        !axv::sip_proof_is_current(observed,observed.session))) return 4;
     if(!success && engine.status()!=axv::SipStatus::Failed) return 5;

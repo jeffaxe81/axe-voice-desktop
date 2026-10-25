@@ -33,6 +33,11 @@ inline SipRuntimeObservation project_native_sdk_batch(SipEventProjection& projec
   auto one=empty;one.events[0]=e;one.size=1;
   state=projection.observe(RuntimeProcess::Running,SipEvidence::VerifiedNativeApi,one);
  }
+ const bool live=state.sip==SipStatus::Registered||state.sip==SipStatus::Calling||state.sip==SipStatus::Ringing||state.sip==SipStatus::InCall;
+ if(live && !register_confirmed){
+  BaresipEventMailbox::Batch revoked{};
+  return projection.observe(RuntimeProcess::Failed,SipEvidence::None,revoked);
+ }
  return state;
 }
 }
