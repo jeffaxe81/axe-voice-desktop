@@ -1,0 +1,11 @@
+# Native release candidate
+
+Requested outcome: connect the audited SDK to the Win32 app, validate registration/calls/media/TLS and deliver a tested installer. Existing C++17/Win32 and pinned Baresip/libre4.12/OpenSSL3.5.7 remain the platform. Public sources only; private experimental implementations remain separate.
+
+Approach chosen by implementer within the user's instruction to proceed: an explicit native candidate build, preserving the default unavailable build. Replacing the default immediately would distribute unvalidated telephony; an external process would lose the typed callback evidence already implemented. The native candidate uses the existing owner reactor, callback adapter and session projection. GUI communicates through bounded commands and copied observations, never raw SDK pointers. Only REGISTER_OK plus ua_isregistered can enable dialing. One account and one call are supported, including answering and hangup; mute/hold/transfer remain outside this delivery.
+
+Passwords are entered in a masked field, kept in memory only, never placed in an AOR/config/log, and erased after account provisioning or shutdown. TLS requires an explicit CA bundle, enables peer/hostname verification and never falls back to plaintext. UDP is available explicitly for existing PBX deployments; secure media is not implied by SIP TLS. G.711 and default WASAPI communications devices are the initial media profile; arbitrary endpoint routing remains unvalidated.
+
+Validation: portable account/destination tests; real SDK lifecycle and loopback SIP Digest success/failure/timeout/restart tests on Windows; local trusted/untrusted/hostname TLS test where possible; existing GUI regression suite; candidate GUI smoke; installer install/uninstall smoke. No real calls, PBX authentication or physical audio evidence can be fabricated. Network reachability, PBX address/transport and a Windows headset session are external dependencies to record, not reasons to stop independent work.
+
+Distribution: installer labeled candidate, per-user installation, matching OpenSSL DLLs and third-party licenses. No production or signing claim without evidence. Release checklist distinguishes automated validation from user hardware/PBX acceptance.

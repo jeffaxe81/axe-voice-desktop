@@ -47,6 +47,11 @@
 
 
 namespace {
+#ifdef AXV_ENABLE_NATIVE_SIP
+constexpr int kPasswordEdit=1016,kCaEdit=1017,kAnswerNative=1018;
+HWND g_password=nullptr,g_ca_file=nullptr;
+
+#endif
 constexpr int kCallButton = 1001;
 constexpr int kNumberEdit = 1002;
 constexpr int kValidateAccount = 1003;
@@ -125,6 +130,11 @@ axv::ShutdownDeadline g_shutdown;
 bool g_close_requested = false;
 constexpr std::uint64_t kGracePeriodMs = 1500;
 axv::EngineSelection g_sip_selection = axv::create_sip_engine();
+#ifdef AXV_ENABLE_NATIVE_SIP
+axv::BaresipSipEngine& native_engine() {
+    return static_cast<axv::BaresipSipEngine&>(*g_sip_selection.engine);
+}
+#endif
 // Prepared for future native callbacks; current laboratory build has no producer.
 axv::BaresipEventMailbox g_native_event_mailbox;
 axv::SipEventProjection g_sip_projection;
@@ -657,13 +667,20 @@ axv::RuntimeProcess observed_process(axv::ProcessStatus status, bool stopping) {
     }
     return axv::RuntimeProcess::Failed;
 }
+axv::SipRuntimeObservation current_sip_observation(axv::ProcessStatus state) {
+#ifdef AXV_ENABLE_NATIVE_SIP
+    (void)state;
+    return native_engine().observation();
+#else
+    return g_sip_session_guard.observe(observed_process(state,g_shutdown.pending()),
+        axv::SipEvidence::None,g_native_event_mailbox,g_sip_projection);
+#endif
+}
 void refresh_runtime_banner(axv::ProcessStatus state) {
     if (!g_runtime_banner) return;
     // Thread-safe receive boundary is active, but not connected to Baresip C API.
     // Bind native event lifetime to actual process lifetime, not to a timer tick.
-    const auto& observed = g_sip_session_guard.observe(
-        observed_process(state, g_shutdown.pending()), axv::SipEvidence::None,
-        g_native_event_mailbox, g_sip_projection);
+    const auto observed=current_sip_observation(state);
     const auto current_session = observed.session;
     // No audited native producer is linked; process state never implies SIP proof.
     // Without a native verified producer the UI cannot claim SIP registration.
@@ -681,6 +698,11 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     const HWND button = GetDlgItem(GetParent(g_runtime_banner), kCallButton);
     if (IsWindowEnabled(button) != (dial ? TRUE : FALSE))
         EnableWindow(button, dial ? TRUE : FALSE);
+#ifdef AXV_ENABLE_NATIVE_SIP
+    SetWindowTextW(button,L"CHAMAR");
+    EnableWindow(GetDlgItem(GetParent(g_runtime_banner),kAnswerNative),observed.sip==axv::SipStatus::Ringing);
+    EnableWindow(GetDlgItem(GetParent(g_runtime_banner),kHangupFuture),observed.call_id!=0);
+#endif
 }
 std::wstring make_readiness_report() {
     wchar_t number[129]{}, server[129]{}, user[129]{}, port[129]{};
@@ -688,7 +710,7 @@ std::wstring make_readiness_report() {
     GetWindowTextW(g_server, server, 129);
     GetWindowTextW(g_user, user, 129);
     GetWindowTextW(g_port, port, 129);
-    const auto& snapshot = g_sip_projection.snapshot();
+    const auto snapshot = current_sip_observation(g_baresip_process.poll());
     axv::CallReadiness result{};
     result.destination_syntax = axv::evaluate_destination(number).valid();
     result.account_syntax = axv::evaluate_account_form(server, user, port).valid();
@@ -756,19 +778,38 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_button(window, L"LIMPAR", kClear, 218, 597, 171, 38, 0);
         make_button(window, L"CHAMAR  •  SIP INDISPONÍVEL", kCallButton,
                     39, 651, 350, 51, 0);
+#ifdef AXV_ENABLE_NATIVE_SIP
+        make_button(window,L"ATENDER",kAnswerNative,39,708,82,34,0);
+#else
         make_button(window, L"MUDO", kMuteFuture, 39, 708, 82, 34, 0);
+#endif
         make_button(window, L"ESPERA", kHoldFuture, 127, 708, 82, 34, 0);
         make_button(window, L"TRANSF.", kTransferFuture, 215, 708, 82, 34, 0);
         make_button(window, L"ENCERRAR", kHangupFuture, 303, 708, 86, 34, 0);
 
+#ifdef AXV_ENABLE_NATIVE_SIP
+        make_label(window,L"CONTA SIP  •  CANDIDATO NATIVO",39,219,361,26,1,g_font_small);
+#else
         make_label(window, L"CONFIGURAÇÃO DE CONTA  •  SEM REGISTRO", 39, 219, 361, 26,
                    1, g_font_small);
+#endif
         make_label(window, L"Servidor SIP", 39, 255, 340, 20, 1);
         g_server = make_edit(window, L"", kServerEdit, 39, 280, 350, 38, 1);
         make_label(window, L"Usuário SIP", 39, 329, 212, 20, 1);
         make_label(window, L"Porta", 268, 329, 118, 20, 1);
         g_user = make_edit(window, L"", kUserEdit, 39, 355, 216, 38, 1);
         g_port = make_edit(window, L"5060", kPortEdit, 267, 355, 122, 38, 1);
+#ifdef AXV_ENABLE_NATIVE_SIP
+        make_label(window,L"Senha (somente nesta sessao)",39,402,350,20,1);
+        g_password=make_edit(window,L"",kPasswordEdit,39,425,350,32,1);
+        SetWindowLongPtrW(g_password,GWL_STYLE,GetWindowLongPtrW(g_password,GWL_STYLE)|ES_PASSWORD);
+        SendMessageW(g_password,EM_SETPASSWORDCHAR,L'*',0);
+        SendMessageW(g_password,EM_SETLIMITTEXT,256,0);
+        g_tls=make_control(window,L"BUTTON",L"TLS: exige CA confiavel; nao criptografa RTP",WS_TABSTOP|BS_AUTOCHECKBOX,39,464,350,28,kTlsCheckbox,1);
+        make_label(window,L"Arquivo CA PEM (obrigatorio para TLS)",39,497,350,20,1);
+        g_ca_file=make_edit(window,L"",kCaEdit,39,520,350,32,1);
+        make_button(window,L"VALIDAR DADOS",kValidateAccount,39,565,350,32,1);
+#else
         g_tls = make_control(window, L"BUTTON", L"Usar TLS (quando suportado)",
                              WS_TABSTOP | BS_AUTOCHECKBOX, 39, 404, 340, 28,
                              kTlsCheckbox, 1);
@@ -779,6 +820,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                     39, 517, 350, 36, 1);
         make_button(window, L"VERIFICAR BARESIP", kProbeButton,
                     39, 561, 350, 36, 1);
+#endif
         make_button(window, L"INICIAR MOTOR", kStartBaresipButton,
                     39, 605, 170, 39, 1);
         make_button(window, L"PARAR MOTOR", kStopBaresipButton,
@@ -804,8 +846,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                     39, 507, 169, 43, 2);
         make_button(window, L"TESTAR TOQUE", kTestRingtoneButton,
                     219, 507, 170, 43, 2);
+#ifdef AXV_ENABLE_NATIVE_SIP
+        make_label(window,L"Previa local. Chamadas usam o padrao de comunicacao do Windows.",39,566,350,40,2,g_font_small);
+#else
         make_label(window, L"Preferencias locais. Ainda sem roteamento Baresip.",
                    39, 566, 350, 40, 2, g_font_small);
+#endif
         g_headset_status = make_label(window, L"Abra AUDIO para consultar o Windows.",
                                      39, 613, 350, 59, 2, g_font_small);
         make_button(window, L"PRONTIDAO DE CHAMADAS (F2)",
@@ -823,6 +869,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                        kTransferFuture, kHangupFuture}) {
             EnableWindow(GetDlgItem(window, id), FALSE);
         }
+#ifdef AXV_ENABLE_NATIVE_SIP
+        SetWindowTextW(GetDlgItem(window,kStartBaresipButton),L"REGISTRAR");
+        SetWindowTextW(g_process_status,L"Candidato nativo. Conta nao registrada; midia nao homologada.");
+#endif
         show_page(window, 0);
         apply_compact_layout(window);
         refresh_runtime_banner(g_baresip_process.poll());
@@ -924,7 +974,34 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             if (control == kBackspace) { edit_number(window, L'\b'); return 0; }
             if (control == kClear) { edit_number(window, L'\0'); return 0; }
         }
+#ifdef AXV_ENABLE_NATIVE_SIP
+        if(LOWORD(wparam)==kAnswerNative && HIWORD(wparam)==BN_CLICKED) {
+            (void)native_engine().answer(); return 0;
+        }
+        if(LOWORD(wparam)==kHangupFuture && HIWORD(wparam)==BN_CLICKED) {
+            native_engine().hangup(); return 0;
+        }
+#endif
         if (LOWORD(wparam) == kStartBaresipButton && HIWORD(wparam) == BN_CLICKED) {
+#ifdef AXV_ENABLE_NATIVE_SIP
+            wchar_t server[256]{},user[129]{},port[16]{},secret[257]{},ca[260]{};
+            GetWindowTextW(g_server,server,256); GetWindowTextW(g_user,user,129);
+            GetWindowTextW(g_port,port,16); GetWindowTextW(g_password,secret,257);
+            GetWindowTextW(g_ca_file,ca,260);
+            const auto feedback=axv::evaluate_account_form(server,user,port);
+            if(!feedback.valid()) {SecureZeroMemory(secret,sizeof(secret));refresh_account_feedback();return 0;}
+            const unsigned long value=std::wcstoul(port,nullptr,10);
+            axv::SipAccount account{server,user,static_cast<unsigned short>(value),SendMessageW(g_tls,BM_GETCHECK,0,0)==BST_CHECKED};
+            const int bytes=WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,secret,-1,nullptr,0,nullptr,nullptr);
+            std::string password(bytes>1?static_cast<std::size_t>(bytes):0,'\0');
+            if(bytes>1) {WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,secret,-1,password.data(),bytes,nullptr,nullptr);password.pop_back();}
+            SecureZeroMemory(secret,sizeof(secret)); SetWindowTextW(g_password,L"");
+            const bool configured=native_engine().configure_authenticated(account,ca,password);
+            if(!password.empty())SecureZeroMemory(password.data(),password.size()); password.clear();
+            const bool accepted=configured && native_engine().register_account();
+            SetWindowTextW(g_process_status,accepted?L"Registro solicitado; aguardando confirmacao da central.":L"Dados/CA/senha invalidos ou motor ativo. Pare o motor e confira os dados.");
+            return 0;
+#endif
             if (g_shutdown.pending()) {
                 SetWindowTextW(g_process_status, L"Aguarde a parada do motor.");
                 return 0;
@@ -987,6 +1064,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             return 0;
         }
         if (LOWORD(wparam) == kStopBaresipButton && HIWORD(wparam) == BN_CLICKED) {
+#ifdef AXV_ENABLE_NATIVE_SIP
+            native_engine().stop(); refresh_runtime_banner(axv::ProcessStatus::Stopped);
+            SetWindowTextW(g_process_status,L"Motor nativo parado; senha descartada."); return 0;
+#endif
             if (g_shutdown.pending()) return 0;
             if (g_baresip_process.poll() != axv::ProcessStatus::Running) {
                 SetWindowTextW(g_process_status, L"Motor ja estava parado.");
@@ -1075,9 +1156,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             // provenance on every user action, including synthetic WM_COMMAND.
             wchar_t number[256] = {};
             GetWindowTextW(g_number, number, 256);
-            const auto& observed = g_sip_session_guard.observe(
-                observed_process(g_baresip_process.poll(), g_shutdown.pending()),
-                axv::SipEvidence::None, g_native_event_mailbox, g_sip_projection);
+            const auto observed=current_sip_observation(g_baresip_process.poll());
             const auto permission = axv::authorize_dial(
                 observed, observed.session, g_sip_selection, number);
             if (!permission.allowed()) {
@@ -1316,6 +1395,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         DestroyWindow(window);
         return 0;
     case WM_DESTROY:
+#ifdef AXV_ENABLE_NATIVE_SIP
+        native_engine().stop();
+#endif
         g_sip_session_guard.revoke(axv::RuntimeProcess::Stopped, g_native_event_mailbox, g_sip_projection);
         KillTimer(window, kProcessTimer);
         remove_tray(window);
@@ -1348,14 +1430,32 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
-                                      std::wcscmp(command_line, L"--ui-blackbox") == 0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.45",
+                                      std::wcscmp(command_line, L"--ui-blackbox") == 0 || std::wcscmp(command_line,L"--native-ui-smoke")==0);
+#ifdef AXV_ENABLE_NATIVE_SIP
+    const wchar_t* title=L"AXE Voice | Candidato nativo 0.51";
+#else
+    const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
+#endif
+    HWND window = CreateWindowExW(0, className, title,
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VSCROLL,
         CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi)+GetSystemMetricsForDpi(SM_CXVSCROLL,g_dpi),
         axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
     if (!window) return 2;
+#ifdef AXV_ENABLE_NATIVE_SIP
+    if(command_line && std::wcscmp(command_line,L"--native-ui-smoke")==0) {
+        bool ok=g_password && g_ca_file && GetDlgItem(window,kAnswerNative) &&
+            (GetWindowLongPtrW(g_password,GWL_STYLE)&ES_PASSWORD) &&
+            !IsWindowEnabled(GetDlgItem(window,kCallButton));
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCallButton,BN_CLICKED),0);
+        ok=ok && native_engine().status()==axv::SipStatus::Disconnected;
+        // A missing CA must reject TLS before any registration starts.
+        axv::SipAccount a{L"127.0.0.1",L"1001",5061,true};
+        ok=ok && !native_engine().configure_authenticated(a,L"","fixture-only");
+        DestroyWindow(window); return ok?0:21;
+    }
+#endif
     if (g_smoke_mode && command_line &&
         std::wcscmp(command_line, L"--ui-smoke") == 0) {
         // Force a consistent baseline without changing saved HKCU settings.

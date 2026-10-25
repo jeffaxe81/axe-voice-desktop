@@ -44,3 +44,7 @@ credentials/
 Thumbs.db
 .vscode/
 .idea/
+
+# Agent scratch and Python bytecode
+.superpowers/
+__pycache__/
