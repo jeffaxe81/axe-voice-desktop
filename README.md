@@ -1,10 +1,10 @@
-# AXE Voice Desktop — Windows LAB (v0.149.0, desenvolvimento)
+# AXE Voice Desktop — Windows LAB (v0.154.0, desenvolvimento)
 
 Protótipo de softphone corporativo Win32 com áudio local, preferências separadas para voz/toque, inventário de dispositivos Windows, atalhos de discador e pré-verificações SIP.
 
 **Estado real:** o aplicativo `AXEVoice.exe` mantém o motor `UnavailableSipEngine` e o botão Chamar bloqueado, pois não há prova de registro SIP autenticado, TLS de servidor validado, SRTP ou áudio de chamada. As credenciais SIP podem ser administradas no cofre Windows local; a integração do SDK Baresip para autenticação existe somente no alvo experimental, desabilitado por padrão e ainda não homologado.
 
-**O código v0.149 não foi compilado nem testado nesta rodada.** A arquitetura Baresip é trabalho de laboratório; não confundir o percentual de entregas de código com aceite operacional. A `main` mantém a base histórica MicroSIP/PJSIP; promoção exige os [critérios documentados](docs/AXEVOICE-SIP-SDK-HARDENING-V116-V120-UNTESTED.md).
+**O código v0.154 não foi compilado nem testado nesta rodada.** A arquitetura Baresip é trabalho de laboratório; não confundir o percentual de entregas de código com aceite operacional. A `main` mantém a base histórica MicroSIP/PJSIP; promoção exige os [critérios documentados](docs/AXEVOICE-SIP-SDK-HARDENING-V116-V120-UNTESTED.md).
 
 A evolução v0.126–v0.130 reforça o controle experimental das notificações nativas: exige a ordem REGISTERING/REGISTER_OK, conserva erros de registro por sessão, reconhece rejeição imediata e revoga a sessão se a confirmação de registro desaparecer. **Nenhuma dessas melhorias habilita chamadas no aplicativo.**
 
@@ -37,6 +37,12 @@ O relatório de prontidão F2 passa a usar o formatador de indicadores booleanos
 A aba Áudio agora **agenda** a enumeração dos dispositivos Windows em uma thread auxiliar, em vez de chamar a API Core Audio de forma síncrona no thread da interface. As consultas têm geração/epoch; resultados antigos são descartados quando a aba é deixada ou outra atualização é solicitada. Pedidos manuais feitos enquanto há consulta pendente são agrupados e retomados após o término da consulta anterior. O resultado é aplicado na interface somente quando a aba Áudio estiver visível e a prévia de áudio estiver parada.
 
 A seleção explícita de headset/saída de voz/toque continua preservada contra falhas temporárias. Não há mudança de motor SIP, autenticação, RTP, SRTP ou chamada real. **Código não compilado nem testado nesta rodada**; o restante da PR antiga #30 continua em rascunho.
+
+## Reconciliação PR #30 — diagnóstico de áudio em Ajustes v0.150–v0.154
+
+O botão **Dispositivos de áudio** na aba Ajustes deixa de bloquear a interface com a enumeração Windows Core Audio. A verificação usa uma thread auxiliar separada da aba Áudio; cada aba mantém a própria geração de consulta e sua própria solicitação pendente. Resultados obsoletos são descartados ao sair de Ajustes ou quando houver novo clique, e novas verificações são agrupadas em vez de iniciar varreduras concorrentes. A resposta é publicada na interface apenas por um timer Win32 na aba Ajustes visível.
+
+O relatório anônimo para copiar checklist já havia sido reconciliado na PR #119; não foi duplicado. O botão Chamar continua bloqueado com `UnavailableSipEngine`. **Não houve compilação, testes ou homologação nesta rodada.**
 
 ## Compilar e abrir no Windows
 
