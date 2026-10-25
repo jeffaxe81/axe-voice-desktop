@@ -16,6 +16,8 @@ struct BaresipNativeEvent {
     // Zero for registration/transport events. A call must have a nonzero opaque
     // strictly-increasing token, retained for all events of that same call.
     std::uint64_t call_id = 0;
+    std::uint64_t account_token = 0; // Local opaque account token, never SIP URI.
+    std::uint64_t call_token = 0;    // Local per-call token; zero for registration.
 };
 enum class EventTransition { Applied, StaleSession, UnverifiedSource, InvalidOrder, StaleCall };
 

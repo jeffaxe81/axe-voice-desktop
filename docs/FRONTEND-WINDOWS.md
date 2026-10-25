@@ -1,4 +1,4 @@
-# AXE Voice — Frontend Windows v0.27 (prototipagem)
+# AXE Voice — Frontend Windows v0.33 (prototipagem)
 
 ## Telas
 
@@ -126,3 +126,7 @@ A validação de contraste percebido, leitores de tela e escala DPI **ainda exig
 - Cartões, teclado telefônico, indicadores e botões owner-draw acompanham o DPI. MINI/MAX preserva proporções, incluindo 150% e 200%.
 - O smoke test Win32 verifica coordenadas do campo, troca de página e MINI nas escalas 150% e 200%, sem alterar as configurações reais do Windows. Novo teste unitário cobre a matemática do escalonamento.
 - Seguem pendentes os testes manuais em monitores físicos de DPI distintos, leitores de tela, truncamento de textos e resoluções pequenas. Registro SIP e áudio de chamada continuam não homologados.
+
+## v0.33 — verificação de identidade SIP
+
+Eventos nativos futuros só serão aceitos quando associados a uma conta e chamada válidas na mesma sessão. O status visual segue indicando registro não confirmado até integrar bibliotecas auditadas do Baresip.

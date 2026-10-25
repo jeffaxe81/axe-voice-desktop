@@ -1,56 +1,74 @@
 #pragma once
 #include "baresip_event_mailbox.h"
+#include "baresip_event_identity.h"
 #include <cstdint>
+#include "legacy_sip_event_projection.h"
 
 namespace axv {
-// UI-thread projection of an authenticated native event stream.
-// This class does not authenticate producers. Process/log probes MUST use None.
-// VerifiedNativeApi is reserved for a separately audited in-process adapter.
+// UI-thread projection of Baresip events. This class does NOT authenticate
+// event provenance: the audited adapter must provide VerifiedNativeApi and
+// the selected opaque account identity. Current production caller uses None.
 class SipEventProjection {
 public:
     const SipRuntimeObservation& observe(RuntimeProcess process, SipEvidence evidence,
-                                         const BaresipEventMailbox::Batch& batch) {
+        const BaresipEventMailbox::Batch& batch) {
+        return legacy_.observe(process, evidence, batch);
+    }
+    const SipRuntimeObservation& observe(RuntimeProcess process, SipEvidence evidence,
+                                         const BaresipEventMailbox::Batch& batch,
+                                         std::uint64_t expected_account_token) {
         if (process != RuntimeProcess::Running || batch.session == 0) {
-            if (state_.session != 0)
-                rejected_session_ = state_.session;
-            state_ = {process, SipStatus::Unavailable, SipEvidence::None, 0};
-            return state_;
+            if (bound_.observation.session != 0)
+                rejected_session_ = bound_.observation.session;
+            invalidate_identity(bound_);
+            bound_.observation.process = process;
+            return bound_.observation;
         }
         if (batch.session == rejected_session_) {
-            state_ = {process, SipStatus::Unavailable, SipEvidence::None, 0};
-            return state_;
+            invalidate_identity(bound_);
+            bound_.observation.process = process;
+            return bound_.observation;
         }
         if (batch.overflow) {
-            reject(batch.session, process);
-            return state_;
+            reject(batch.session,process);
+            return bound_.observation;
         }
-        if (evidence != SipEvidence::VerifiedNativeApi) {
-            // If provenance is revoked, this generation cannot be trusted again.
-            if (state_.evidence == SipEvidence::VerifiedNativeApi)
+        if (evidence != SipEvidence::VerifiedNativeApi || expected_account_token == 0) {
+            // Provenance can never revive within a previously verified generation.
+            if (bound_.observation.evidence == SipEvidence::VerifiedNativeApi)
                 rejected_session_ = batch.session;
-            state_ = {process, SipStatus::Unavailable, SipEvidence::None, 0};
-            return state_;
+            invalidate_identity(bound_);
+            bound_.observation.process = process;
+            return bound_.observation;
         }
-        if (state_.session != batch.session || state_.evidence != evidence) {
-            // No SIP state is inherited across generations.
-            state_ = {process, SipStatus::Unavailable, evidence, batch.session};
+        if (bound_.observation.session != batch.session ||
+            bound_.observation.evidence != evidence) {
+            invalidate_identity(bound_);
+            bound_.observation = {process,SipStatus::Unavailable,evidence,batch.session};
+            bound_.expected_account_token = expected_account_token;
         }
-        for (std::size_t i = 0; i < batch.size; ++i) {
-            if (apply_baresip_event(state_, batch.session, batch.events[i])
-                != EventTransition::Applied) {
-                reject(batch.session, process); // fail closed on a broken sequence
+        if (bound_.expected_account_token != expected_account_token) {
+            reject(batch.session,process); // Account switch requires a new session.
+            return bound_.observation;
+        }
+        for (std::size_t i=0;i<batch.size;++i) {
+            if (apply_identified_event(bound_,batch.session,batch.events[i])
+                != IdentityResult::Applied) {
+                reject(batch.session,process); // Reject ALL subsequent events this generation.
                 break;
             }
         }
-        return state_;
+        return bound_.observation;
     }
-    const SipRuntimeObservation& snapshot() const { return state_; }
+    const SipRuntimeObservation& snapshot() const { return bound_.observation; }
 private:
     void reject(std::uint64_t session, RuntimeProcess process) {
-        rejected_session_ = session; // cannot recover until a NEW generation
-        state_ = {process, SipStatus::Unavailable, SipEvidence::None, 0};
+        rejected_session_=session;
+        invalidate_identity(bound_);
+        bound_.observation.process=process;
     }
-    SipRuntimeObservation state_{};
-    std::uint64_t rejected_session_ = 0;
+    LegacySipEventProjection legacy_;
+    BoundBaresipState bound_{};
+    std::uint64_t rejected_session_=0;
 };
 } // namespace axv
