@@ -4,6 +4,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <limits>
 #include <optional>
 #include <thread>
 #include <utility>
@@ -66,7 +67,7 @@ public:
         std::lock_guard<std::mutex> lock(state_->mutex);
         // Monotonic epoch: never wrap into a worker's captured generation.
         // Exhaustion is an unrecoverable local lifecycle failure.
-        if (state_->generation == UINT64_MAX) {
+        if (state_->generation == (std::numeric_limits<std::uint64_t>::max)()) {
             state_->exhausted = true;
         } else {
             ++state_->generation;
