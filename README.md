@@ -1,10 +1,10 @@
-# AXE Voice Desktop — Windows LAB (v0.144.0, desenvolvimento)
+# AXE Voice Desktop — Windows LAB (v0.149.0, desenvolvimento)
 
 Protótipo de softphone corporativo Win32 com áudio local, preferências separadas para voz/toque, inventário de dispositivos Windows, atalhos de discador e pré-verificações SIP.
 
 **Estado real:** o aplicativo `AXEVoice.exe` mantém o motor `UnavailableSipEngine` e o botão Chamar bloqueado, pois não há prova de registro SIP autenticado, TLS de servidor validado, SRTP ou áudio de chamada. As credenciais SIP podem ser administradas no cofre Windows local; a integração do SDK Baresip para autenticação existe somente no alvo experimental, desabilitado por padrão e ainda não homologado.
 
-**O código v0.144 não foi compilado nem testado nesta rodada.** A arquitetura Baresip é trabalho de laboratório; não confundir o percentual de entregas de código com aceite operacional. A `main` mantém a base histórica MicroSIP/PJSIP; promoção exige os [critérios documentados](docs/AXEVOICE-SIP-SDK-HARDENING-V116-V120-UNTESTED.md).
+**O código v0.149 não foi compilado nem testado nesta rodada.** A arquitetura Baresip é trabalho de laboratório; não confundir o percentual de entregas de código com aceite operacional. A `main` mantém a base histórica MicroSIP/PJSIP; promoção exige os [critérios documentados](docs/AXEVOICE-SIP-SDK-HARDENING-V116-V120-UNTESTED.md).
 
 A evolução v0.126–v0.130 reforça o controle experimental das notificações nativas: exige a ordem REGISTERING/REGISTER_OK, conserva erros de registro por sessão, reconhece rejeição imediata e revoga a sessão se a confirmação de registro desaparecer. **Nenhuma dessas melhorias habilita chamadas no aplicativo.**
 
@@ -31,6 +31,12 @@ O relatório de prontidão F2 passa a usar o formatador de indicadores booleanos
 - O filtro de callbacks Baresip verifica a geração e a sessão atual do mailbox antes de admitir um callback nativo.
 
 **Sem compilar nem executar testes nesta rodada**. Não implica homologação de headset, áudio real SIP ou autenticação com PABX. Os rascunhos históricos permanecem abertos porque o merge é parcial.
+
+## PR #30 — consultas Core Audio assíncronas v0.145–v0.149
+
+A aba Áudio agora **agenda** a enumeração dos dispositivos Windows em uma thread auxiliar, em vez de chamar a API Core Audio de forma síncrona no thread da interface. As consultas têm geração/epoch; resultados antigos são descartados quando a aba é deixada ou outra atualização é solicitada. Pedidos manuais feitos enquanto há consulta pendente são agrupados e retomados após o término da consulta anterior. O resultado é aplicado na interface somente quando a aba Áudio estiver visível e a prévia de áudio estiver parada.
+
+A seleção explícita de headset/saída de voz/toque continua preservada contra falhas temporárias. Não há mudança de motor SIP, autenticação, RTP, SRTP ou chamada real. **Código não compilado nem testado nesta rodada**; o restante da PR antiga #30 continua em rascunho.
 
 ## Compilar e abrir no Windows
 
