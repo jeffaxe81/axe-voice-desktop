@@ -81,11 +81,27 @@ if(AXV_BUILD_NATIVE_BARESIP_ADAPTER)
   target_link_libraries(axv_native_libre_reactor_smoke PRIVATE
     "${AXV_LIBRE_LIBRARY}")
   target_compile_features(axv_native_libre_reactor_smoke PRIVATE cxx_std_17)
+  option(AXV_NATIVE_TLS_MEDIA "Validate TLS/G711/WASAPI candidate without enabling GUI SIP" OFF)
+  set(_native_sdk_targets axv_native_baresip_adapter
+    axv_native_baresip_sdk_abi_probe axv_native_baresip_abi_probe
+    axv_native_libre_reactor_smoke)
+  if(AXV_NATIVE_TLS_MEDIA)
+    find_package(OpenSSL 3.0 REQUIRED)
+    add_executable(axv_native_tls_media_probe tests/native_tls_media_probe.cpp)
+    target_include_directories(axv_native_tls_media_probe PRIVATE
+      "${AXV_LIBRE_INCLUDE_DIR}" "${AXV_BARESIP_INCLUDE_DIR}")
+    target_compile_features(axv_native_tls_media_probe PRIVATE cxx_std_17)
+    target_link_libraries(axv_native_tls_media_probe PRIVATE
+      "${AXV_BARESIP_LIBRARY}" "${AXV_LIBRE_LIBRARY}")
+    list(APPEND _native_sdk_targets axv_native_tls_media_probe)
+    foreach(_native_target IN LISTS _native_sdk_targets)
+      target_compile_definitions(${_native_target} PRIVATE USE_TLS USE_OPENSSL)
+      target_link_libraries(${_native_target} PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+    endforeach()
+  endif()
   # libre headers select Winsock declarations using WIN32 (not just _WIN32).
   # Keep this usage requirement scoped to consumers of the audited native SDK.
-  foreach(_native_target IN ITEMS axv_native_baresip_adapter
-      axv_native_baresip_sdk_abi_probe axv_native_baresip_abi_probe
-      axv_native_libre_reactor_smoke)
+  foreach(_native_target IN LISTS _native_sdk_targets)
     target_compile_definitions(${_native_target} PRIVATE WIN32 NOMINMAX WIN32_LEAN_AND_MEAN)
     # Required by the static Windows libre profile; raw .lib paths do not
     # propagate its upstream RE_LIBS interface automatically.

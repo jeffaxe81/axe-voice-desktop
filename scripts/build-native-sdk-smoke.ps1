@@ -1,10 +1,11 @@
 [CmdletBinding()]
-param()
+param([switch]$TlsMedia)
 $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$Work = Join-Path $Root 'build/native-sdk-deps'
-$Prefix = Join-Path $Root 'build/native-sdk-prefix'
-$ProductBuild = Join-Path $Root 'build/native-sdk-product'
+$Flavor = if ($TlsMedia) { 'tls-media' } else { 'abi' }
+$Work = Join-Path $Root "build/native-sdk-deps-$Flavor"
+$Prefix = Join-Path $Root "build/native-sdk-$Flavor/prefix"
+$ProductBuild = Join-Path $Root "build/native-sdk-$Flavor/product"
 function Invoke-Checked([string]$Program, [string[]]$Arguments) {
     & $Program @Arguments | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "$Program failed ($LASTEXITCODE)" }
@@ -29,16 +30,50 @@ $BaresipCommit = '9cfab81550acc4bd38d6580d79b45cc6eea65cd6'
 New-Item -ItemType Directory -Force $Work,$Prefix | Out-Null
 $Re = Get-PinnedSource 're' 'https://github.com/baresip/re.git' $ReCommit
 $Baresip = Get-PinnedSource 'baresip' 'https://github.com/baresip/baresip.git' $BaresipCommit
+$OpenSSLCommit = '8cf17aaeb4599f8af87fefd810b5b5fee90fe69e'
+if ($TlsMedia) {
+    $Vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+    $VsRoot = (& $Vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
+    if ($LASTEXITCODE -ne 0 -or !$VsRoot) { throw 'MSVC development environment not found' }
+    $DevCmd = Join-Path $VsRoot 'Common7/Tools/VsDevCmd.bat'
+    # A batch file avoids nested cmd/PowerShell quoting of Program Files paths.
+    $ImportTools = Join-Path $Work 'import-msvc.cmd'
+    @('@echo off', ('call "{0}" -no_logo -arch=x64 -host_arch=x64 >nul' -f $DevCmd),
+      'if errorlevel 1 exit /b 1', 'set') | Set-Content $ImportTools -Encoding ascii
+    $ToolEnvironment = & cmd.exe /d /c $ImportTools
+    if ($LASTEXITCODE -ne 0) { throw 'Could not initialize MSVC x64 tools' }
+    foreach ($Line in $ToolEnvironment) {
+        if ($Line -match '^([^=]+)=(.*)$') {
+            $Name = $Matches[1]; $Value = $Matches[2]
+            if ($Name -match '^(PATH|INCLUDE|LIB|LIBPATH|VCTools.*|WindowsSdk.*|VSINSTALLDIR|VCINSTALLDIR|UniversalCRTSdkDir|UCRTVersion|VSCMD.*|DevEnvDir)$') {
+                [Environment]::SetEnvironmentVariable($Name,$Value,'Process')
+            }
+        }
+    }
+    $OpenSSL = Get-PinnedSource 'openssl' 'https://github.com/openssl/openssl.git' $OpenSSLCommit
+    Push-Location $OpenSSL
+    try {
+        Invoke-Checked 'perl' @('Configure','VC-WIN64A','shared','no-tests','no-module','no-asm',"--prefix=$Prefix",'--libdir=lib',"--openssldir=$Prefix/ssl")
+        Invoke-Checked 'nmake' @('/NOLOGO')
+        Invoke-Checked 'nmake' @('/NOLOGO','install_sw')
+    } finally { Pop-Location }
+    $env:PATH = "$Prefix/bin;$env:PATH"
+}
 $Common = @('-G','Visual Studio 17 2022','-A','x64',"-DCMAKE_INSTALL_PREFIX=$Prefix",
-    "-DCMAKE_PREFIX_PATH=$Prefix",'-DCMAKE_DISABLE_FIND_PACKAGE_OpenSSL=ON',
-    '-DCMAKE_DISABLE_FIND_PACKAGE_ZLIB=ON','-DUSE_OPENSSL=OFF','-DUSE_MBEDTLS=OFF')
+    "-DCMAKE_PREFIX_PATH=$Prefix",'-DCMAKE_DISABLE_FIND_PACKAGE_ZLIB=ON','-DUSE_MBEDTLS=OFF')
+if ($TlsMedia) {
+    $Common += @('-DUSE_OPENSSL=ON',"-DOPENSSL_ROOT_DIR=$Prefix",'-DOPENSSL_USE_STATIC_LIBS=OFF')
+} else {
+    $Common += @('-DCMAKE_DISABLE_FIND_PACKAGE_OpenSSL=ON','-DUSE_OPENSSL=OFF')
+}
 $ReBuild = Join-Path $Work 're-build'
 Invoke-Checked 'cmake' (@('-S',$Re,'-B',$ReBuild) + $Common + @(
     '-DLIBRE_BUILD_SHARED=OFF','-DLIBRE_BUILD_STATIC=ON','-DUSE_BFCP=OFF','-DUSE_PCP=OFF','-DUSE_RTMP=OFF'))
 Invoke-Checked 'cmake' @('--build',$ReBuild,'--config','Release','--parallel','4')
 Invoke-Checked 'cmake' @('--install',$ReBuild,'--config','Release')
 $BsBuild = Join-Path $Work 'baresip-build'
-Invoke-Checked 'cmake' (@('-S',$Baresip,'-B',$BsBuild) + $Common + @('-DSTATIC=ON','-DMODULES:STRING='))
+$Modules = if ($TlsMedia) { 'g711;wasapi' } else { '' }
+Invoke-Checked 'cmake' (@('-S',$Baresip,'-B',$BsBuild) + $Common + @('-DSTATIC=ON',"-DMODULES:STRING=$Modules"))
 Invoke-Checked 'cmake' @('--build',$BsBuild,'--config','Release','--parallel','4')
 Invoke-Checked 'cmake' @('--install',$BsBuild,'--config','Release')
 $Header = Join-Path $Prefix 'include/baresip.h'
@@ -50,27 +85,39 @@ $HeaderHash = Get-Hash $Header
 $LibraryHash = Get-Hash $Library
 $ReHeaderHash = Get-Hash $ReHeader
 $ReLibraryHash = Get-Hash $ReLibrary
-Invoke-Checked 'cmake' @('-S',$Root,'-B',$ProductBuild,'-G','Visual Studio 17 2022','-A','x64',
+$ProductArguments = @('-S',$Root,'-B',$ProductBuild,'-G','Visual Studio 17 2022','-A','x64',
     '-DBUILD_TESTING=OFF','-DAXV_BUILD_NATIVE_BARESIP_ADAPTER=ON',
     "-DAXV_BARESIP_INCLUDE_DIR=$Prefix/include","-DAXV_BARESIP_LIBRARY=$Library",
     "-DAXV_BARESIP_HEADER_SHA256=$HeaderHash","-DAXV_BARESIP_LIBRARY_SHA256=$LibraryHash",
     '-DAXV_BARESIP_VERSION=4.12.0',"-DAXV_LIBRE_INCLUDE_DIR=$Prefix/include/re",
     "-DAXV_LIBRE_LIBRARY=$ReLibrary","-DAXV_LIBRE_HEADER_SHA256=$ReHeaderHash",
     "-DAXV_LIBRE_LIBRARY_SHA256=$ReLibraryHash")
+if ($TlsMedia) { $ProductArguments += @('-DAXV_NATIVE_TLS_MEDIA=ON',"-DOPENSSL_ROOT_DIR=$Prefix",'-DOPENSSL_USE_STATIC_LIBS=OFF') }
+Invoke-Checked 'cmake' $ProductArguments
 Invoke-Checked 'cmake' @('--build',$ProductBuild,'--config','Release','--parallel','4','--target',
     'axv_native_baresip_sdk_abi_probe','axv_native_baresip_abi_probe','axv_native_libre_reactor_smoke')
-# The ABI executables are build-only. Execute only the local libre reactor;
+if ($TlsMedia) {
+    Invoke-Checked 'cmake' @('--build',$ProductBuild,'--config','Release','--parallel','4','--target','axv_native_tls_media_probe')
+    Get-ChildItem (Join-Path $Prefix 'bin') -Filter '*.dll' | Copy-Item -Destination (Join-Path $ProductBuild 'Release')
+    Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_tls_media_probe.exe') @()
+}
+# The ABI executables are build-only. Also execute the local libre reactor;
 # it creates no Baresip UA, account, SIP registration or media session.
 Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_libre_reactor_smoke.exe') @()
 $Licenses = Join-Path $Prefix 'licenses'
 New-Item -ItemType Directory -Force $Licenses | Out-Null
 Copy-Item (Join-Path $Re 'LICENSE') (Join-Path $Licenses 'libre-LICENSE.txt')
 Copy-Item (Join-Path $Baresip 'LICENSE') (Join-Path $Licenses 'baresip-LICENSE.txt')
-@{ profile='MSVC x64 ABI/reactor candidate only'; tls=$false; audio_modules=@(); gui_native_sdk='OFF/not linked';
+if ($TlsMedia) { Copy-Item (Join-Path $OpenSSL 'LICENSE.txt') (Join-Path $Licenses 'OpenSSL-LICENSE.txt') }
+$Files = @{}
+Get-ChildItem $Prefix -Recurse -File | Where-Object { $_.Extension -in @('.h','.lib','.dll') } | ForEach-Object {
+    $Files[$_.FullName.Substring($Prefix.Length+1).Replace('\','/')] = Get-Hash $_.FullName
+}
+@{ profile="MSVC x64 $Flavor candidate only"; tls=[bool]$TlsMedia; audio_modules=@($Modules -split ';' | Where-Object { $_ }); gui_native_sdk='OFF/not linked';
    baresip_commit=$BaresipCommit; libre_commit=$ReCommit; version='4.12.0';
    baresip_header_sha256=$HeaderHash; baresip_library_sha256=$LibraryHash;
    libre_header_sha256=$ReHeaderHash; libre_library_sha256=$ReLibraryHash;
-   reactor_smoke='exit 0'; production_approved=$false } |
+   reactor_smoke='exit 0'; tls_media_probe=$(if ($TlsMedia) { 'exit 0, no handshake/devices opened' } else { 'not applicable' }); openssl_commit=$(if ($TlsMedia) { $OpenSSLCommit } else { $null }); files=$Files; production_approved=$false } |
     ConvertTo-Json -Depth 4 | Set-Content (Join-Path $Prefix 'CANDIDATE-MANIFEST.json') -Encoding utf8
-'Candidate SDK for ABI and reactor checks. TLS/audio modules disabled. No SIP or production approval.' |
+"Candidate SDK profile: $Flavor. TLS/media compilation is not handshake, device, call or production approval." |
     Set-Content (Join-Path $Prefix 'README.txt') -Encoding utf8
