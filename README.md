@@ -1,10 +1,10 @@
-# AXE Voice Desktop — Windows LAB (v0.134.0, desenvolvimento)
+# AXE Voice Desktop — Windows LAB (v0.139.0, desenvolvimento)
 
 Protótipo de softphone corporativo Win32 com áudio local, preferências separadas para voz/toque, inventário de dispositivos Windows, atalhos de discador e pré-verificações SIP.
 
 **Estado real:** o aplicativo `AXEVoice.exe` mantém o motor `UnavailableSipEngine` e o botão Chamar bloqueado, pois não há prova de registro SIP autenticado, TLS de servidor validado, SRTP ou áudio de chamada. As credenciais SIP podem ser administradas no cofre Windows local; a integração do SDK Baresip para autenticação existe somente no alvo experimental, desabilitado por padrão e ainda não homologado.
 
-**O código v0.134 não foi compilado nem testado nesta rodada.** A arquitetura Baresip é trabalho de laboratório; não confundir o percentual de entregas de código com aceite operacional. A `main` mantém a base histórica MicroSIP/PJSIP; promoção exige os [critérios documentados](docs/AXEVOICE-SIP-SDK-HARDENING-V116-V120-UNTESTED.md).
+**O código v0.139 não foi compilado nem testado nesta rodada.** A arquitetura Baresip é trabalho de laboratório; não confundir o percentual de entregas de código com aceite operacional. A `main` mantém a base histórica MicroSIP/PJSIP; promoção exige os [critérios documentados](docs/AXEVOICE-SIP-SDK-HARDENING-V116-V120-UNTESTED.md).
 
 A evolução v0.126–v0.130 reforça o controle experimental das notificações nativas: exige a ordem REGISTERING/REGISTER_OK, conserva erros de registro por sessão, reconhece rejeição imediata e revoga a sessão se a confirmação de registro desaparecer. **Nenhuma dessas melhorias habilita chamadas no aplicativo.**
 
@@ -13,6 +13,14 @@ A evolução v0.126–v0.130 reforça o controle experimental das notificações
 O código incorpora seletivamente proteções existentes nas PRs históricas #39, #18 e #16 à branch atual, **sem mesclar suas implementações antigas por inteiro**: limite de lote SIP antes da iteração; preservação de IDs locais ao falhar um scan Core Audio; preferência explícita de headset que volta a ser selecionada quando reconectado; atualização de diagnóstico/versão.
 
 O motor SIP e as chamadas continuam indisponíveis. A compilação Windows, os testes e a homologação permanecem pendentes.
+
+## Reconciliação adicional — v0.135–v0.139
+
+O adaptador Baresip experimental agora valida com `call_get_ua` a conta proprietária da chamada tanto ao iniciá-la quanto em eventos de estabelecimento/encerramento, recuperando a proteção da PR histórica #28. A API possui uma verificação de assinatura no probe de SDK, e o header dos simuladores foi ajustado apenas para compatibilidade com essa chamada.
+
+O relatório de prontidão F2 passa a usar o formatador de indicadores booleanos da PR histórica #21, sem dados de identidade, senha ou destino. O diagnóstico local para área de transferência ganhou limite de 8.192 caracteres. Nenhuma das PRs antigas foi mesclada integralmente ou fechada.
+
+**Motor SIP nativo, autenticação, RTP e áudio real seguem indisponíveis no executável; nenhuma compilação ou teste nesta rodada.**
 
 ## Compilar e abrir no Windows
 
