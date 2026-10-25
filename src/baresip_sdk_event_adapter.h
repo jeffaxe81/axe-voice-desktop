@@ -49,6 +49,8 @@ public:
         seen_calls_.clear();
         registration_callback_seen_ = false;
         registration_failed_seen_ = false;
+        registration_started_seen_ = false;
+        registration_closed_seen_ = false;
         // Each native registration receives a *distinct immutable epoch*.
         // Contexts remain allocated until owner-proven callback quiescence.
         // A failed allocation must not leak its context or monopolize the
@@ -91,6 +93,8 @@ public:
         seen_calls_.clear();
         registration_callback_seen_ = false;
         registration_failed_seen_ = false;
+        registration_started_seen_ = false;
+        registration_closed_seen_ = false;
         // Only release the process-wide claim AFTER native unregistration
         // and callback admission quiescence, never while subscribed.
         release_owner();
@@ -104,8 +108,9 @@ public:
     // Native event-loop owner only. Callback plus UA registrar state
     // must agree; neither alone authorizes SIP controls in the UI.
     bool native_register_ok_seen() const {
-        return active() && registration_callback_seen_ &&
-               !registration_failed_seen_ && owner_ && ua_isregistered(owner_);
+        return active() && registration_started_seen_ &&
+               registration_callback_seen_ && !registration_failed_seen_ &&
+               !registration_closed_seen_ && owner_ && ua_isregistered(owner_);
     }
     // Only the selected UA's BEVENT_REGISTER_FAIL on this callback epoch
     // can assert a registrar rejection. This is failure evidence, NEVER auth.
@@ -150,6 +155,8 @@ private:
         active_call_ = nullptr;
         registration_callback_seen_ = false;
         registration_failed_seen_ = false;
+        registration_started_seen_ = false;
+        registration_closed_seen_ = true;
     }
 
     void on_event(BaresipCallbackLifecycle::CapturedSession callback_session,
@@ -193,34 +200,47 @@ private:
             fail_closed();
             return;
         case BEVENT_REGISTERING:
-            registration_callback_seen_ = false;
-            registration_failed_seen_ = false;
-            if (!lifecycle_.registration(callback_session, BaresipEventKind::Registering))
+            // One explicitly started registration per epoch. Retries,
+            // renewals or late callbacks require stop() and a fresh epoch.
+            if (registration_started_seen_ || registration_closed_seen_ ||
+                registration_failed_seen_ || registration_callback_seen_ ||
+                !lifecycle_.registration(callback_session, BaresipEventKind::Registering)) {
                 fail_closed();
+                return;
+            }
+            registration_started_seen_ = true;
             return;
         case BEVENT_REGISTER_OK:
-            // A callback alone does not prove the registrar accepted
-            // this UA: verify native state before publishing evidence.
-            if (!ua_isregistered(owner_) ||
+            // REGISTER_OK must follow REGISTERING for this selected UA and
+            // epoch. A duplicated/late OK must not restore revoked proof.
+            if (!registration_started_seen_ || registration_closed_seen_ ||
+                registration_failed_seen_ || registration_callback_seen_ ||
+                !ua_isregistered(owner_) ||
                 !lifecycle_.registration(callback_session, BaresipEventKind::RegisterOk)) {
                 fail_closed();
                 return;
             }
             registration_callback_seen_ = true;
-            registration_failed_seen_ = false;
             return;
         case BEVENT_REGISTER_FAIL:
-            registration_callback_seen_ = false;
-            if (!lifecycle_.registration(callback_session, BaresipEventKind::RegisterFail)) {
+            // Sticky per-epoch registrar rejection: future REGISTERING/OK
+            // callbacks cannot clear the failure latch on this generation.
+            if (!registration_started_seen_ || registration_closed_seen_ ||
+                registration_failed_seen_ || registration_callback_seen_ ||
+                !lifecycle_.registration(callback_session, BaresipEventKind::RegisterFail)) {
                 fail_closed();
-            } else {
-                registration_failed_seen_ = true;
+                return;
             }
+            registration_failed_seen_ = true;
             return;
         case BEVENT_UNREGISTERING:
-            registration_callback_seen_ = false;
-            if (!lifecycle_.registration(callback_session, BaresipEventKind::Unregistering))
+            if (!registration_started_seen_ || registration_closed_seen_ ||
+                !lifecycle_.registration(callback_session, BaresipEventKind::Unregistering)) {
                 fail_closed();
+                return;
+            }
+            registration_callback_seen_ = false;
+            registration_closed_seen_ = true;
             return;
         case BEVENT_CALL_INCOMING:
         case BEVENT_CALL_OUTGOING: {
@@ -284,5 +304,7 @@ private:
     bool registered_ = false;
     bool registration_callback_seen_ = false;
     bool registration_failed_seen_ = false;
+    bool registration_started_seen_ = false;
+    bool registration_closed_seen_ = false;
 };
 } // namespace axv
