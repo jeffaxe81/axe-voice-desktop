@@ -12,7 +12,7 @@ enum class NativeControlDecision {
     RetryDelayed, RetryExhausted, ClockFault, StartFailed, SubmissionRejected,
     CancelRejected, StopFailed, NativePending,
     CallbackObservedUnverified, TerminalNativeFailure, UserCancelled,
-    CancellationRequested
+    CancellationRequested, InvalidTimeout
 };
 struct NativeControlView {
     bool control_thread_running = false;

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AXEVoiceDesktop VERSION 0.115.0 LANGUAGES CXX)
+project(AXEVoiceDesktop VERSION 0.120.0 LANGUAGES CXX)
 if(NOT WIN32)
   message(FATAL_ERROR "This bootstrap currently supports Windows only")
 endif()
@@ -62,6 +62,32 @@ option(AXV_EXPERIMENTAL_NATIVE_WINCREDS_LAB
 if(AXV_EXPERIMENTAL_NATIVE_WINCREDS_LAB AND
    NOT AXV_BUILD_EXPERIMENTAL_NATIVE_REGISTRATION_RUNTIME)
   message(FATAL_ERROR "WinCred SDK LAB requires native registration runtime")
+endif()
+if(AXV_EXPERIMENTAL_NATIVE_WINCREDS_LAB)
+  # Header/import-lib hashes do not prove account_set_auth_pass memory behavior.
+  # Approve src/account.c from the *same* SDK build, and pin its source bytes.
+  set(AXV_BARESIP_ACCOUNT_SOURCE "" CACHE FILEPATH
+    "Reviewed Baresip src/account.c matching the audited SDK build")
+  set(AXV_BARESIP_ACCOUNT_SOURCE_SHA256 "" CACHE STRING
+    "Approved SHA256 of the matching Baresip src/account.c")
+  if(NOT EXISTS "${AXV_BARESIP_ACCOUNT_SOURCE}" OR
+     IS_DIRECTORY "${AXV_BARESIP_ACCOUNT_SOURCE}")
+    message(FATAL_ERROR "WinCred LAB requires audited src/account.c")
+  endif()
+  get_filename_component(_axv_account_name "${AXV_BARESIP_ACCOUNT_SOURCE}" NAME)
+  if(NOT _axv_account_name STREQUAL "account.c")
+    message(FATAL_ERROR "WinCred LAB expected account.c source")
+  endif()
+  string(LENGTH "${AXV_BARESIP_ACCOUNT_SOURCE_SHA256}" _axv_account_pin_length)
+  if(NOT _axv_account_pin_length EQUAL 64 OR
+     NOT "${AXV_BARESIP_ACCOUNT_SOURCE_SHA256}" MATCHES "^[0-9a-fA-F]+$")
+    message(FATAL_ERROR "WinCred LAB account.c SHA256 must be 64 hex digits")
+  endif()
+  file(SHA256 "${AXV_BARESIP_ACCOUNT_SOURCE}" _axv_account_actual)
+  string(TOLOWER "${AXV_BARESIP_ACCOUNT_SOURCE_SHA256}" _axv_account_expected)
+  if(NOT _axv_account_actual STREQUAL _axv_account_expected)
+    message(FATAL_ERROR "WinCred LAB account.c audit hash mismatch")
+  endif()
 endif()
 if(AXV_BUILD_EXPERIMENTAL_NATIVE_REGISTRATION_RUNTIME)
   if(NOT AXV_BUILD_NATIVE_BARESIP_ADAPTER)
