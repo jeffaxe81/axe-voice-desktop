@@ -1,4 +1,4 @@
-# Release candidata nativa0.55 — checklist atual
+# Release candidata nativa0.55.1 — checklist atual
 
 ## Implementações
 - [x] Motor Baresip/libre e OpenSSL fixados, registro/callbacks e comandos chamar/atender/encerrar no candidato.
@@ -52,3 +52,5 @@ Mudo, espera/retomada locais e pedido de transferência direta estão conectados
 - [ ] TLS/SRTP and codec interoperability tested against target PBX.
 
 Until these are complete, the executable is a prototype GUI, **not** an operational softphone.
+
+Patch0.55.1: o relatório F2 mostra a disponibilidade atual de Chamar separada da homologação de áudio. Checklist pendente não significa bloqueio de discagem; botão disponível não comprova mídia ou compatibilidade da central.

@@ -802,6 +802,7 @@ std::wstring make_readiness_report() {
         snapshot.sip == axv::SipStatus::Registered;
     // A device inventory is not an RTP/SRTP or headset media test.
     result.verified_media = false;
+    result.dial_control_available = axv::authorize_dial(snapshot, snapshot.session, g_sip_selection, number).allowed();
     return axv::format_call_readiness(result);
 }
 void begin_shutdown(HWND window) {
@@ -993,7 +994,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 const std::wstring report = make_readiness_report();
                 if (g_smoke_mode) {
                     g_readiness_requested_smoke =
-                        report.find(L"CHAMADAS BLOQUEADAS") != std::wstring::npos &&
+                        report.find(L"Botao Chamar: indisponivel na interface") != std::wstring::npos &&
                         report.find(L"sem evidencia real de registro") != std::wstring::npos;
                 } else {
                     MessageBoxW(window, report.c_str(),
@@ -1559,7 +1560,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0 || std::wcscmp(command_line,L"--native-ui-smoke")==0);
 #ifdef AXV_ENABLE_NATIVE_SIP
-    const wchar_t* title=L"AXE Voice | Candidato nativo 0.55";
+    const wchar_t* title=L"AXE Voice | Candidato nativo 0.55.1";
 #else
     const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
 #endif
@@ -1612,6 +1613,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kRingtoneAudioCombo,CBN_SELCHANGE),reinterpret_cast<LPARAM>(g_ringtone_audio_combo));
         ok=ok && g_selected_ringtone_id.empty() && !can_preview_selected_ringtone() && !g_ring_player.snapshot().request.active();
         // A missing CA must reject TLS before any registration starts.
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kReadinessButton,BN_CLICKED),0);
+        ok=ok && g_readiness_requested_smoke && !IsWindowEnabled(GetDlgItem(window,kCallButton));
         axv::SipAccount a{L"127.0.0.1",L"1001",5061,true};
         ok=ok && !native_engine().configure_authenticated(a,L"","fixture-only");
         DestroyWindow(window); return ok?0:21;
