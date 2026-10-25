@@ -28,14 +28,23 @@ constexpr std::size_t kSdkSecretMax = 256;
 inline bool decode_sip_secret_ascii(
     const std::uint8_t* blob, std::size_t length,
     std::array<char,kSdkSecretMax+1>& output) noexcept {
-    if (!blob || !length || length > kSdkSecretMax*2) return false;
+    // Credential Manager can supply ASCII or UTF-16LE bytes. Accept ONE
+    // optional trailing terminator in either format, never embedded NUL.
+    // No replacement characters, lossy conversion or silent truncation.
+    if (!blob || !length || length > (kSdkSecretMax + 1) * 2)
+        return false;
     bool utf16le = length % 2 == 0;
     if (utf16le) {
         for (std::size_t i=1; i<length; i+=2) {
             if (blob[i] != 0) { utf16le = false; break; }
         }
     }
-    const std::size_t n = utf16le ? length/2 : length;
+    std::size_t n = utf16le ? length / 2 : length;
+    if (utf16le) {
+        if (n && blob[(n-1)*2] == 0) --n;
+    } else if (n && blob[n-1] == 0) {
+        --n;
+    }
     if (!n || n > kSdkSecretMax) return false;
     for (std::size_t i=0; i<n; ++i) {
         const unsigned char ch = blob[utf16le ? i*2 : i];
