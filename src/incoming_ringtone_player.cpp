@@ -34,17 +34,18 @@ bool IncomingRingtonePlayer::shutdown(){
  return true;
 }
 IncomingRingtoneSnapshot IncomingRingtonePlayer::snapshot()const{std::lock_guard<std::mutex> lock(mutex_);return state_;}
+bool IncomingRingtonePlayer::busy()const{std::lock_guard<std::mutex> lock(mutex_);return state_.request.active() || rendering_;}
 void IncomingRingtonePlayer::run()noexcept{
  std::unique_lock<std::mutex> lock(mutex_);
  while(!closed_){
   changed_.wait(lock,[this]{return closed_ || state_.request.active();});
   if(closed_)break;
   const auto request=state_.request;const auto generation=generation_;
-  cancel_.store(false);
+  cancel_.store(false);rendering_=true;
   lock.unlock();
   TonePreviewState result=TonePreviewState::Failed;
   try{result=render_(request.endpoint_id,cancel_);}catch(...){result=TonePreviewState::Failed;}
-  lock.lock();
+  lock.lock();rendering_=false;
   if(generation==generation_ && !closed_)state_.result=result;
   changed_.wait_for(lock,gap_,[this,generation]{return closed_ || generation!=generation_;});
  }

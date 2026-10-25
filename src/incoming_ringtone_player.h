@@ -20,6 +20,7 @@ public:
  void stop(); // Nonblocking cancellation request; renderer cooperates.
  bool shutdown();
  IncomingRingtoneSnapshot snapshot()const;
+ bool busy()const; // Includes a canceled render that has not returned.
 private:
  void run()noexcept;
  Render render_;
@@ -28,7 +29,7 @@ private:
  std::condition_variable changed_;
  IncomingRingtoneSnapshot state_;
  std::uint64_t generation_=0;
- bool closed_=false;
+ bool closed_=false,rendering_=false;
  std::atomic<bool> cancel_{true};
  std::thread worker_;
 };

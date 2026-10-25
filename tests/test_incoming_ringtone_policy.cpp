@@ -6,6 +6,8 @@ int main(){
  axv::SipRuntimeObservation call{axv::RuntimeProcess::Running,axv::SipStatus::Ringing,axv::SipEvidence::VerifiedNativeApi,1,2,2};
  axv::IncomingRingtonePolicy policy;
  CHECK(policy.request(call,L"selected-output").active());
+ CHECK(!policy.request(call,L"selected-output",true).active());
+ CHECK(policy.request(call,L"selected-output",false).active());
  CHECK(axv::native_displayed_call_command_current(axv::NativeCallAction::Answer,call,call));
  auto replacement=call;replacement.call_id=3;
  CHECK(!axv::native_displayed_call_command_current(axv::NativeCallAction::Answer,call,replacement));

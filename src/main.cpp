@@ -624,7 +624,7 @@ void edit_number(HWND root, wchar_t action) {
 bool can_preview_selected_ringtone(){
     if(g_smoke_mode || g_tone_preview.state()==axv::TonePreviewState::Playing)return false;
 #ifdef AXV_ENABLE_NATIVE_SIP
-    if(axv::verified_incoming_call(native_engine().observation()))return false;
+    if(g_ring_player.busy() || axv::verified_incoming_call(native_engine().observation()))return false;
     return axv::fixed_native_ringtone_selection(g_audio_outputs,g_selected_ringtone_id).available();
 #else
     return !g_selected_ringtone_id.empty() && std::any_of(g_audio_outputs.begin(),g_audio_outputs.end(),[](const auto& device){return device.id==g_selected_ringtone_id;});
@@ -634,7 +634,7 @@ bool can_preview_selected_ringtone(){
 void acknowledge_incoming_alert(){g_ring_policy.silence(g_displayed_sip);g_ring_player.stop();}
 void synchronize_incoming_alert(const axv::SipRuntimeObservation& observed){
     g_displayed_sip=observed;
-    const auto request=g_smoke_mode?axv::IncomingRingtoneRequest{}:g_ring_policy.request(observed,g_selected_ringtone_id);
+    const auto request=g_smoke_mode?axv::IncomingRingtoneRequest{}:g_ring_policy.request(observed,g_selected_ringtone_id,g_tone_preview.state()==axv::TonePreviewState::Playing);
     if(axv::verified_incoming_call(observed))g_tone_preview.request_stop();
     const bool accepted=g_ring_player.synchronize(request);
     const auto state=g_ring_player.snapshot();

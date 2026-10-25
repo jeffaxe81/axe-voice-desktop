@@ -53,4 +53,16 @@ int main(){
  while(retry.snapshot().result!=axv::TonePreviewState::Played && std::chrono::steady_clock::now()<retry_limit)std::this_thread::yield();
  CHECK(retry.snapshot().result==axv::TonePreviewState::Played);
  CHECK(retry.shutdown());
+ std::atomic<bool> rendering{false},finish{false};
+ axv::IncomingRingtonePlayer draining([&](const std::wstring&,const std::atomic<bool>&){
+  rendering=true;
+  while(!finish)std::this_thread::sleep_for(1ms);
+  return axv::TonePreviewState::Cancelled;
+ });
+ CHECK(draining.synchronize({9,1,L"output"}));
+ const auto drain_limit=std::chrono::steady_clock::now()+2s;
+ while(!rendering && std::chrono::steady_clock::now()<drain_limit)std::this_thread::yield();
+ CHECK(rendering && draining.busy());
+ draining.stop();CHECK(!draining.snapshot().request.active() && draining.busy());
+ finish=true;CHECK(draining.shutdown());CHECK(!draining.busy());
 }
