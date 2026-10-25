@@ -139,6 +139,7 @@ constexpr int kDeleteFavorite = 3111;
 constexpr int kRecallLastDestination = 3112;
 constexpr int kCopySafeDiagnostics = 3113;
 constexpr int kCopyReadinessReport = 3114;
+constexpr int kResetAudioSession = 3115;
 constexpr int kCopyDestination = 3120;
 constexpr int kPasteDestination = 3121;
 constexpr int kSelectAllDestination = 3122;
@@ -186,6 +187,7 @@ std::atomic<bool> g_preview_running{false};
 std::atomic<bool> g_preview_cancel{false};
 std::atomic<int> g_preview_result{0};
 bool g_preview_pending = false;
+bool g_audio_preference_reset_pending = false;
 axv::AudioPreviewRole g_preview_role = axv::AudioPreviewRole::Ringtone;
 std::uint8_t g_voice_level = axv::kPreviewDefaultLevel;
 std::uint8_t g_ring_level = axv::kPreviewDefaultLevel;
@@ -867,6 +869,7 @@ void show_more_actions(HWND window) {
                 kStartupInTrayToggle, L"Iniciar minimizado na bandeja");
     AppendMenuW(menu, MF_STRING, kCopySafeDiagnostics, L"Copiar diagnostico local sem dados pessoais");
     AppendMenuW(menu, MF_STRING, kCopyReadinessReport, L"Copiar checklist de prontidao sem dados pessoais");
+    AppendMenuW(menu, MF_STRING, kResetAudioSession, L"Redefinir headsets desta sessao...");
     AppendMenuW(menu, MF_STRING, kSipPreflight, L"Pre-ativacao SIP segura (F3)");
     AppendMenuW(menu, MF_STRING, kSipVaultStatus, L"Verificar credencial SIP no Windows (F4)");
     AppendMenuW(menu, MF_STRING, kOpenCredentialManager, L"Abrir Gerenciador de Credenciais (F5)");
@@ -1036,6 +1039,38 @@ void refresh_audio_panel() {
         SetWindowTextW(g_headset_status,
             L"Consulta indisponivel; nova tentativa pendente...");
     }
+}
+
+// User-requested session-only reset: never touches Windows device defaults,
+// saved registry settings, SIP configuration or the underlying audio driver.
+// A running local preview must be stopped and joined before calling this.
+void reset_audio_session_preferences(HWND window) {
+    (void)g_incoming_ring_coordinator.revoke(g_incoming_ring_sink);
+    g_preferred_input_id.clear();
+    g_preferred_output_id.clear();
+    g_preferred_ringtone_id.clear();
+    g_selected_input_id.clear();
+    g_selected_output_id.clear();
+    g_selected_ringtone_id.clear();
+    g_audio_inputs.clear();
+    g_audio_outputs.clear();
+    for (HWND combo : {g_input_audio_combo, g_output_audio_combo,
+                       g_ringtone_audio_combo}) {
+        if (combo) {
+            SendMessageW(combo, CB_RESETCONTENT, 0, 0);
+            EnableWindow(combo, FALSE);
+        }
+    }
+    update_swap_button();
+    update_audio_preview_buttons(window);
+    if (g_page == 2 && !g_smoke_mode) {
+        refresh_audio_panel(); // Fresh async scan chooses Windows defaults.
+    } else {
+        g_audio_inventory_worker.invalidate();
+        g_audio_refresh_retry.cancel();
+    }
+    SetWindowTextW(g_status,
+        L"Headsets desta sessao redefinidos. Sem mudanca no Windows ou SIP.");
 }
 
 bool defer_route_while_preview_active(HWND window, const axv::AudioRouteChange& change) {
@@ -1629,6 +1664,26 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 }
                 return 0;
             }
+            if (control == kResetAudioSession) {
+                if (g_smoke_mode) return 0;
+                if (MessageBoxW(window,
+                    L"Redefinir as preferencias de microfone, voz e toque desta sessao? "
+                    L"O Windows e as credenciais SIP nao serao alterados.",
+                    L"Redefinir selecao de headsets",
+                    MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES)
+                    return 0;
+                if (g_preview_running.load() || g_preview_pending) {
+                    // Preserve the active WASAPI route until the worker stops.
+                    g_audio_preference_reset_pending = true;
+                    g_preview_cancel.store(true);
+                    SetWindowTextW(g_status,
+                        L"Redefinicao aguardando parada do teste local de audio...");
+                } else {
+                    g_audio_route_fence.clear();
+                    reset_audio_session_preferences(window);
+                }
+                return 0;
+            }
             if (control == kCopyReadinessReport) {
                 if (g_smoke_mode) return 0;
                 refresh_runtime_banner(g_baresip_process.poll());
@@ -2204,9 +2259,15 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                              : L"Falha ao testar saida de TOQUE ou formato de audio."));
                 update_audio_preview_buttons(window);
                 // join() above is the STOP acknowledgement for the local WASAPI worker.
-                const auto route = g_audio_route_fence.take_after_stop_ack(true);
-                if (route.kind != axv::AudioRouteChangeKind::None)
-                    apply_audio_route_change(window, route);
+                if (g_audio_preference_reset_pending) {
+                    g_audio_preference_reset_pending = false;
+                    g_audio_route_fence.clear(); // Reset supersedes queued changes.
+                    reset_audio_session_preferences(window);
+                } else {
+                    const auto route = g_audio_route_fence.take_after_stop_ack(true);
+                    if (route.kind != axv::AudioRouteChangeKind::None)
+                        apply_audio_route_change(window, route);
+                }
             }
             // Worker results never write controls directly. The timer is the
             // only consumer and never applies a new audio route while the
