@@ -22,6 +22,7 @@ struct BaresipSipEngine::Impl {
     NativeAccountConfig config;
     std::string password;
     NativeCallCommand command;
+    NativeCommandAdmission admission;
     SipRuntimeObservation view{RuntimeProcess::Stopped,SipStatus::Disconnected};
     int sdk_error=0;
     std::wstring sdk_stage;
@@ -77,7 +78,7 @@ struct BaresipSipEngine::Impl {
             std::lock_guard<std::mutex> lock(mutex);
             view=observed; pending=std::move(command); command={};
         }
-        if(!adapter.native_register_ok_seen() || !native_command_is_current(pending,observed)) return;
+        if(!adapter.native_register_ok_seen() || !admission.admit(pending,observed)) return;
         BaresipSdkCallPort calls(adapter);
         if(pending.action==Action::Dial && observed.sip==SipStatus::Registered && !observed.call_id) {
             if(ua_connect(owned,nullptr,nullptr,pending.destination.c_str(),VIDMODE_OFF)) fail();

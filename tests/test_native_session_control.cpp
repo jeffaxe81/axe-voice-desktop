@@ -11,9 +11,15 @@ int main(){
  b.events[0]={axv::BaresipEventKind::CallIncoming,1,1};s=axv::project_native_sdk_batch(projection,b,true);
  auto answer=axv::NativeCallCommand{axv::NativeCallAction::Answer,1,1,{}};
  CHECK(axv::native_command_is_current(answer,s));
+ axv::NativeCommandAdmission admission;
+ CHECK(admission.admit(answer,s));CHECK(!admission.admit(answer,s));
+ auto next_answer=answer;next_answer.call_id=2;
+ auto replacement=s;replacement.call_id=2;
+ CHECK(admission.admit(next_answer,replacement));CHECK(!admission.admit(answer,replacement));
  auto next=s;next.call_id=2;CHECK(!axv::native_command_is_current(answer,next));
  next=s;next.session=2;CHECK(!axv::native_command_is_current(answer,next));
  auto hangup=axv::NativeCallCommand{axv::NativeCallAction::Hangup,1,1,{}};
+ CHECK(admission.admit(hangup,s));CHECK(!admission.admit(hangup,s));
  CHECK(axv::native_command_is_current(hangup,s));next=s;next.call_id=2;CHECK(!axv::native_command_is_current(hangup,next));
  b.events[0]={axv::BaresipEventKind::CallEstablished,1,1};s=axv::project_native_sdk_batch(projection,b,true);CHECK(s.sip==axv::SipStatus::InCall);
  b.events[0]={axv::BaresipEventKind::RegisterOk,1,0};s=axv::project_native_sdk_batch(projection,b,true);CHECK(s.sip==axv::SipStatus::InCall && s.call_id==1);

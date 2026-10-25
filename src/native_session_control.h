@@ -17,6 +17,23 @@ inline bool native_command_is_current(const NativeCallCommand& c,const SipRuntim
  default:return false;
  }
 }
+// UI double-clicks must not turn a declined duplicate into call teardown.
+class NativeCommandAdmission {
+ std::uint64_t answer_session_=0,answer_call_=0,hangup_session_=0,hangup_call_=0;
+public:
+ bool admit(const NativeCallCommand& c,const SipRuntimeObservation& s){
+  if(!native_command_is_current(c,s))return false;
+  if(c.action==NativeCallAction::Answer){
+   if(answer_session_==c.session && answer_call_==c.call_id)return false;
+   answer_session_=c.session;answer_call_=c.call_id;
+  }
+  if(c.action==NativeCallAction::Hangup){
+   if(hangup_session_==c.session && hangup_call_==c.call_id)return false;
+   hangup_session_=c.session;hangup_call_=c.call_id;
+  }
+  return true;
+ }
+};
 // Only the real SDK owner may assert register_confirmed. Baresip refreshes
 // emit REGISTER_OK without REGISTERING; generic mailbox consumers stay strict.
 inline SipRuntimeObservation project_native_sdk_batch(SipEventProjection& projection,
