@@ -1,10 +1,10 @@
 # AXE Voice — triagem das 13 PRs Draft históricas
 
-**Conferência:** 24/10/2026. **Escopo:** rascunhos em aberto no repositório `jeffaxe81/axe-voice-desktop`. Este arquivo é uma cópia de gestão na `main`, **não** um merge do código dos rascunhos.
+**Conferência original:** 24/10/2026; **atualização:** 25/10/2026. A lista abaixo preserva o histórico de 13 rascunhos originalmente identificados, mas hoje há **10 ainda abertos**: #12, #14, #15, #16, #23, #30, #31, #36, #39 e #40. As PRs antigas #18, #21 e #28 foram encerradas **sem merge integral**. **Escopo:** rascunhos em aberto no repositório `jeffaxe81/axe-voice-desktop`. Este arquivo é uma cópia de gestão na `main`, **não** um merge do código dos rascunhos.
 
 ## Resultado objetivo
 
-As 13 PRs retornaram `mergeable=false` e `mergeable_state=dirty` pela API GitHub na base original. A maioria mira `feature/baresip-desktop-bootstrap` em vez da `main`. A PR #12 mira `main`, mas também conflita: são 202 commits, 123 arquivos e implementação antiga v0.51, enquanto a branch de desenvolvimento mais recente alcançou v0.149. Esse material não pode ser fundido automaticamente como se fosse uma atualização linear.
+As 13 PRs retornaram `mergeable=false` e `mergeable_state=dirty` pela API GitHub na base original. A maioria mira `feature/baresip-desktop-bootstrap` em vez da `main`. A PR #12 mira `main`, mas também conflita: são 202 commits, 123 arquivos e implementação antiga v0.51, enquanto a branch de desenvolvimento mais recente alcançou v0.154. Esse material não pode ser fundido automaticamente como se fosse uma atualização linear.
 
 A comparação dos heads antigos com a branch atual `feature/axevoice-v073-sip-activation-gate` também retornou histórico `diverged` para todos os 13 rascunhos. Isto **não prova** que todas as mudanças antigas já foram absorvidas ou são desnecessárias: cada função deve ser confrontada com o código atual.
 
@@ -18,6 +18,8 @@ A [PR #114](https://github.com/jeffaxe81/axe-voice-desktop/pull/114) foi mesclad
 
 A [PR #116](https://github.com/jeffaxe81/axe-voice-desktop/pull/116) foi mesclada **somente na branch de desenvolvimento**, levando o inventário Core Audio assíncrono e o descarte de resultados obsoletos da PR #30 à v0.149. [Nota técnica v0.149](../AXEVOICE-ASYNC-AUDIO-V145-V149-UNTESTED.md). A PR #30 original segue em rascunho por não ter sido portada integralmente; nenhuma compilação ou teste ocorreu nesta rodada.
 
+A [PR #120](https://github.com/jeffaxe81/axe-voice-desktop/pull/120) foi integrada no desenvolvimento, v0.154, removendo a última consulta síncrona de inventário Core Audio do botão em Ajustes; ela usa worker e época próprios, separados da aba Áudio. A [PR #119](https://github.com/jeffaxe81/axe-voice-desktop/pull/119) incorporou o checklist anônimo que havia sido tentado na #117 (fechada sem merge). Nenhum teste executado nesta rodada. [Nota v0.154](../AXEVOICE-SETTINGS-AUDIO-ASYNC-V150-V154-UNTESTED.md).
+
 ## Matriz de decisão
 
 | PR antiga | Função principal | Arquivos do diff | Resultado | Próxima ação técnica |
@@ -30,13 +32,13 @@ A [PR #116](https://github.com/jeffaxe81/axe-voice-desktop/pull/116) foi mesclad
 | [#21](https://github.com/jeffaxe81/axe-voice-desktop/pull/21) | Exportação segura de prontidão | 7 | Formatador portado via #112; PR antiga conflita | Restante da UI/documentação/testes pendente |
 | [#23](https://github.com/jeffaxe81/axe-voice-desktop/pull/23) | Pipeline e validação de proveniência | 15 | Conflito na base histórica | Inspecionar integração com ciclo de vida atual |
 | [#28](https://github.com/jeffaxe81/axe-voice-desktop/pull/28) | Verificação da UA proprietária no SDK | 4 | Proteção call_get_ua portado via #112; PR antiga conflita | SDK/ABI Windows e restante da diff pendentes |
-| [#30](https://github.com/jeffaxe81/axe-voice-desktop/pull/30) | Atualização assíncrona de dispositivos | 18 | Aviso de dispositivo via #114 e inventário assíncrono via #116; PR antiga conflita | Consulta da aba Ajustes e restante da diff/testes pendentes |
+| [#30](https://github.com/jeffaxe81/axe-voice-desktop/pull/30) | Atualização assíncrona de dispositivos | 18 | Avisos via #114, aba Áudio via #116 e Ajustes via #120; PR antiga permanece aberta | Demais diffs e validação no Windows pendentes |
 | [#31](https://github.com/jeffaxe81/axe-voice-desktop/pull/31) | Sessões de callback Baresip e auditoria SDK | 36 | Validação adicional da sessão portado via #114; PR antiga conflita | ABI/SDK e demais mudanças de callback pendentes |
 | [#36](https://github.com/jeffaxe81/axe-voice-desktop/pull/36) | Rolagem da interface e gates de qualidade | 7 | Conflito na base histórica | Isolar eventual melhoria não presente, sem reverter tela nova |
 | [#39](https://github.com/jeffaxe81/axe-voice-desktop/pull/39) | Matriz fail-closed e cenários sintéticos | 6 | Limite de eventos portado via #110; PR original conflita | Restante da suíte e documentação/testes pendentes |
 | [#40](https://github.com/jeffaxe81/axe-voice-desktop/pull/40) | Headset hotplug e Core Audio | 29 | Observador de endpoints portado via #114; PR antiga conflita | Validar troca real de dispositivos e restante da UI |
 
-**Status da solicitação "merge em main sem testes":** é possível publicar apenas documentação e rastreabilidade sem trazer uma pilha de código conflitante; isso foi feito nesta ramificação de governança. **Nenhuma das 13 PRs Draft de código foi mesclada integralmente**, nem marcada como pronta, nem encerrada por esta triagem. Permanecem abertas para reconciliação individual.
+**Status da solicitação "merge em main sem testes":** é possível publicar apenas documentação e rastreabilidade sem trazer uma pilha de código conflitante; isso foi feito nesta ramificação de governança. **Nenhuma das 13 PRs Draft originalmente listadas foi mesclada integralmente na `main`.** Desde a triagem inicial, #18, #21 e #28 foram encerradas sem merge; outras 10 continuam abertas para revisão. Esta matriz não autoriza promoção de código experimental. Permanecem abertas para reconciliação individual.
 
 ## Arquivos históricos preservados na main
 
