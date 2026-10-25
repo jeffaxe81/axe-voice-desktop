@@ -31,6 +31,10 @@ Exigem validação antes de entrar como código executável da `main`:
 - PR #107: evolução v0.126–v0.130 mesclada na branch de desenvolvimento com rejeição SIP terminal, sequência de callbacks e revogação de confirmação obsoleta. Veja [v0.130](development/AXEVOICE-SIP-REGISTER-EVIDENCE-V126-V130-UNTESTED.md). Código funcional **não promovido à main**.
 - Integração total da branch de desenvolvimento na `main`: **pendente de testes e homologação**, não executados a pedido do usuário.
 
+## Triagem dos rascunhos
+
+A API do GitHub retornou **13 PRs Draft com conflitos** nas suas bases históricas. Suas implementações não foram mescladas à `main`; o acervo documental e a matriz de dependências estão em [docs/development/draft-archive](development/draft-archive/README.md). A integração do código original permanece pendente de reconciliação, sem execução de testes nesta rodada.
+
 ## Situação de PRs antigas
 
 PRs históricas Draft de SIP/áudio são experimentos empilhados. Não mesclar individualmente na `main` apenas para reduzir contagem: podem reaplicar alterações já contidas em branches mais recentes ou introduzir regressões. Manter referências até revisão de conteúdo, equivalência e dependência.
