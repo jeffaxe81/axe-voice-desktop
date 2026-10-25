@@ -787,8 +787,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_button(window, L"TRANSF.", kTransferFuture, 215, 708, 82, 34, 0);
         make_button(window, L"ENCERRAR", kHangupFuture, 303, 708, 86, 34, 0);
 
+#ifdef AXV_ENABLE_NATIVE_SIP
+        make_label(window,L"CONTA SIP  •  CANDIDATO NATIVO",39,219,361,26,1,g_font_small);
+#else
         make_label(window, L"CONFIGURAÇÃO DE CONTA  •  SEM REGISTRO", 39, 219, 361, 26,
                    1, g_font_small);
+#endif
         make_label(window, L"Servidor SIP", 39, 255, 340, 20, 1);
         g_server = make_edit(window, L"", kServerEdit, 39, 280, 350, 38, 1);
         make_label(window, L"Usuário SIP", 39, 329, 212, 20, 1);
@@ -842,8 +846,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                     39, 507, 169, 43, 2);
         make_button(window, L"TESTAR TOQUE", kTestRingtoneButton,
                     219, 507, 170, 43, 2);
+#ifdef AXV_ENABLE_NATIVE_SIP
+        make_label(window,L"Previa local. Chamadas usam o padrao de comunicacao do Windows.",39,566,350,40,2,g_font_small);
+#else
         make_label(window, L"Preferencias locais. Ainda sem roteamento Baresip.",
                    39, 566, 350, 40, 2, g_font_small);
+#endif
         g_headset_status = make_label(window, L"Abra AUDIO para consultar o Windows.",
                                      39, 613, 350, 59, 2, g_font_small);
         make_button(window, L"PRONTIDAO DE CHAMADAS (F2)",
@@ -1423,7 +1431,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0 || std::wcscmp(command_line,L"--native-ui-smoke")==0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.45",
+#ifdef AXV_ENABLE_NATIVE_SIP
+    const wchar_t* title=L"AXE Voice | Candidato nativo 0.51";
+#else
+    const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
+#endif
+    HWND window = CreateWindowExW(0, className, title,
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VSCROLL,
         CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi)+GetSystemMetricsForDpi(SM_CXVSCROLL,g_dpi),
