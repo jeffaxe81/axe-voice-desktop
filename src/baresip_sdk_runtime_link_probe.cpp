@@ -6,6 +6,9 @@
 
 // Compile-only ABI drift guard for the exact public SDK functions used when
 // the native UA's account receives and then scrubs the WinCred secret.
+static_assert(std::is_same_v<decltype(&call_get_ua),
+                             struct ua* (*)(const struct call*)>,
+              "Audited Baresip SDK changed call_get_ua ABI");
 static_assert(std::is_same_v<decltype(&ua_account),
                              struct account* (*)(const struct ua*)>,
               "Audited Baresip SDK changed ua_account ABI");

@@ -45,6 +45,7 @@
 #include "account_form_feedback.h"
 #include "ui_help.h"
 #include "call_readiness.h"
+#include "readiness_export.h"
 #include "ui_contrast_policy.h"
 #include "ui_dpi_policy.h"
 #include "ui_viewport_policy.h"
@@ -726,7 +727,7 @@ std::wstring safe_desktop_diagnostics() {
         process == axv::ProcessStatus::Stopped ? L"stopped" :
         process == axv::ProcessStatus::Failed ? L"failed" :
         process == axv::ProcessStatus::Exited ? L"exited" : L"stopping";
-    return std::wstring(L"AXE Voice Desktop LAB 0.134\r\n") +
+    return std::wstring(L"AXE Voice Desktop LAB 0.139\r\n") +
         L"Processo Baresip: " + process_text +
         L"\r\nRegistro SIP confirmado: NAO\r\nChamada RTP/SRTP homologada: NAO\r\n" +
         L"Autostart: " + (axv::desktop_autostart_enabled() ? L"sim" : L"nao") +
@@ -784,6 +785,9 @@ bool paste_dial_destination(HWND owner) {
 
 bool copy_safe_diagnostics(HWND owner) {
     const std::wstring report = safe_desktop_diagnostics();
+    // PR #21: restrict even redacted text before transferring clipboard
+    // ownership; do not allow arbitrary large blobs or empty reports.
+    if (report.empty() || report.size() > 8192) return false;
     const SIZE_T bytes = (report.size() + 1) * sizeof(wchar_t);
     HGLOBAL buffer = GlobalAlloc(GMEM_MOVEABLE, bytes);
     if (!buffer) return false;
@@ -1237,7 +1241,7 @@ std::wstring make_readiness_report() {
         snapshot.sip == axv::SipStatus::Registered;
     // A device inventory is not an RTP/SRTP or headset media test.
     result.verified_media = false;
-    return axv::format_call_readiness(result);
+    return axv::format_readiness_export(result);
 }
 void begin_shutdown(HWND window) {
     g_sip_session_guard.revoke(axv::RuntimeProcess::Stopping, g_native_event_mailbox, g_sip_projection);
@@ -2194,7 +2198,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.134",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.139",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VSCROLL,
         CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi)+GetSystemMetricsForDpi(SM_CXVSCROLL,g_dpi),

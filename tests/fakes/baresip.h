@@ -19,6 +19,11 @@ int bevent_register(bevent_h* handler, void* argument);
 void bevent_unregister(bevent_h* handler);
 struct ua* bevent_get_ua(const struct bevent* event);
 struct call* bevent_get_call(const struct bevent* event);
+// Simulator-only inline adapter for the public Baresip ownership API.
+// The real SDK build must provide its own implementation.
+static inline struct ua* call_get_ua(const struct call* item) {
+    return item ? item->owner : 0;
+}
 bool ua_isregistered(const struct ua* selected);
 int ua_alloc(struct ua** selected, const char* aor);
 unsigned ua_destroy(struct ua* selected);
