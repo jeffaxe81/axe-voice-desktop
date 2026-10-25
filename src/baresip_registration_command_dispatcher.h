@@ -14,6 +14,26 @@ enum class RegistrationDispatchKind {
     Failed, OverflowStopped, WrongOwnerThread, StaleGeneration, Pending,
     SupersededDuringDispatch, RegistrarRejected
 };
+inline bool registration_dispatch_terminal(RegistrationDispatchKind kind) noexcept {
+    switch (kind) {
+    case RegistrationDispatchKind::Cancelled:
+    case RegistrationDispatchKind::DeadlineExpired:
+    case RegistrationDispatchKind::RegistrarRejected:
+    case RegistrationDispatchKind::Failed:
+    case RegistrationDispatchKind::OverflowStopped:
+    case RegistrationDispatchKind::WrongOwnerThread:
+    case RegistrationDispatchKind::StaleGeneration:
+    case RegistrationDispatchKind::SupersededDuringDispatch:
+        return true;
+    default:
+        return false;
+    }
+}
+inline bool registration_dispatch_failure(RegistrationDispatchKind kind) noexcept {
+    return registration_dispatch_terminal(kind) &&
+           kind != RegistrationDispatchKind::Cancelled;
+}
+
 struct RegistrationDispatchOutcome {
     RegistrationDispatchKind kind=RegistrationDispatchKind::Idle;
     NativeRegistrationSubmission submission=NativeRegistrationSubmission::BridgeUnavailable;
