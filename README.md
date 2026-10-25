@@ -1,12 +1,18 @@
-# AXE Voice Desktop — Windows LAB (v0.130.0, desenvolvimento)
+# AXE Voice Desktop — Windows LAB (v0.134.0, desenvolvimento)
 
 Protótipo de softphone corporativo Win32 com áudio local, preferências separadas para voz/toque, inventário de dispositivos Windows, atalhos de discador e pré-verificações SIP.
 
 **Estado real:** o aplicativo `AXEVoice.exe` mantém o motor `UnavailableSipEngine` e o botão Chamar bloqueado, pois não há prova de registro SIP autenticado, TLS de servidor validado, SRTP ou áudio de chamada. As credenciais SIP podem ser administradas no cofre Windows local; a integração do SDK Baresip para autenticação existe somente no alvo experimental, desabilitado por padrão e ainda não homologado.
 
-**O código v0.130 não foi compilado nem testado nesta rodada.** A arquitetura Baresip é trabalho de laboratório; não confundir o percentual de entregas de código com aceite operacional. A `main` mantém a base histórica MicroSIP/PJSIP; promoção exige os [critérios documentados](docs/AXEVOICE-SIP-SDK-HARDENING-V116-V120-UNTESTED.md).
+**O código v0.134 não foi compilado nem testado nesta rodada.** A arquitetura Baresip é trabalho de laboratório; não confundir o percentual de entregas de código com aceite operacional. A `main` mantém a base histórica MicroSIP/PJSIP; promoção exige os [critérios documentados](docs/AXEVOICE-SIP-SDK-HARDENING-V116-V120-UNTESTED.md).
 
 A evolução v0.126–v0.130 reforça o controle experimental das notificações nativas: exige a ordem REGISTERING/REGISTER_OK, conserva erros de registro por sessão, reconhece rejeição imediata e revoga a sessão se a confirmação de registro desaparecer. **Nenhuma dessas melhorias habilita chamadas no aplicativo.**
+
+## Reconciliação de rascunhos — v0.131–v0.134
+
+O código incorpora seletivamente proteções existentes nas PRs históricas #39, #18 e #16 à branch atual, **sem mesclar suas implementações antigas por inteiro**: limite de lote SIP antes da iteração; preservação de IDs locais ao falhar um scan Core Audio; preferência explícita de headset que volta a ser selecionada quando reconectado; atualização de diagnóstico/versão.
+
+O motor SIP e as chamadas continuam indisponíveis. A compilação Windows, os testes e a homologação permanecem pendentes.
 
 ## Compilar e abrir no Windows
 

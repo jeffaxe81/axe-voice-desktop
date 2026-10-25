@@ -20,7 +20,10 @@ public:
             state_ = {process, SipStatus::Unavailable, SipEvidence::None, 0};
             return state_;
         }
-        if (batch.overflow) {
+        // Reconcile legacy PR #39: never trust an externally constructed
+        // Batch.size to fit its fixed array, even without the overflow bit.
+        // Reject the entire session before reading any event past capacity.
+        if (batch.overflow || batch.size > batch.events.size()) {
             reject(batch.session, process);
             return state_;
         }
