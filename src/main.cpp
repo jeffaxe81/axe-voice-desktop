@@ -159,6 +159,11 @@ std::vector<axv::AudioEndpoint> g_audio_outputs;
 std::wstring g_selected_input_id;
 std::wstring g_selected_output_id;
 std::wstring g_selected_ringtone_id;
+// The explicitly chosen endpoints survive temporary enumeration failure or
+// a temporary disconnect. Fallback endpoints never replace the preference.
+std::wstring g_preferred_input_id;
+std::wstring g_preferred_output_id;
+std::wstring g_preferred_ringtone_id;
 axv::AudioHotplugPolicy g_audio_hotplug;
 std::thread g_preview_worker;
 std::atomic<bool> g_preview_running{false};
@@ -721,7 +726,7 @@ std::wstring safe_desktop_diagnostics() {
         process == axv::ProcessStatus::Stopped ? L"stopped" :
         process == axv::ProcessStatus::Failed ? L"failed" :
         process == axv::ProcessStatus::Exited ? L"exited" : L"stopping";
-    return std::wstring(L"AXE Voice Desktop LAB 0.130\r\n") +
+    return std::wstring(L"AXE Voice Desktop LAB 0.134\r\n") +
         L"Processo Baresip: " + process_text +
         L"\r\nRegistro SIP confirmado: NAO\r\nChamada RTP/SRTP homologada: NAO\r\n" +
         L"Autostart: " + (axv::desktop_autostart_enabled() ? L"sim" : L"nao") +
@@ -919,10 +924,17 @@ void refresh_audio_panel() {
     (void)g_incoming_ring_coordinator.revoke(g_incoming_ring_sink);
     const auto inventory = axv::inspect_windows_audio_devices();
     if (inventory.error != axv::AudioInventoryError::None) {
+        // Port of PR #18: a failed Core Audio query says nothing about device
+        // removal. Disable previews and selectors, but keep both active and
+        // explicitly preferred IDs in RAM for the next successful query.
         g_audio_inputs.clear(); g_audio_outputs.clear();
-        fill_audio_combo(g_input_audio_combo, g_audio_inputs, g_selected_input_id);
-        fill_audio_combo(g_output_audio_combo, g_audio_outputs, g_selected_output_id);
-        fill_audio_combo(g_ringtone_audio_combo, g_audio_outputs, g_selected_ringtone_id, true);
+        for (HWND combo : {g_input_audio_combo, g_output_audio_combo,
+                           g_ringtone_audio_combo}) {
+            if (combo) {
+                SendMessageW(combo, CB_RESETCONTENT, 0, 0);
+                EnableWindow(combo, FALSE);
+            }
+        }
         update_swap_button();
         update_audio_preview_buttons(GetParent(g_ringtone_audio_combo));
         SetWindowTextW(g_headset_status, L"Falha ao consultar os dispositivos do Windows.");
@@ -930,6 +942,14 @@ void refresh_audio_panel() {
     }
     g_audio_inputs = inventory.input_devices;
     g_audio_outputs = inventory.output_devices;
+    // Port of PR #16: prefer an explicitly selected endpoint whenever it
+    // returns. Temporary fallback remains active only until reconnection.
+    if (!g_preferred_input_id.empty())
+        g_selected_input_id = g_preferred_input_id;
+    if (!g_preferred_output_id.empty())
+        g_selected_output_id = g_preferred_output_id;
+    if (!g_preferred_ringtone_id.empty())
+        g_selected_ringtone_id = g_preferred_ringtone_id;
     const auto microphone = fill_audio_combo(
         g_input_audio_combo, g_audio_inputs, g_selected_input_id);
     const auto speaker = fill_audio_combo(
@@ -975,6 +995,8 @@ void apply_audio_route_change(HWND window, const axv::AudioRouteChange& change) 
         (void)g_incoming_ring_coordinator.revoke(g_incoming_ring_sink);
         g_selected_output_id = plan.next_call_id;
         g_selected_ringtone_id = plan.next_ringtone_id;
+        g_preferred_output_id = g_selected_output_id;
+        g_preferred_ringtone_id = g_selected_ringtone_id;
         SendMessageW(g_output_audio_combo, CB_SETCURSEL,
                      static_cast<WPARAM>(plan.next_call_index), 0);
         SendMessageW(g_ringtone_audio_combo, CB_SETCURSEL,
@@ -1009,6 +1031,10 @@ void apply_audio_route_change(HWND window, const axv::AudioRouteChange& change) 
                              change.kind == Kind::Voice ? g_selected_output_id :
                              g_selected_ringtone_id;
     selected = change.endpoint_id;
+    std::wstring& preferred = change.kind == Kind::Microphone ? g_preferred_input_id :
+                              change.kind == Kind::Voice ? g_preferred_output_id :
+                              g_preferred_ringtone_id;
+    preferred = selected; // Only user actions update the durable-in-memory choice.
     SendMessageW(combo, CB_SETCURSEL, static_cast<WPARAM>(index), 0);
     const auto routing = axv::preview_audio_routing(
         g_audio_inputs, g_audio_outputs,
@@ -2168,7 +2194,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.130",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.134",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VSCROLL,
         CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi)+GetSystemMetricsForDpi(SM_CXVSCROLL,g_dpi),
