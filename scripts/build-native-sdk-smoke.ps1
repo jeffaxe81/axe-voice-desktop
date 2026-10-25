@@ -53,7 +53,16 @@ if ($TlsMedia) {
     $OpenSSL = Get-PinnedSource 'openssl' 'https://github.com/openssl/openssl.git' $OpenSSLCommit
     Push-Location $OpenSSL
     try {
-        Invoke-Checked 'perl' @('Configure','VC-WIN64A','shared','no-tests','no-module','no-asm',"--prefix=$Prefix",'--libdir=lib',"--openssldir=$Prefix/ssl")
+        $ConfigureArguments=@('Configure','VC-WIN64A','shared','no-tests','no-module','no-asm',"--prefix=$Prefix",'--libdir=lib',"--openssldir=$Prefix/ssl")
+        # Reuse only a cache whose actual OpenSSL configuration matches this
+        # pinned target/profile. Re-running Configure touches every dependency.
+        $Reuse=$false
+        if(Test-Path 'configdata.pm') {
+            $Inspect='my $want=shift; my $got=$configdata::config{prefix}; $want=~s!\\!/!g; $got=~s!\\!/!g; exit(($configdata::config{target} eq "VC-WIN64A" && $got eq $want && $configdata::config{libdir} eq "lib" && exists $configdata::disabled{asm} && exists $configdata::disabled{tests} && exists $configdata::disabled{module} && !exists $configdata::disabled{shared}) ? 0 : 1);'
+            & perl '-I.' '-Mconfigdata' '-e' $Inspect $Prefix
+            $Reuse=$LASTEXITCODE -eq 0
+        }
+        if(!$Reuse) { Invoke-Checked 'perl' $ConfigureArguments }
         Invoke-Checked 'nmake' @('/NOLOGO')
         Invoke-Checked 'nmake' @('/NOLOGO','install_sw')
     } finally { Pop-Location }
