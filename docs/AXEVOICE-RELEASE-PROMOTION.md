@@ -5,7 +5,7 @@ Data da revisão: 24/10/2026.
 ## Escopo de segurança
 
 - `main` contém a base histórica do projeto MicroSIP/PJSIP e **não** o motor nativo experimental Baresip do desenvolvimento.
-- A branch de integração `feature/axevoice-v073-sip-activation-gate` alcançou a versão de código `0.125.0`, após a PR #105 de proteção de ciclo SIP. É uma base de **laboratório não homologada**; essa versão não foi promovida ao executável de `main`.
+- A branch de integração `feature/axevoice-v073-sip-activation-gate` alcançou a versão de código `0.130.0`, após a PR #107 de correções do fluxo de confirmação e rejeição de REGISTER. É uma base de **laboratório não homologada**; essa versão não foi promovida ao executável de `main`.
 - A divergência foi originalmente observada em 372 commits de desenvolvimento e 221 arquivos; os valores mudam com novos commits. O histórico de Baresip não é substituto da validação de build/ABI da arquitetura na `main`.
 - O alvo nativo de SDK e o WinCred LAB são **OFF por padrão** na branch experimental. O `AXEVoice.exe` não tem prova de autenticação, mídia ou chamadas SIP.
 - **Não há autorização técnica para ativar produção ou discagem por um merge.** `main` é a base reservada para promoção após aceite.
@@ -28,6 +28,7 @@ Exigem validação antes de entrar como código executável da `main`:
 
 - PR #104: documentação de governança aprovada e mesclada na `main`, sem executáveis.
 - PR #105: código v0.121–v0.125 mesclado **somente na branch de desenvolvimento**. O histórico da mudança está publicado como registro em [v0.125](development/AXEVOICE-NATIVE-CONTROL-V121-V125-UNTESTED.md).
+- PR #107: evolução v0.126–v0.130 mesclada na branch de desenvolvimento com rejeição SIP terminal, sequência de callbacks e revogação de confirmação obsoleta. Veja [v0.130](development/AXEVOICE-SIP-REGISTER-EVIDENCE-V126-V130-UNTESTED.md). Código funcional **não promovido à main**.
 - Integração total da branch de desenvolvimento na `main`: **pendente de testes e homologação**, não executados a pedido do usuário.
 
 ## Situação de PRs antigas
