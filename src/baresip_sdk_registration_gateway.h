@@ -55,6 +55,7 @@ public:
             return NativeRegistrationSubmission::RegistrarRejectedSynchronously;
         }
         owner_ = selected;
+        confirmation_observed_ = false;
         deadline_.clear(); // Never inherit a previous registration's deadline.
         return NativeRegistrationSubmission::Submitted;
     }
@@ -77,10 +78,18 @@ public:
             stop();
             return RegistrationDeadlineVerdict::RegistrarRejected;
         }
+        // The watchdog deadline may have been cleared after REGISTER_OK.
+        // A later lost UA/session must still fence native registration;
+        // the earlier confirmation can never authorize persistent status.
+        if (confirmation_observed_ && !bridge_.native_register_ok_seen()) {
+            stop();
+            return RegistrationDeadlineVerdict::SessionRevoked;
+        }
         const auto decision = deadline_.check(bridge_.session(), now_ms,
                                              bridge_.native_register_ok_seen());
         switch (decision) {
         case RegistrationDeadlineVerdict::CallbackConfirmed:
+            confirmation_observed_ = true;
             deadline_.clear();
             break;
         case RegistrationDeadlineVerdict::Expired:
@@ -99,6 +108,7 @@ public:
     bool stop() {
         if (!thread_guard_.is_owner()) return false;
         deadline_.clear();
+        confirmation_observed_ = false;
         if (owner_) {
             // Terminal events can invalidate/destroy the selected UA.
             // Skip native dereference when the owning epoch is revoked.
@@ -124,5 +134,6 @@ private:
     BaresipNativeThreadGuard thread_guard_{};
     struct ua* owner_ = nullptr;
     RegistrationDeadline deadline_{};
+    bool confirmation_observed_ = false; // native owner thread only
 };
 } // namespace axv
