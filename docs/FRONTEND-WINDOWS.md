@@ -126,3 +126,14 @@ A validação de contraste percebido, leitores de tela e escala DPI **ainda exig
 - Cartões, teclado telefônico, indicadores e botões owner-draw acompanham o DPI. MINI/MAX preserva proporções, incluindo 150% e 200%.
 - O smoke test Win32 verifica coordenadas do campo, troca de página e MINI nas escalas 150% e 200%, sem alterar as configurações reais do Windows. Novo teste unitário cobre a matemática do escalonamento.
 - Seguem pendentes os testes manuais em monitores físicos de DPI distintos, leitores de tela, truncamento de textos e resoluções pequenas. Registro SIP e áudio de chamada continuam não homologados.
+
+
+## v0.115 — Atualização reativa da lista de áudio (LAB, NÃO TESTADA)
+
+- Port da política de detecção conservadora do PR histórico #25, adaptada à GUI LAB atual.
+- `WM_DEVICECHANGE` trata `DBT_DEVNODES_CHANGED`, `DBT_DEVICEARRIVAL` e `DBT_DEVICEREMOVECOMPLETE` apenas como sinais genéricos de possível mudança; **não presume** que o evento seja um headset.
+- Janela de silêncio de 450 ms via `AudioHotplugPolicy`; notificações seguidas se agrupam e não causam varreduras imediatas.
+- Enumeração de endpoints somente na aba Áudio, com janela visível e não minimizada; uma nova visita à aba ou clique em Atualizar consome aviso pendente.
+- Em caso de prévia local de toque/voz em andamento, a atualização aguarda cancelamento cooperativo e confirmação do worker antes de alterar as opções de rota.
+- Continua proibido habilitar chamadas, registrar SIP, usar RTP/SRTP ou fazer alterações de rede a partir desses sinais.
+- **Sem build, CTest, smoke nem headset físico nesta entrega**. Testes de recuperação de dispositivos USB/Bluetooth, temporização, troca de abas, suspensão e comportamento do preview ficam pendentes para homologação.
