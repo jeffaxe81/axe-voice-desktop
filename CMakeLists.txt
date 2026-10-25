@@ -87,6 +87,11 @@ if(AXV_BUILD_NATIVE_BARESIP_ADAPTER)
       axv_native_baresip_sdk_abi_probe axv_native_baresip_abi_probe
       axv_native_libre_reactor_smoke)
     target_compile_definitions(${_native_target} PRIVATE WIN32)
+    # Required by the static Windows libre profile; raw .lib paths do not
+    # propagate its upstream RE_LIBS interface automatically.
+    target_link_libraries(${_native_target} PRIVATE
+      qwave iphlpapi wsock32 ws2_32 dbghelp
+      winmm gdi32 crypt32 strmiids ole32 oleaut32)
   endforeach()
 endif()
 add_executable(AXEVoice WIN32 src/main.cpp)
