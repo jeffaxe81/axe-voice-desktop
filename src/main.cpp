@@ -177,6 +177,10 @@ axv::AudioEndpointWatcher g_audio_endpoint_watcher;
 // Worker holds no HWND or SIP state and never writes the UI.
 axv::AudioInventoryAsync g_audio_inventory_worker(axv::inspect_windows_audio_devices);
 axv::AudioManualRefresh g_audio_refresh_retry;
+// Independent diagnostics worker: the Settings page never steals an Audio-tab
+// result, nor enumerates Core Audio on the Win32 message-loop thread.
+axv::AudioInventoryAsync g_settings_audio_worker(axv::inspect_windows_audio_devices);
+axv::AudioManualRefresh g_settings_audio_retry;
 std::thread g_preview_worker;
 std::atomic<bool> g_preview_running{false};
 std::atomic<bool> g_preview_cancel{false};
@@ -541,6 +545,12 @@ void show_page(HWND root, int page) {
         g_audio_inventory_worker.invalidate();
         g_audio_refresh_retry.cancel();
     }
+    // PR #30 remaining gap: discard a Settings result when navigating away.
+    // The worker owns no HWND, so it may safely finish in the background.
+    if (page != 1) {
+        g_settings_audio_worker.invalidate();
+        g_settings_audio_retry.cancel();
+    }
     g_page = page;
     for (auto child : g_dial_controls) {
         const bool visible = page == 0 &&
@@ -744,7 +754,7 @@ std::wstring safe_desktop_diagnostics() {
         process == axv::ProcessStatus::Stopped ? L"stopped" :
         process == axv::ProcessStatus::Failed ? L"failed" :
         process == axv::ProcessStatus::Exited ? L"exited" : L"stopping";
-    return std::wstring(L"AXE Voice Desktop LAB 0.149\r\n") +
+    return std::wstring(L"AXE Voice Desktop LAB 0.154\r\n") +
         L"Processo Baresip: " + process_text +
         L"\r\nRegistro SIP confirmado: NAO\r\nChamada RTP/SRTP homologada: NAO\r\n" +
         L"Autostart: " + (axv::desktop_autostart_enabled() ? L"sim" : L"nao") +
@@ -1951,9 +1961,23 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             }
         }
         if (LOWORD(wparam) == kAudioDevicesButton && HIWORD(wparam) == BN_CLICKED) {
-            const axv::AudioInventory inventory = axv::inspect_windows_audio_devices();
-            const std::wstring summary = axv::audio_inventory_summary(inventory);
-            SetWindowTextW(g_audio_status, summary.c_str());
+            if (g_smoke_mode || g_page != 1) return 0;
+            // A new click revokes the earlier result. Busy scans must finish
+            // before a single replacement is started, never in parallel.
+            g_settings_audio_worker.invalidate();
+            if (g_settings_audio_worker.busy()) {
+                g_settings_audio_retry.defer();
+                SetWindowTextW(g_audio_status,
+                    L"Consulta anterior em andamento; nova verificacao agendada...");
+            } else if (g_settings_audio_worker.request()) {
+                g_settings_audio_retry.started();
+                SetWindowTextW(g_audio_status,
+                    L"Consultando dispositivos do Windows em segundo plano...");
+            } else {
+                g_settings_audio_retry.defer();
+                SetWindowTextW(g_audio_status,
+                    L"Nao foi possivel iniciar agora; nova tentativa pendente...");
+            }
             return 0;
         }
         if (LOWORD(wparam) == kProbeButton && HIWORD(wparam) == BN_CLICKED) {
@@ -2201,6 +2225,23 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                         apply_audio_inventory(*completed);
                 }
             }
+            // Settings and Audio use separate workers and separate pending
+            // requests. Only the UI thread renders diagnostics for this page.
+            if (!g_smoke_mode && g_page == 1 && IsWindowVisible(window) &&
+                !IsIconic(window)) {
+                if (g_settings_audio_retry.retry_ready(g_settings_audio_worker.busy())) {
+                    if (g_settings_audio_worker.request()) {
+                        g_settings_audio_retry.started();
+                        SetWindowTextW(g_audio_status,
+                            L"Consultando audio apos finalizar a verificacao anterior...");
+                    }
+                } else if (!g_settings_audio_retry.pending()) {
+                    if (auto inventory = g_settings_audio_worker.take()) {
+                        const auto summary = axv::audio_inventory_summary(*inventory);
+                        SetWindowTextW(g_audio_status, summary.c_str());
+                    }
+                }
+            }
             refresh_runtime_banner(g_baresip_process.poll());
             if (g_shutdown.pending()) {
                 const auto state = g_baresip_process.poll();
@@ -2268,6 +2309,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_audio_endpoint_watcher.stop();
         g_audio_inventory_worker.invalidate();
         g_audio_refresh_retry.cancel();
+        g_settings_audio_worker.invalidate();
+        g_settings_audio_retry.cancel();
         (void)g_incoming_ring_coordinator.revoke(g_incoming_ring_sink);
         // Stop cooperatively before waiting; worker never posts to a dead HWND.
         g_preview_cancel.store(true);
@@ -2306,7 +2349,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.149",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.154",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VSCROLL,
         CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi)+GetSystemMetricsForDpi(SM_CXVSCROLL,g_dpi),
