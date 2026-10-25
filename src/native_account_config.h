@@ -1,6 +1,7 @@
 #pragma once
 #include "sip_account.h"
 #include "sip_address.h"
+#include "native_audio_routes.h"
 #include <string>
 namespace axv {
 struct NativeAccountConfig { bool valid=false; std::string aor,config; };
@@ -9,7 +10,8 @@ inline std::string native_ascii(const std::wstring& value) {
     for (wchar_t c:value) { if(c<32 || c>126) return {}; out+=static_cast<char>(c); }
     return out;
 }
-inline NativeAccountConfig native_account_config(const SipAccount& a,const std::wstring& ca) {
+inline NativeAccountConfig native_account_config(const SipAccount& a,const std::wstring& ca,const NativeAudioRoute& audio={}) {
+    if(!valid_native_audio_route(audio))return {};
     if(validate_account(a)!=AccountError::None || a.server.size()>253 || a.username.size()>128) return {};
     const auto host=native_ascii(a.server),user=native_ascii(a.username),trust=native_ascii(ca);
     if(host.empty() || user.empty()) return {};
@@ -18,7 +20,9 @@ inline NativeAccountConfig native_account_config(const SipAccount& a,const std::
     const std::string transport=a.use_tls?"tls":"udp";
     NativeAccountConfig out;
     out.aor="<sip:"+user+"@"+host+":"+std::to_string(a.port)+";transport="+transport+">;regint=0;audio_codecs=PCMU/8000/1,PCMA/8000/1";
-    out.config="poll_method select\nsip_transports "+transport+"\nsip_verify_server yes\naudio_player wasapi,default\naudio_source wasapi,default\naudio_alert wasapi,default\ncall_max_calls 1\n";
+    const auto capture=audio.capture_id.empty()?std::string("default"):native_ascii(audio.capture_id);
+    const auto playback=audio.playback_id.empty()?std::string("default"):native_ascii(audio.playback_id);
+    out.config="poll_method select\nsip_transports "+transport+"\nsip_verify_server yes\naudio_player wasapi,"+playback+"\naudio_source wasapi,"+capture+"\naudio_alert wasapi,default\ncall_max_calls 1\n";
     // Upstream excludes loopback from automatic interface discovery. Windows
     // cannot send to 127.0.0.1 through a SIP socket bound to a LAN address.
     if(a.server==L"127.0.0.1") out.config+="net_interface 127.0.0.1\n";

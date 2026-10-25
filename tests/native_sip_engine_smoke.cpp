@@ -6,7 +6,16 @@
 int main(int argc,char**argv) {
     axv::BaresipSipEngine engine;
     if(engine.status()!=axv::SipStatus::Disconnected || engine.start_call(L"100")) return 1;
-    if(argc==1) { engine.stop(); return 0; }
+    if(argc==1) {
+        axv::SipAccount account{L"127.0.0.1",L"1001",5060,false};
+        const axv::NativeAudioRoute route{L"capture-id",L"playback-id"};
+        if(!engine.configure_authenticated(account,L"","fixture-only",1500,route))return 8;
+        const auto applied=engine.selected_audio_route();
+        if(applied.capture_id!=route.capture_id || applied.playback_id!=route.playback_id)return 9;
+        engine.stop();
+        if(!engine.selected_audio_route().capture_id.empty())return 10;
+        return 0;
+    }
     axv::SipAccount account{L"127.0.0.1",L"1001",static_cast<unsigned short>(std::atoi(argv[1])),false};
     const bool success=std::string(argv[2])=="success";
     std::wstring ca;

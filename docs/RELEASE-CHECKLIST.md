@@ -1,3 +1,27 @@
+# Release candidata nativa0.52 — checklist atual
+
+## Implementações
+- [x] Motor Baresip/libre e OpenSSL fixados, registro/callbacks e comandos chamar/atender/encerrar no candidato.
+- [x] Instalador por usuário com DLLs e licenças, teste automático de instalação/desinstalação.
+- [x] Microfone e saída escolhidos na aba Áudio aplicados ao registrar; seleção fixa durante a sessão.
+- [x] Inventário atualizado antes de iniciar/atender, sem trocar silenciosamente um endpoint explícito ausente; encerrar continua disponível.
+- [x] Campos de senha/CA e diagnósticos sem credenciais; validação TLS de CA/hostname.
+
+Os testes Windows/SDK/instalador são exigidos no commit final antes de merge. Consulte a execução do PR correspondente e [escopo0.52](integration/NATIVE-AUDIO-ROUTING.md).
+
+## Homologação externa pendente
+- [ ] Registrar a conta descartável na central Dígitro identificada.
+- [ ] Confirmar chamadas originadas e recebidas entre dois endpoints reais.
+- [ ] Confirmar voz nos dois sentidos e headset escolhido; desconexão/reconexão física.
+- [ ] Confirmar política de certificado, transporte, codecs e eventual exigência de SRTP.
+- [ ] Aceitar Windows10/11 físicos e distribuição assinada antes de produção.
+
+Mute, espera e transferência continuam desabilitados. A release é candidata até concluir a homologação; não atribuir operação de produção a testes locais.
+
+---
+
+## Checklist histórico da fundação
+
 # AXE Voice v0.16 — release/homologation checklist
 
 ## Five incremental software deliveries
