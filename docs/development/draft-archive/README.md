@@ -4,9 +4,13 @@
 
 ## Resultado objetivo
 
-As 13 PRs retornaram `mergeable=false` e `mergeable_state=dirty` pela API GitHub na base original. A maioria mira `feature/baresip-desktop-bootstrap` em vez da `main`. A PR #12 mira `main`, mas também conflita: são 202 commits, 123 arquivos e implementação antiga v0.51, enquanto a branch de desenvolvimento mais recente está em v0.130. Esse material não pode ser fundido automaticamente como se fosse uma atualização linear.
+As 13 PRs retornaram `mergeable=false` e `mergeable_state=dirty` pela API GitHub na base original. A maioria mira `feature/baresip-desktop-bootstrap` em vez da `main`. A PR #12 mira `main`, mas também conflita: são 202 commits, 123 arquivos e implementação antiga v0.51, enquanto a branch de desenvolvimento mais recente alcançou v0.134. Esse material não pode ser fundido automaticamente como se fosse uma atualização linear.
 
 A comparação dos heads antigos com a branch atual `feature/axevoice-v073-sip-activation-gate` também retornou histórico `diverged` para todos os 13 rascunhos. Isto **não prova** que todas as mudanças antigas já foram absorvidas ou são desnecessárias: cada função deve ser confrontada com o código atual.
+
+## Reconciliação parcial concluída
+
+A [PR #110](https://github.com/jeffaxe81/axe-voice-desktop/pull/110) foi integrada à branch de desenvolvimento em v0.134 com três portabilidades de código: limite do lote de eventos SIP (#39), preservação de seleções após falha de inventário de áudio (#18) e recuperação da preferência explícita de headset/voz/toque (#16). **Não mesclou integralmente nem fechou as três PRs antigas** e não executou testes. Consulte [a nota de reconciliação](../AXEVOICE-DRAFT-RECONCILIATION-V131-V134-UNTESTED.md).
 
 ## Matriz de decisão
 
@@ -15,15 +19,15 @@ A comparação dos heads antigos com a branch atual `feature/axevoice-v073-sip-a
 | [#12](https://github.com/jeffaxe81/axe-voice-desktop/pull/12) | Fundamentos Windows LAB/Baresip v0.51 | 123 | Conflito contra `main` | Reconciliar arquitetura completa, compilar/homologar antes da promoção de código |
 | [#14](https://github.com/jeffaxe81/axe-voice-desktop/pull/14) | Identidades de conta e chamada SIP | 10 | Conflito na base histórica | Comparar controle de identidade com reducer e callback atuais |
 | [#15](https://github.com/jeffaxe81/axe-voice-desktop/pull/15) | Ingresso nativo de eventos | 9 | Conflito na base histórica | Evitar duplicar ingresso de callbacks; examinar equivalência |
-| [#16](https://github.com/jeffaxe81/axe-voice-desktop/pull/16) | Recuperação automática de headset | 10 | Conflito na base histórica | Reconciliar com hotplug e preferências de áudio atuais |
-| [#18](https://github.com/jeffaxe81/axe-voice-desktop/pull/18) | Recuperação headset + diagnóstico | 10 | Conflito na base empilhada | Verificar seleções de áudio e privacidade dos diagnósticos |
+| [#16](https://github.com/jeffaxe81/axe-voice-desktop/pull/16) | Recuperação automática de headset | 10 | Portabilidade parcial via #110; PR original conflita | Restante da integração e testes pendentes |
+| [#18](https://github.com/jeffaxe81/axe-voice-desktop/pull/18) | Recuperação headset + diagnóstico | 10 | Portabilidade parcial via #110; PR original conflita | Validar fluxo da interface e restante do diagnóstico |
 | [#21](https://github.com/jeffaxe81/axe-voice-desktop/pull/21) | Exportação segura de prontidão | 7 | Conflito na base histórica | Conferir relatórios/redação de campos sensíveis em v0.130 |
 | [#23](https://github.com/jeffaxe81/axe-voice-desktop/pull/23) | Pipeline e validação de proveniência | 15 | Conflito na base histórica | Inspecionar integração com ciclo de vida atual |
 | [#28](https://github.com/jeffaxe81/axe-voice-desktop/pull/28) | Verificação da UA proprietária no SDK | 4 | Conflito na base histórica | Avaliar contra barreiras de owner já implementadas |
 | [#30](https://github.com/jeffaxe81/axe-voice-desktop/pull/30) | Atualização assíncrona de dispositivos | 18 | Conflito na base histórica | Reconciliar com refresh e debounce Windows atuais |
 | [#31](https://github.com/jeffaxe81/axe-voice-desktop/pull/31) | Sessões de callback Baresip e auditoria SDK | 36 | Conflito na base histórica | Revisão de ABI/callback e ordens de encerramento |
 | [#36](https://github.com/jeffaxe81/axe-voice-desktop/pull/36) | Rolagem da interface e gates de qualidade | 7 | Conflito na base histórica | Isolar eventual melhoria não presente, sem reverter tela nova |
-| [#39](https://github.com/jeffaxe81/axe-voice-desktop/pull/39) | Matriz fail-closed e cenários sintéticos | 6 | Conflito na base histórica | Comparar política SIP atual antes de retomar suíte |
+| [#39](https://github.com/jeffaxe81/axe-voice-desktop/pull/39) | Matriz fail-closed e cenários sintéticos | 6 | Limite de eventos portado via #110; PR original conflita | Restante da suíte e documentação/testes pendentes |
 | [#40](https://github.com/jeffaxe81/axe-voice-desktop/pull/40) | Headset hotplug e Core Audio | 29 | Conflito na base histórica | Reconciliar implementação histórica com áudio atual |
 
 **Status da solicitação "merge em main sem testes":** é possível publicar apenas documentação e rastreabilidade sem trazer uma pilha de código conflitante; isso foi feito nesta ramificação de governança. **Nenhuma das 13 PRs Draft de código foi mesclada integralmente**, nem marcada como pronta, nem encerrada por esta triagem. Permanecem abertas para reconciliação individual.
