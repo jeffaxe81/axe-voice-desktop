@@ -63,3 +63,6 @@ int main() {
     if(g_registered!=g_unregistered) return 12;
     return 0;
 }
+
+// Synthetic registrar confirmation for this focused ownership/call policy fixture.
+extern "C" bool ua_isregistered(const struct ua* selected) { return selected != nullptr; }

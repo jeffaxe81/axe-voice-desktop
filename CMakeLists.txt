@@ -56,7 +56,7 @@ if(AXV_BUILD_NATIVE_BARESIP_ADAPTER)
   add_executable(axv_native_baresip_sdk_abi_probe
     tests/baresip_sdk_abi_probe.cpp)
   target_include_directories(axv_native_baresip_sdk_abi_probe PRIVATE
-    "${AXV_BARESIP_INCLUDE_DIR}")
+    "${AXV_LIBRE_INCLUDE_DIR}" "${AXV_BARESIP_INCLUDE_DIR}")
   target_compile_features(axv_native_baresip_sdk_abi_probe PRIVATE cxx_std_17)
   target_link_libraries(axv_native_baresip_sdk_abi_probe PRIVATE
     axv_native_baresip_adapter "${AXV_BARESIP_LIBRARY}")
@@ -84,7 +84,7 @@ if(AXV_BUILD_NATIVE_BARESIP_ADAPTER)
 endif()
 add_executable(AXEVoice WIN32 src/main.cpp)
 target_compile_features(AXEVoice PRIVATE cxx_std_17)
-target_compile_definitions(AXEVoice PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_definitions(AXEVoice PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX WINVER=0x0A00 _WIN32_WINNT=0x0A00)
 if(MSVC)
   target_compile_options(AXEVoice PRIVATE /utf-8 /W4)
 endif()
@@ -235,7 +235,7 @@ if(BUILD_TESTING)
   add_executable(test_baresip_callback_lifecycle tests/test_baresip_callback_lifecycle.cpp)
   target_compile_features(test_baresip_callback_lifecycle PRIVATE cxx_std_17)
   add_test(NAME baresip_callback_lifecycle COMMAND test_baresip_callback_lifecycle)
-  add_test(NAME baresip_sdk_integrity_preflight COMMAND "${CMAKE_COMMAND}"
+  add_test(NAME baresip_sdk_legacy_integrity_preflight COMMAND "${CMAKE_COMMAND}"
     "-DAXV_REPOSITORY_ROOT=${CMAKE_CURRENT_SOURCE_DIR}"
     "-DAXV_SCRATCH=${CMAKE_CURRENT_BINARY_DIR}/axv_sdk_integrity_test"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cmake/test_baresip_sdk_integrity.cmake")
@@ -397,6 +397,12 @@ if(BUILD_TESTING)
   target_link_libraries(test_windows_process PRIVATE axv_windows_process)
   add_test(NAME windows_process COMMAND test_windows_process $<TARGET_FILE:axv_test_child_process> $<TARGET_FILE:axv_test_exit_process> $<TARGET_FILE:axv_test_interactive_process>)
 endif()
+if(BUILD_TESTING)
+  add_executable(test_sip_event_projection_legacy tests/test_sip_event_projection_legacy.cpp)
+  target_compile_features(test_sip_event_projection_legacy PRIVATE cxx_std_17)
+  add_test(NAME sip_event_projection_legacy COMMAND test_sip_event_projection_legacy)
+endif()
+
 # Each test belongs to exactly one quality gate. Fail the CI on empty tiers.
 get_property(axv_registered_tests DIRECTORY PROPERTY TESTS)
 foreach(axv_test IN LISTS axv_registered_tests)
@@ -407,12 +413,23 @@ set_tests_properties(integration_sip_safety baresip_sdk_abi_probe windows_proces
   baresip_sdk_provenance
   sip_event_projection baresip_event_mailbox baresip_callback_ingress
   baresip_callback_lifecycle baresip_sdk_event_adapter baresip_sdk_single_owner
-  baresip_sdk_call_port baresip_sdk_epochs
+  baresip_sdk_call_port baresip_sdk_epochs sip_event_projection_legacy
+  sip_batch_bounds baresip_native_ingress baresip_native_pipeline
+  baresip_sdk_registration_gateway baresip_sdk_callback_epochs
+  libre_owner_reactor libre_registration_owner_integration
+  baresip_registration_command_dispatcher baresip_registration_command_races
+  baresip_registration_lab_worker
   call_command_authorization sip_command_executor sip_command_watchdog PROPERTIES LABELS "integration")
 set_target_properties(AXEVoice PROPERTIES OUTPUT_NAME "AXE-Voice")
 
-if(BUILD_TESTING)
-  add_executable(test_sip_event_projection_legacy tests/test_sip_event_projection_legacy.cpp)
-  target_compile_features(test_sip_event_projection_legacy PRIVATE cxx_std_17)
-  add_test(NAME sip_event_projection_legacy COMMAND test_sip_event_projection_legacy)
+
+# MinGW selects narrow entry points unless Unicode startup is explicit.
+if(MINGW)
+  target_link_libraries(axv_audio_test_tone PUBLIC ksuser)
+  target_link_options(AXEVoice PRIVATE -municode)
+  if(BUILD_TESTING)
+    foreach(axv_unicode_target IN ITEMS test_ui_blackbox axv_test_child_process test_windows_process)
+      target_link_options(${axv_unicode_target} PRIVATE -municode)
+    endforeach()
+  endif()
 endif()

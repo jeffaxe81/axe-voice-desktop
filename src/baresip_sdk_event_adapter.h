@@ -92,7 +92,6 @@ public:
         // concurrent active() read may race against this state change.
         lifecycle_.revoke_and_wait();
         registered_ = false;
-        lifecycle_.revoke_and_wait();
         owner_ = nullptr;
         captured_ = {};
         native_key_ = 0;

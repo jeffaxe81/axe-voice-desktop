@@ -149,3 +149,6 @@ int main() {
     if (g_handler || g_context) return 27;
     return 0;
 }
+
+// Synthetic registrar confirmation for this focused ownership/call policy fixture.
+extern "C" bool ua_isregistered(const struct ua* selected) { return selected != nullptr; }

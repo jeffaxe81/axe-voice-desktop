@@ -12,11 +12,13 @@ class SipEventProjection {
 public:
     const SipRuntimeObservation& observe(RuntimeProcess process, SipEvidence evidence,
         const BaresipEventMailbox::Batch& batch) {
+        if (identity_mode_) return observe(process, evidence, batch, bound_.expected_account_token);
         return legacy_.observe(process, evidence, batch);
     }
     const SipRuntimeObservation& observe(RuntimeProcess process, SipEvidence evidence,
                                          const BaresipEventMailbox::Batch& batch,
                                          std::uint64_t expected_account_token) {
+        identity_mode_ = true;
         if (process != RuntimeProcess::Running || batch.session == 0) {
             if (bound_.observation.session != 0)
                 rejected_session_ = bound_.observation.session;
@@ -60,13 +62,14 @@ public:
         }
         return bound_.observation;
     }
-    const SipRuntimeObservation& snapshot() const { return bound_.observation; }
+    const SipRuntimeObservation& snapshot() const { return identity_mode_ ? bound_.observation : legacy_.snapshot(); }
 private:
     void reject(std::uint64_t session, RuntimeProcess process) {
         rejected_session_=session;
         invalidate_identity(bound_);
         bound_.observation.process=process;
     }
+    bool identity_mode_ = false;
     LegacySipEventProjection legacy_;
     BoundBaresipState bound_{};
     std::uint64_t rejected_session_=0;

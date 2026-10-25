@@ -22,3 +22,6 @@ extern "C" int ua_answer(struct ua*, struct call*, enum vidmode) {
 }
 extern "C" void ua_hangup(struct ua*, struct call*, unsigned short,
                           const char*) {}
+
+// Synthetic registrar confirmation for this focused ownership/call policy fixture.
+extern "C" bool ua_isregistered(const struct ua* selected) { return selected != nullptr; }
