@@ -12,6 +12,16 @@ Get-ChildItem (Join-Path $Prefix 'bin') -Filter '*.dll' | Copy-Item -Destination
 Copy-Item (Join-Path $Prefix 'licenses') $Stage -Recurse -Force
 Copy-Item (Join-Path $Prefix 'CANDIDATE-MANIFEST.json') $Stage
 Copy-Item (Join-Path $Root 'installer/CANDIDATE-README.txt') $Stage
+# Ship the redistributable app-local CRT: a per-user installer cannot assume
+# administrative installation of the Visual C++ runtime on the target PC.
+$Vswhere=Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+$VsRoot=(& $Vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
+$Crt=Get-ChildItem (Join-Path $VsRoot 'VC/Redist/MSVC') -Directory | Sort-Object Name -Descending | ForEach-Object {
+    $Candidate=Join-Path $_.FullName 'x64/Microsoft.VC143.CRT'
+    if(Test-Path $Candidate) {$Candidate}
+} | Select-Object -First 1
+if(!$Crt) {throw 'MSVC app-local redistributable runtime not found'}
+Get-ChildItem $Crt -Filter '*.dll' | Copy-Item -Destination $Stage
 $Compiler=Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
 if(!(Test-Path $Compiler)) {throw 'Inno Setup 6 is required to package the candidate'}
 & $Compiler "/DCandidateSource=$Stage" "/DCandidateOutput=$Output" (Join-Path $Root 'installer/axe-native-candidate.iss')

@@ -5,11 +5,11 @@ The default build remains the unavailable SDK-free GUI. `AXV_ENABLE_NATIVE_SIP=O
 ## Implementation
 
 - One Baresip/libre owner thread. Bounded UI command slot; callbacks use the existing selected-UA adapter and session-fenced mailbox. Native REGISTER_OK plus ua_isregistered are required for dialing. No log parsing or process-liveness registration inference.
-- Masked session password, passed through account_set_auth_pass, never embedded in AOR/config. The UI clears its input after submission; owned password buffers are erased after provisioning/stop. Third-party SDK internals are not claimed to provide secure-memory erasure.
+- Masked session password, passed through account_set_auth_pass, never embedded in AOR/config. The UI clears its input after submission; owned password buffers are erased after provisioning/stop. Before UA destruction the pinned SDK account password allocation is explicitly wiped, including its shared Digest references; a real SDK test checks a retained reference. Other third-party transient copies are not claimed to provide secure-memory erasure.
 - Register, originate, answer and hangup. Stop before reconfiguring. Mute, hold and transfer remain disabled.
 - Explicit UDP or TLS with mandatory CA PEM and server verification. TLS connections must not downgrade to plaintext. SIP TLS does not imply SRTP.
 - G.711 and Windows default communications endpoints through WASAPI. Audio panel selections remain previews, not native route selection.
-- Separate per-user candidate installer with matching OpenSSL DLLs and upstream licenses; unsigned distribution clearly identified.
+- Separate per-user candidate installer with matching OpenSSL DLLs, app-local MSVC runtime and upstream licenses; unsigned distribution clearly identified.
 
 ## Automated evidence required before integration
 

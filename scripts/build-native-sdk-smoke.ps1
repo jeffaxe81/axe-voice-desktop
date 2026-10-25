@@ -100,8 +100,9 @@ if ($TlsMedia) {
     Invoke-Checked 'cmake' @('--build',$ProductBuild,'--config','Release','--parallel','4','--target','axv_native_tls_media_probe')
     Get-ChildItem (Join-Path $Prefix 'bin') -Filter '*.dll' | Copy-Item -Destination (Join-Path $ProductBuild 'Release')
     Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_tls_media_probe.exe') @()
-    Invoke-Checked 'cmake' @('--build',$ProductBuild,'--config','Release','--parallel','4','--target','axv_native_sip_engine_smoke','AXEVoice')
+    Invoke-Checked 'cmake' @('--build',$ProductBuild,'--config','Release','--parallel','4','--target','axv_native_sip_engine_smoke','axv_native_sdk_secret_smoke','AXEVoice')
     Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_sip_engine_smoke.exe') @()
+    Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_sdk_secret_smoke.exe') @()
     Invoke-Checked 'python' @((Join-Path $Root 'tests/run_native_sip_loopback.py'),(Join-Path $ProductBuild 'Release/axv_native_sip_engine_smoke.exe'))
     Invoke-Checked (Join-Path $ProductBuild 'Release/AXE-Voice.exe') @('--native-ui-smoke')
 }

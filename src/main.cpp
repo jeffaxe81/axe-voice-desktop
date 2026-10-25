@@ -988,7 +988,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             std::string password(bytes>1?static_cast<std::size_t>(bytes):0,'\0');
             if(bytes>1) {WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,secret,-1,password.data(),bytes,nullptr,nullptr);password.pop_back();}
             SecureZeroMemory(secret,sizeof(secret)); SetWindowTextW(g_password,L"");
-            const bool accepted=native_engine().configure_authenticated(account,ca,std::move(password)) && native_engine().register_account();
+            const bool configured=native_engine().configure_authenticated(account,ca,password);
+            if(!password.empty())SecureZeroMemory(password.data(),password.size()); password.clear();
+            const bool accepted=configured && native_engine().register_account();
             SetWindowTextW(g_process_status,accepted?L"Registro solicitado; aguardando confirmacao da central.":L"Dados/CA/senha invalidos ou motor ativo. Pare o motor e confira os dados.");
             return 0;
 #endif

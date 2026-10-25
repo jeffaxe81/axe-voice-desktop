@@ -27,6 +27,7 @@ def scenario(exe, mode, context=None, ca=None):
     port = listener.getsockname()[1]
     done = threading.Event()
     accepted = []
+    received = []
     errors = []
 
     def respond(message):
@@ -36,6 +37,7 @@ def scenario(exe, mode, context=None, ca=None):
             if ':' in line:
                 name, value = line.split(':', 1)
                 headers.setdefault(name.lower(), []).append(value.strip())
+        received.append(lines[0].split()[0])
         if not lines[0].startswith('REGISTER '):
             raise AssertionError('Unexpected non-REGISTER SIP operation')
         if mode == 'timeout':
@@ -53,8 +55,8 @@ def scenario(exe, mode, context=None, ca=None):
         for name in ('via', 'from', 'to', 'call-id', 'cseq'):
             out.extend(name + ': ' + value for value in headers[name])
         if valid:
-            out.extend('Contact: ' + value for value in headers.get('contact', []))
-            out.append('Expires: 600')
+            out.extend('Contact: ' + re.sub(r';expires=\d+', '', value) + ';expires=2' for value in headers.get('contact', []))
+            out.append('Expires: 2')
             accepted.append(True)
         elif not auth:
             out.append('WWW-Authenticate: Digest realm="axe-loopback", nonce="axe-test-nonce", algorithm=MD5, qop="auth"')
@@ -104,7 +106,7 @@ def scenario(exe, mode, context=None, ca=None):
 
     worker = threading.Thread(target=serve)
     worker.start()
-    args = [exe, str(port), 'success' if mode == 'success' else 'failure']
+    args = [exe, str(port), mode]
     if ca:
         args.append(str(ca))
     try:
@@ -113,8 +115,10 @@ def scenario(exe, mode, context=None, ca=None):
             raise AssertionError(f'{mode}: native engine exit {result.returncode}; {result.stdout[-1000:]} {result.stderr[-1000:]}')
         if errors:
             raise AssertionError(errors)
-        if mode == 'success' and not accepted:
+        if mode == 'success' and len(accepted)<2:
             raise AssertionError('No authenticated REGISTER accepted')
+        if mode in ('wrong-host', 'untrusted') and received:
+            raise AssertionError('SIP REGISTER reached an invalid TLS peer')
         if mode != 'success' and accepted:
             raise AssertionError('Unexpected successful authentication')
         print(f'PASS {"TLS" if ca else "UDP"} {mode}', flush=True)

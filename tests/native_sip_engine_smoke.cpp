@@ -10,7 +10,7 @@ int main(int argc,char**argv) {
     const bool success=std::string(argv[2])=="success";
     std::wstring ca;
     if(argc>3) {std::string path=argv[3];ca.assign(path.begin(),path.end());account.use_tls=true;}
-    if(!engine.configure_authenticated(account,ca,success?"local-test-secret":"wrong-secret",1500)) return 2;
+    if(!engine.configure_authenticated(account,ca,(std::string(argv[2])=="wrong-password")?"wrong-secret":"local-test-secret",1500)) return 2;
     if(!engine.register_account()) return 3;
     const auto until=std::chrono::steady_clock::now()+std::chrono::seconds(8);
     while(std::chrono::steady_clock::now()<until) {
@@ -18,6 +18,7 @@ int main(int argc,char**argv) {
         if(s==axv::SipStatus::Registered || s==axv::SipStatus::Failed) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
+    if(success) std::this_thread::sleep_for(std::chrono::milliseconds(3500)); // include registrar refresh
     const auto observed=engine.observation();
     if(success && (engine.status()!=axv::SipStatus::Registered ||
        !axv::sip_proof_is_current(observed,observed.session))) return 4;
@@ -25,7 +26,7 @@ int main(int argc,char**argv) {
     engine.stop();
     if(engine.status()!=axv::SipStatus::Disconnected || engine.start_call(L"100") || engine.observation().session) return 6;
     // Restart creates a fresh callback epoch and destroys SDK state safely.
-    if(!engine.configure_authenticated(account,ca,success?"local-test-secret":"wrong-secret",1500) || !engine.register_account()) return 7;
+    if(!engine.configure_authenticated(account,ca,(std::string(argv[2])=="wrong-password")?"wrong-secret":"local-test-secret",1500) || !engine.register_account()) return 7;
     std::this_thread::sleep_for(std::chrono::milliseconds(60)); engine.stop();
     return 0;
 }
