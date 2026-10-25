@@ -721,7 +721,7 @@ std::wstring safe_desktop_diagnostics() {
         process == axv::ProcessStatus::Stopped ? L"stopped" :
         process == axv::ProcessStatus::Failed ? L"failed" :
         process == axv::ProcessStatus::Exited ? L"exited" : L"stopping";
-    return std::wstring(L"AXE Voice Desktop LAB 0.125\r\n") +
+    return std::wstring(L"AXE Voice Desktop LAB 0.130\r\n") +
         L"Processo Baresip: " + process_text +
         L"\r\nRegistro SIP confirmado: NAO\r\nChamada RTP/SRTP homologada: NAO\r\n" +
         L"Autostart: " + (axv::desktop_autostart_enabled() ? L"sim" : L"nao") +
@@ -2168,7 +2168,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!RegisterClassW(&wc)) return 1;
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0);
-    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.125",
+    HWND window = CreateWindowExW(0, className, L"AXE Voice  |  Desktop Lab v0.130",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VSCROLL,
         CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi)+GetSystemMetricsForDpi(SM_CXVSCROLL,g_dpi),
