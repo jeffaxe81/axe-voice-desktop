@@ -6,7 +6,7 @@ Atualizado em25/10/2026.
 
 Os sete PRs abertos #12, #14, #15, #23, #31, #36 e #39 foram integrados à main pelo merge `3eb43ba6972c37a64a501dbf473f208d78738b78`. Não há PR aberto restante após essa integração. As decisões de conflitos estão em [OPEN-PRS-RESOLUTION.md](integration/OPEN-PRS-RESOLUTION.md).
 
-A main agora inclui o bootstrap Win32/Baresip de laboratório e seus componentes experimentais isolados. O projeto CMake identifica0.54.0; a branch experimental separada v0.154 não foi incorporada integralmente por esse merge. Fontes privadas locais de outro fluxo não foram publicadas.
+A main agora inclui o bootstrap Win32/Baresip de laboratório e seus componentes experimentais isolados. O projeto CMake identifica0.55.0; a branch experimental separada v0.154 não foi incorporada integralmente por esse merge. Fontes privadas locais de outro fluxo não foram publicadas.
 
 ## Evidência do merge
 

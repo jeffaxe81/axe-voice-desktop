@@ -132,14 +132,15 @@ struct BaresipSipEngine::Impl {
         erase(password);
         std::lock_guard<std::mutex> lock(mutex); view={RuntimeProcess::Stopped,SipStatus::Disconnected}; command={};media={};last_hold_error=0;mute_rejected=false;audio_issue=NativeAudioRouteStatus::Ready;
     }
-    bool submit(Action a,std::string uri={},bool desired=false,const NativeCallMediaState* expected=nullptr) {
+    bool submit(Action a,std::string uri={},bool desired=false,const NativeCallMediaState* expected=nullptr,const SipRuntimeObservation* displayed=nullptr) {
         {std::lock_guard<std::mutex> lock(mutex);
          if(view.process!=RuntimeProcess::Running || command.action!=Action::None ||
             (a==Action::Dial && view.sip!=SipStatus::Registered) ||
             (a==Action::Answer && view.sip!=SipStatus::Ringing) ||
             (a==Action::Hangup && !view.call_id) ||
             ((a==Action::SetMute || a==Action::SetHold || a==Action::Transfer) && (!expected || !native_media_controls_current(*expected,view) || !native_media_controls_current(media,view))) ||
-            (a==Action::Transfer && media.transfer!=NativeTransferState::None))return false;
+            (a==Action::Transfer && media.transfer!=NativeTransferState::None) ||
+            ((a==Action::Answer || a==Action::Hangup) && (!displayed || !native_displayed_call_command_current(a,*displayed,view))))return false;
          command={a,view.session,view.call_id,std::move(uri),desired};}
         // Native periodic timer is the fallback if the wake notification fails.
         (void)reactor.wake(); return true;
@@ -172,8 +173,10 @@ bool BaresipSipEngine::transfer_call(const std::wstring& destination,const Nativ
     const auto uri=native_transfer_destination(destination,impl_->account);
     return !uri.empty() && impl_->submit(Impl::Action::Transfer,uri,false,&expected);
 }
-bool BaresipSipEngine::answer(){return impl_->submit(Impl::Action::Answer);}
-void BaresipSipEngine::hangup(){(void)impl_->submit(Impl::Action::Hangup);}
+bool BaresipSipEngine::answer_call(const SipRuntimeObservation& displayed){return impl_->submit(Impl::Action::Answer,{},false,nullptr,&displayed);}
+bool BaresipSipEngine::hangup_call(const SipRuntimeObservation& displayed){return impl_->submit(Impl::Action::Hangup,{},false,nullptr,&displayed);}
+bool BaresipSipEngine::answer(){return answer_call(observation());}
+void BaresipSipEngine::hangup(){(void)hangup_call(observation());}
 void BaresipSipEngine::stop(){
     {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->view={RuntimeProcess::Stopping,SipStatus::Disconnected};impl_->command={};}
     impl_->reactor.stop();impl_->configured=false;erase(impl_->password);

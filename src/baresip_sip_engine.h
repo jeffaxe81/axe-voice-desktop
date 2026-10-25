@@ -17,6 +17,8 @@ public:
     bool register_account() override;
     bool start_call(const std::wstring&) override;
     bool answer();
+    bool answer_call(const SipRuntimeObservation& displayed);
+    bool hangup_call(const SipRuntimeObservation& displayed);
     bool set_muted(bool desired,const NativeCallMediaState& expected);
     bool set_held(bool desired,const NativeCallMediaState& expected);
     bool transfer_call(const std::wstring& destination,const NativeCallMediaState& expected);
