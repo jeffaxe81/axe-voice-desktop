@@ -1,4 +1,4 @@
-AXE Voice Native Candidate 0.55.0
+AXE Voice Native Candidate 0.55.1
 
 This is a validation build, not a production-approved release.
 Enter server, extension, port and session password in Settings, then Register.
@@ -13,3 +13,5 @@ Third-party license texts are included under licenses/.
 The installer and executable are unsigned. File hashes identify artifacts, not publisher certification.
 
 During an established native call, MUTE changes the SDK microphone flag; HOLD/RESUME requests local hold state. A local hold flag is not confirmation of remote SIP negotiation. Validate microphone silence and peer hold/resume behavior on the target PBX/headset. For direct transfer, enter the destination during an established call, click TRANSFERIR and review it before sending. One request per call; SDK submission is not confirmed central acceptance. Attended transfer remains unavailable.
+
+F2 readiness separates current dial-button availability from physical audio acceptance. An enabled button does not certify working media; the engine revalidates each command.
