@@ -1,3 +1,4 @@
+#include <re.h> // Real Baresip headers require libre public declarations first.
 #include <baresip.h>
 #include "../src/baresip_sdk_event_adapter.h"
 #include <type_traits>

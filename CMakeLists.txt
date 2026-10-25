@@ -81,6 +81,13 @@ if(AXV_BUILD_NATIVE_BARESIP_ADAPTER)
   target_link_libraries(axv_native_libre_reactor_smoke PRIVATE
     "${AXV_LIBRE_LIBRARY}")
   target_compile_features(axv_native_libre_reactor_smoke PRIVATE cxx_std_17)
+  # libre headers select Winsock declarations using WIN32 (not just _WIN32).
+  # Keep this usage requirement scoped to consumers of the audited native SDK.
+  foreach(_native_target IN ITEMS axv_native_baresip_adapter
+      axv_native_baresip_sdk_abi_probe axv_native_baresip_abi_probe
+      axv_native_libre_reactor_smoke)
+    target_compile_definitions(${_native_target} PRIVATE WIN32)
+  endforeach()
 endif()
 add_executable(AXEVoice WIN32 src/main.cpp)
 target_compile_features(AXEVoice PRIVATE cxx_std_17)
