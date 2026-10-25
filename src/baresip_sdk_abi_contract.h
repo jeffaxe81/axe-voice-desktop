@@ -34,6 +34,7 @@ static_assert(std::is_same_v<decltype(&ua_unregister),
 static_assert(std::is_same_v<decltype(&ua_isregistered),
               bool (*)(const struct ua*)>,
               "Baresip ua_isregistered ABI changed");
+static_assert(std::is_same_v<decltype(&call_transfer),int (*)(struct call*,const char*)>, "call_transfer ABI changed");
 static_assert(std::is_same_v<decltype(&call_audio), struct audio* (*)(const struct call*)>, "call_audio ABI changed");
 static_assert(std::is_same_v<decltype(&audio_mute), void (*)(struct audio*,bool)>, "audio_mute ABI changed");
 static_assert(std::is_same_v<decltype(&audio_ismuted), bool (*)(const struct audio*)>, "audio_ismuted ABI changed");

@@ -66,6 +66,19 @@ extern "C" bool audio_ismuted(const audio* current){return current && current->t
 extern "C" bool call_is_onhold(const call* current){return current && current->test_held;}
 extern "C" int call_hold(call* current,bool held){if(!current)return 22;++g_holds;current->test_held=held;return g_hold_error;}
 
+static int g_transfers=0,g_transfer_error=0;
+static bool g_transfer_close=false;
+static call* g_transfer_replacement=nullptr;
+static std::string g_last_transfer;
+extern "C" int call_transfer(call* current,const char* uri){
+ if(!current || !uri)return 22;++g_transfers;g_last_transfer=uri;
+ if(g_transfer_close){
+  emit(BEVENT_CALL_CLOSED,current->owner,current);
+  if(g_transfer_replacement){emit(BEVENT_CALL_INCOMING,current->owner,g_transfer_replacement);emit(BEVENT_CALL_ESTABLISHED,current->owner,g_transfer_replacement);}
+ }
+ return g_transfer_error;
+}
+
 int main() {
     using namespace axv;
     BaresipEventMailbox mailbox;
@@ -75,7 +88,7 @@ int main() {
     ua account{1};
     call first{&account, 11}, second{&account, 22}, third{&account, 33};
 
-    if(prestart.set_muted(1,true) || prestart.set_held(1,true)==0 || prestart.media_state(1).available)return 29;
+    if(prestart.set_muted(1,true) || prestart.set_held(1,true)==0 || prestart.media_state(1).available || prestart.transfer(1,"sip:2@example.org")==0)return 29;
     if (prestart.originate(L"sip:alice@example.org") ||
         prestart.answer(1) || prestart.hangup(1)) return 1;
     if (!adapter.start(&account)) return 2;
@@ -100,7 +113,7 @@ int main() {
     if (outgoing.size != 1 ||
         outgoing.events[0].kind != BaresipEventKind::CallOutgoing ||
         outgoing.events[0].call_id != 1) return 9;
-    if(port.set_muted(1,true) || port.set_held(1,true)==0)return 39;
+    if(port.set_muted(1,true) || port.set_held(1,true)==0 || port.transfer(1,"sip:2@example.org")==0)return 39;
     if (port.answer(1) || port.hangup(0) || port.hangup(2) ||
         g_answers || g_hangups) return 10;
     if (!port.hangup(1) || g_hangups != 1 || port.hangup(1)) return 11;
@@ -131,9 +144,16 @@ int main() {
     g_hold_error=0;
     std::atomic<bool> invalid_media_access{false};
     std::thread media_outsider([&]{
-        if(port.media_state(2).available || port.set_muted(2,true) || port.set_held(2,true)==0)invalid_media_access=true;
+        if(port.media_state(2).available || port.set_muted(2,true) || port.set_held(2,true)==0 || port.transfer(2,"sip:2@example.org")==0)invalid_media_access=true;
     });media_outsider.join();
     if(invalid_media_access || g_mutes!=2 || g_holds!=2)return 38;
+    if(port.transfer(2,"sip:bad%0d@example.org")==0 || port.transfer(1,"sip:2@example.org")==0 || g_transfers)return 40;
+    if(port.transfer(2,"sip:2@example.org") || g_transfers!=1 || g_last_transfer!="sip:2@example.org")return 41;
+    if(port.media_state(2).transfer!=NativeTransferState::Submitted || port.transfer(2,"sip:3@example.org")==0 || g_transfers!=1)return 42;
+    call foreign{&account,99};emit(BEVENT_CALL_TRANSFER_FAILED,&account,&foreign);
+    if(port.media_state(2).transfer!=NativeTransferState::Submitted)return 43;
+    emit(BEVENT_CALL_TRANSFER_FAILED,&account,&second);
+    if(port.media_state(2).transfer!=NativeTransferState::Failed || !port.media_state(2).available)return 44;
     if (!port.hangup(2) || g_hangups != 2 || port.hangup(2))
         return 17;
     mailbox.drain();
@@ -170,6 +190,16 @@ int main() {
     auto next = mailbox.drain();
     if (next.size != 1 || next.events[0].call_id != 1) return 25;
     if (fresh.hangup(2) || !fresh.hangup(1) || g_hangups != 3) return 26;
+    call fourth{&account,44},fifth{&account,55};
+    emit(BEVENT_CALL_INCOMING,&account,&fourth);mailbox.drain();
+    if(!fresh.answer(2))return 45;mailbox.drain();
+    g_transfer_close=true;g_transfer_replacement=&fifth;
+    if(fresh.transfer(2,"sips:2@example.org") || fresh.media_state(2).available)return 46;
+    g_transfer_close=false;g_transfer_replacement=nullptr;mailbox.drain();
+    if(!fresh.media_state(3).available || fresh.media_state(3).transfer!=NativeTransferState::None)return 47;
+    g_transfer_error=5;
+    if(fresh.transfer(3,"sip:2@example.org")!=5 || fresh.media_state(3).transfer!=NativeTransferState::Failed)return 48;
+    if(fresh.transfer(3,"sip:3@example.org")==0 || g_transfers!=3 || !fresh.hangup(3))return 49;
     adapter.stop();
     if (g_handler || g_context) return 27;
     return 0;

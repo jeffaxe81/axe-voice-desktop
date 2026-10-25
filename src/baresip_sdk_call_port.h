@@ -2,6 +2,7 @@
 #include "baresip_sdk_event_adapter.h"
 #include "sip_command_executor.h"
 #include "native_call_media.h"
+#include "native_transfer.h"
 #include <cerrno>
 #include <cstdint>
 #include <string>
@@ -74,7 +75,9 @@ public:
         if(!owned || !adapter_.call_established_ || adapter_.hangup_sent_)return {};
         auto* audio=call_audio(owned);
         if(!audio)return {};
-        return {captured_session_,token,true,audio_ismuted(audio),call_is_onhold(owned)};
+        NativeCallMediaState state{captured_session_,token,true,audio_ismuted(audio),call_is_onhold(owned)};
+        state.transfer=adapter_.transfer_attempted_?(adapter_.transfer_failed_?NativeTransferState::Failed:NativeTransferState::Submitted):NativeTransferState::None;
+        return state;
     }
     bool set_muted(std::uint64_t token,bool desired) {
         auto* owned=resolve(token);
@@ -91,6 +94,20 @@ public:
         // Return errors to caller; readback is not remote SIP confirmation.
         if(call_is_onhold(owned)==desired)return 0;
         return call_hold(owned,desired);
+    }
+
+    int transfer(std::uint64_t token,const std::string& uri){
+        // Invalid destinations never consume the selected call's attempt.
+        if(!valid_native_transfer_uri(uri))return EINVAL;
+        auto* owned=resolve(token);
+        if(!owned || !adapter_.call_established_ || adapter_.hangup_sent_)return EINVAL;
+        if(adapter_.transfer_attempted_)return EALREADY;
+        adapter_.transfer_attempted_=true;adapter_.transfer_failed_=false;
+        const int error=call_transfer(owned,uri.c_str());
+        // Native calls can close/revoke/replace the call synchronously.
+        if(owns_session() && adapter_.active_token_==token)
+            adapter_.transfer_failed_=adapter_.transfer_failed_ || error!=0;
+        return error;
     }
 
 private:

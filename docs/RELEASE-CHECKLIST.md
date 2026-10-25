@@ -1,4 +1,4 @@
-# Release candidata nativa0.53 — checklist atual
+# Release candidata nativa0.54 — checklist atual
 
 ## Implementações
 - [x] Motor Baresip/libre e OpenSSL fixados, registro/callbacks e comandos chamar/atender/encerrar no candidato.
@@ -11,15 +11,18 @@ Os testes Windows/SDK/instalador são exigidos no commit final antes de merge. C
 
 - [x] Mudo/retomada do microfone e espera/retomada local com leitura do SDK e proteção de sessão/chamada (0.53).
 
+- [x] Limpeza do aviso de áudio ao encerrar/trocar chamada e pedido de transferência direta com revisão de destino e identidade da chamada (0.54).
+
 ## Homologação externa pendente
 - [ ] Registrar a conta descartável na central Dígitro identificada.
 - [ ] Confirmar chamadas originadas e recebidas entre dois endpoints reais.
 - [ ] Confirmar voz nos dois sentidos e headset escolhido; desconexão/reconexão física.
 - [ ] Confirmar silêncio do microfone em mudo e espera/retomada aceitas pela central.
+- [ ] Confirmar REFER/NOTIFY, destino final e áudio após transferência direta na central.
 - [ ] Confirmar política de certificado, transporte, codecs e eventual exigência de SRTP.
 - [ ] Aceitar Windows10/11 físicos e distribuição assinada antes de produção.
 
-Mudo do microfone e espera/retomada locais estão conectados no candidato0.53; transferência continua desabilitada. Espera local não comprova aceite da negociação SIP pela central. A release é candidata até concluir a homologação; não atribuir operação de produção a testes locais.
+Mudo, espera/retomada locais e pedido de transferência direta estão conectados no candidato0.54. Transferência com consulta permanece indisponível. Espera local não comprova aceite da negociação SIP pela central. A release é candidata até concluir a homologação; não atribuir operação de produção a testes locais.
 
 ---
 

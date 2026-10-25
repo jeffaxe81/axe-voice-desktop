@@ -1,0 +1,11 @@
+# Native candidate0.54 — feedback cleanup and direct transfer
+
+The known call-scoped audio warning from0.53 is cleared when the established call closes or changes identity, alongside hold/mute errors. Unchanged-call feedback is preserved. A no-call missing-device refusal still remains until retry/stop, since it is a route issue rather than an ended call's feedback.
+
+During an established native call, enter the destination in the normal number field and click the dedicated Transfer button beside Call. Review the destination before sending. The captured displayed session/call remains fixed while the dialog is open; a replaced/ended call rejects confirmation instead of targeting a new call. This is direct/blind transfer, without a consultation call. Default SDK-free GUI behavior is unchanged.
+
+The native owner uses pinned Baresip call_transfer (SIP REFER), once per call. Invalid URI/header/escape/control/unsupported parameter targets are rejected before consuming the native attempt; TLS accounts reject plaintext target downgrade. Endpoint account routing comes from the configured engine, not uncommitted UI account fields. Targets are not logged or persisted by the app.
+
+Readback reports None/Submitted/Failed. SDK return0 means only local submission. Selected-call transfer-failure callbacks mark failure without revoking another call's proof; foreign/stale failure events are ignored. Native synchronous close/replacement cannot poison a replacement call's transfer flags. No automatic hangup follows submission; upstream closes on its own successful notification, and generic call closure is not labeled confirmed transfer success. A failed attempt remains consumed until a new call; mute/hold/hangup remain available.
+
+Required gates: feedback close/replacement regression; URI/TLS/session/admission tests; SDK port fixtures for invalid/current/stale/thread/duplicate/reentrant-close/replacement/failure callbacks; real SDK call_transfer ABI type/link; no-call and native GUI smoke; full Windows suite, existing7 native scenarios and installer install/uninstall. These are implementation/component gates, not an established-call end-to-end REFER/NOTIFY or acoustic media test. Real Digitro interoperability, transfer destination/media and consultation transfer remain unapproved; no SRTP or production-signing claim.
