@@ -3,12 +3,12 @@
 
 namespace axv {
 
-// DBT_DEVNODES_CHANGED (7), DBT_DEVICEARRIVAL (0x8000),
-// DBT_DEVICEREMOVECOMPLETE (0x8004). These are generic Windows device
+// DBT_DEVNODES_CHANGED (7), DBT_CONFIGCHANGED (0x18),
+// DBT_DEVICEARRIVAL (0x8000), DBT_DEVICEREMOVECOMPLETE (0x8004). These are generic Windows device
 // notifications, not evidence that an audio device really changed.
 inline bool is_potential_device_change(unsigned event_code) {
-    return event_code == 7u || event_code == 0x8000u ||
-           event_code == 0x8004u;
+    return event_code == 7u || event_code == 0x18u ||
+           event_code == 0x8000u || event_code == 0x8004u;
 }
 
 // UI-thread-only debounce: coalesce hotplug storms, do not enumerate hardware
