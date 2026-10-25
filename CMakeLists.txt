@@ -5,7 +5,9 @@ if(NOT WIN32)
 endif()
 add_library(axv_sip_address STATIC src/sip_address.cpp)
 target_compile_features(axv_sip_address PUBLIC cxx_std_17)
-add_library(axv_audio_devices STATIC src/audio_devices_win32.cpp)
+add_library(axv_audio_devices STATIC
+  src/audio_devices_win32.cpp
+  src/audio_endpoint_watcher.cpp)
 target_compile_features(axv_audio_devices PUBLIC cxx_std_17)
 if(MSVC)
   target_compile_options(axv_audio_devices PRIVATE /utf-8 /W4)
