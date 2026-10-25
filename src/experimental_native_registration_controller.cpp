@@ -44,6 +44,8 @@ NativeControlDecision ExperimentalNativeRegistrationController::request_registra
     }
     const auto native = host_->snapshot();
     if (!native.running || !native.account_provisioned ||
+        !native.accepting_requests ||
+        registration_dispatch_terminal(native.last_dispatch) ||
         native.reactor_fault != LibreReactorFault::None ||
         native.command_generation != generation_) {
         terminal_observed_ = true; // stop/restart required; no retry queued
@@ -71,6 +73,13 @@ NativeControlDecision ExperimentalNativeRegistrationController::cancel() {
     if (!started_ || !generation_) return NativeControlDecision::NoLiveGeneration;
     if (!pending_) return NativeControlDecision::NoLiveGeneration;
     if (cancel_requested_) return NativeControlDecision::CancellationRequested;
+    const auto native = host_->snapshot();
+    if (native.last_dispatch == RegistrationDispatchKind::Cancelled)
+        return NativeControlDecision::UserCancelled;
+    if (terminal_observed_ || registration_dispatch_failure(native.last_dispatch) ||
+        native.command_generation != generation_ ||
+        !native.running || !native.accepting_requests)
+        return NativeControlDecision::TerminalNativeFailure;
     // An accepted cancellation is only queued, never described as completed.
     const bool ok = host_->cancel();
     if (ok) cancel_requested_ = true;
@@ -106,13 +115,7 @@ NativeControlDecision ExperimentalNativeRegistrationController::poll_control_pla
         callback_unverified_seen_ = true;
         return NativeControlDecision::CallbackObservedUnverified;
     }
-    const bool failed = kind == RegistrationDispatchKind::RegistrarRejected ||
-        kind == RegistrationDispatchKind::DeadlineExpired ||
-        kind == RegistrationDispatchKind::Failed ||
-        kind == RegistrationDispatchKind::OverflowStopped ||
-        kind == RegistrationDispatchKind::WrongOwnerThread ||
-        kind == RegistrationDispatchKind::SupersededDuringDispatch ||
-        kind == RegistrationDispatchKind::StaleGeneration;
+    const bool failed = registration_dispatch_failure(kind);
     if (failed) {
         if (!terminal_observed_) {
             retry_.record_failed_attempt(monotonic_ms);
@@ -144,13 +147,21 @@ NativeControlView ExperimentalNativeRegistrationController::snapshot() const {
     const auto native = host_->snapshot();
     result.control_thread_running = started_ && native.running;
     result.account_provisioned = native.account_provisioned;
-    result.register_request_pending = pending_;
+    result.native_admission_open = result.control_thread_running &&
+        native.accepting_requests && generation_ &&
+        native.command_generation == generation_ &&
+        !registration_dispatch_terminal(native.last_dispatch);
+    result.register_request_pending = pending_ &&
+        !cancel_requested_ && !terminal_observed_ &&
+        !registration_dispatch_terminal(native.last_dispatch) &&
+        result.native_admission_open;
     result.cancellation_requested = cancel_requested_;
-    result.terminal_failure_seen = terminal_observed_;
+    result.terminal_failure_seen = terminal_observed_ ||
+        registration_dispatch_failure(native.last_dispatch);
     result.callback_unverified_seen = callback_unverified_seen_;
     result.restart_required = terminal_observed_ || cancel_requested_ ||
-        (pending_ && !native.running) ||
-        native.last_dispatch == RegistrationDispatchKind::Cancelled;
+        (pending_ && !native.accepting_requests) ||
+        registration_dispatch_terminal(native.last_dispatch);
     result.generation = result.control_thread_running ? generation_ : 0;
     result.next_attempt_ms = retry_.next_allowed_ms();
     result.failures = retry_.failures();

@@ -20,6 +20,7 @@ struct NativeRegistrationHostSnapshot {
     RegistrationDispatchKind last_dispatch = RegistrationDispatchKind::Idle;
     LibreReactorFault reactor_fault = LibreReactorFault::None;
     bool account_provisioned = false;
+    bool accepting_requests = false; // pointer-free admission status only
 };
 
 // The caller provisions and owns the UA and must keep it alive until stop()
@@ -118,6 +119,8 @@ public:
         const auto r=reactor_.snapshot();
         out.running=r.running;
         out.reactor_fault=r.fault;
+        out.accepting_requests = r.running && accepting_.load() &&
+            r.fault == LibreReactorFault::None;
         return out;
     }
 
@@ -190,24 +193,16 @@ private:
             owner_->generation,now_ms(),selected);
         // Native terminal decisions revoke cross-thread admission BEFORE
         // publishing the diagnostic result. Stop/join is still required.
-        const bool terminal =
-            result.kind==RegistrationDispatchKind::Cancelled ||
-            result.kind==RegistrationDispatchKind::DeadlineExpired ||
-            result.kind==RegistrationDispatchKind::RegistrarRejected ||
-            result.kind==RegistrationDispatchKind::Failed ||
-            result.kind==RegistrationDispatchKind::OverflowStopped ||
-            result.kind==RegistrationDispatchKind::WrongOwnerThread ||
-            result.kind==RegistrationDispatchKind::SupersededDuringDispatch ||
-            result.kind==RegistrationDispatchKind::StaleGeneration;
+        const bool terminal = registration_dispatch_terminal(result.kind);
         if (terminal) accepting_.store(false);
         std::lock_guard<std::mutex> lock(mutex_);
         ++state_.ticks;
-        if (result.kind!=RegistrationDispatchKind::Idle &&
-            result.kind!=RegistrationDispatchKind::Pending &&
-            // Never overwrite the first terminal cause with stale ticks.
-            !(result.kind==RegistrationDispatchKind::StaleGeneration &&
-              state_.last_dispatch!=RegistrationDispatchKind::Idle))
-            state_.last_dispatch=result.kind;
+        // Preserve the first terminal outcome of a revoked generation,
+        // including if a callback or a stale queue tick appears later.
+        if (!registration_dispatch_terminal(state_.last_dispatch) &&
+            result.kind != RegistrationDispatchKind::Idle &&
+            result.kind != RegistrationDispatchKind::Pending)
+            state_.last_dispatch = result.kind;
     }
 
     void on_stop() {
