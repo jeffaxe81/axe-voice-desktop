@@ -1,3 +1,7 @@
+# Integração dos pull requests na main
+
+Integração solicitada pelo titular. A main recebe o código dos PRs existentes, mantendo o histórico e os limites abaixo. Este merge não é uma declaração de homologação SIP, áudio ou produção. A descrição histórica do bootstrap está em [PR12](docs/integration/PR12-BOOTSTRAP-README.md).
+
 # AXE Voice Desktop
 
 > **Status de integração — 24/10/2026:** esta branch `main` preserva a base histórica MicroSIP/PJSIP. O desenvolvimento ativo do protótipo Win32 baseado em Baresip ocorre em `feature/axevoice-v073-sip-activation-gate` (última versão inspecionada: 0.154). Não há aceite de compilação, testes, registro SIP real, TLS/SRTP, chamada bidirecional ou instalador de produção para a nova arquitetura. Veja [critérios de promoção](docs/AXEVOICE-RELEASE-PROMOTION.md) e a [triagem das 13 PRs históricas (10 ainda em rascunho)](docs/development/draft-archive/README.md). Esta atualização é documental e não habilita execução ou telefonia.
