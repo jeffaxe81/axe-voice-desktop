@@ -422,7 +422,7 @@ void position_all_children() {
         auto r = child.logical;
         if (child.handle == g_number_label) r.y = g_compact ? 218 : 246;
         if (child.handle == g_number) r.y = g_compact ? 242 : 272;
-        if (child.handle == g_status) r.y = g_compact ? 298 : 762;
+        if (child.handle == g_status) r.y = g_compact ? 298 : kFullFeedbackY;
         position_logical(child.handle, r.x, r.y, r.width, r.height);
     }
 }
@@ -474,7 +474,7 @@ void bring_focused_control_into_view(HWND window, HWND control) {
         int y = child.logical.y;
         if (control == g_number_label) y = g_compact ? 218 : 246;
         if (control == g_number) y = g_compact ? 242 : 272;
-        if (control == g_status) y = g_compact ? 298 : 762;
+        if (control == g_status) y = g_compact ? 298 : kFullFeedbackY;
         RECT client{};
         GetClientRect(window, &client);
         const int top = axv::dpi_pixels(y,g_dpi);
