@@ -374,7 +374,8 @@ HWND make_label(HWND root, LPCWSTR text, int x, int y, int w, int h,
 }
 HWND make_button(HWND root, LPCWSTR text, int id, int x, int y, int w, int h,
                  int page = -1, HFONT font = nullptr) {
-    return make_control(root, L"BUTTON", text, WS_TABSTOP | BS_OWNERDRAW,
+    // BN_SETFOCUS drives viewport scrolling for keyboard navigation.
+    return make_control(root, L"BUTTON", text, WS_TABSTOP | BS_OWNERDRAW | BS_NOTIFY,
                         x, y, w, h, id, page, font);
 }
 HWND make_edit(HWND root, LPCWSTR initial, int id, int x, int y, int w, int h,
@@ -915,13 +916,13 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         SetWindowLongPtrW(g_password,GWL_STYLE,GetWindowLongPtrW(g_password,GWL_STYLE)|ES_PASSWORD);
         SendMessageW(g_password,EM_SETPASSWORDCHAR,L'*',0);
         SendMessageW(g_password,EM_SETLIMITTEXT,256,0);
-        g_tls=make_control(window,L"BUTTON",L"TLS: exige CA confiavel; nao criptografa RTP",WS_TABSTOP|BS_AUTOCHECKBOX,39,464,350,28,kTlsCheckbox,1);
+        g_tls=make_control(window,L"BUTTON",L"TLS: exige CA confiavel; nao criptografa RTP",WS_TABSTOP|BS_AUTOCHECKBOX|BS_NOTIFY,39,464,350,28,kTlsCheckbox,1);
         make_label(window,L"Arquivo CA PEM (obrigatorio para TLS)",39,497,350,20,1);
         g_ca_file=make_edit(window,L"",kCaEdit,39,520,350,32,1);
         make_button(window,L"VALIDAR DADOS",kValidateAccount,39,565,350,32,1);
 #else
         g_tls = make_control(window, L"BUTTON", L"Usar TLS (quando suportado)",
-                             WS_TABSTOP | BS_AUTOCHECKBOX, 39, 404, 340, 28,
+                             WS_TABSTOP | BS_AUTOCHECKBOX | BS_NOTIFY, 39, 404, 340, 28,
                              kTlsCheckbox, 1);
         make_button(window, L"VALIDAR DADOS  /  SEM REGISTRAR", kValidateAccount,
                     39, 440, 350, 38, 1);
@@ -1615,7 +1616,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0 || std::wcscmp(command_line,L"--native-ui-smoke")==0);
 #ifdef AXV_ENABLE_NATIVE_SIP
-    const wchar_t* title=L"AXE Voice | Candidato nativo 0.57";
+    const wchar_t* title=L"AXE Voice | Candidato nativo 0.57.1";
 #else
     const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
 #endif
@@ -1650,6 +1651,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         SendMessageW(window,WM_VSCROLL,MAKEWPARAM(SB_TOP,0),0);
         GetWindowRect(GetDlgItem(window,kDtmfButton),&dtmf_bounds);GetWindowRect(g_status,&feedback_bounds);
         ok=ok && g_scroll_offset==0 && dtmf_bounds.bottom<=feedback_bounds.top;
+        // Exercise the button's real focus notification while remaining hidden.
+        const HWND clear_button=GetDlgItem(window,kClear);
+        SendMessageW(clear_button,WM_SETFOCUS,0,0);
+        ok=ok && g_scroll_offset>0 && (GetWindowLongPtrW(g_tls,GWL_STYLE)&BS_NOTIFY);
+        SendMessageW(clear_button,WM_KILLFOCUS,0,0);
+        SendMessageW(window,WM_VSCROLL,MAKEWPARAM(SB_TOP,0),0);
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kDtmfButton,BN_CLICKED),0);
         ok=ok && !g_dtmf_mode.armed();
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCallButton,BN_CLICKED),0);
@@ -1880,11 +1887,17 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             !IsWindowEnabled(GetDlgItem(window,kCallButton));
         SendMessageW(window, WM_VSCROLL, SB_TOP, 0);
         const bool scroll_returned = g_scroll_offset == 0;
+        const HWND account_button = GetDlgItem(window, kValidateAccount);
+        SendMessageW(account_button, WM_SETFOCUS, 0, 0);
+        const bool button_focus_scrolled = g_scroll_offset > 0 &&
+            (GetWindowLongPtrW(g_tls, GWL_STYLE) & BS_NOTIFY);
+        SendMessageW(account_button, WM_KILLFOCUS, 0, 0);
+        SendMessageW(window, WM_VSCROLL, SB_TOP, 0);
         SetWindowPos(window, nullptr, 0, 0,
                      original_window.right-original_window.left,
                      original_window.bottom-original_window.top,
                      SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
-        ok = ok && scroll_available && scroll_moved && scroll_returned;
+        ok = ok && scroll_available && scroll_moved && scroll_returned && button_focus_scrolled;
         if (!ok) {
             std::fprintf(stderr, "UI_VIEWPORT_SMOKE pre=%d scroll=%d moved=%d top=%d max=%d off=%d dpi150=%d mini150=%d mini200=%d full200=%d\n",
                          pre_scroll_ok ? 1 : 0, scroll_available ? 1 : 0,

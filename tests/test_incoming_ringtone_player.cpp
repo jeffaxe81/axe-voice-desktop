@@ -3,12 +3,41 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdlib>
+#include <cstdio>
 #include <mutex>
+#include <new>
 #include <thread>
 #include <vector>
-#define CHECK(x) do{if(!(x))std::abort();}while(0)
+// Deterministically exercise the existing thread-construction failure path.
+// Thread-local injection cannot affect allocations in a renderer worker.
+namespace { thread_local bool fail_next_allocation=false; }
+void* operator new(std::size_t size){
+ if(fail_next_allocation){fail_next_allocation=false;throw std::bad_alloc();}
+ if(void* p=std::malloc(size?size:1))return p;
+ throw std::bad_alloc();
+}
+void operator delete(void* p)noexcept{std::free(p);}
+void operator delete(void* p,std::size_t)noexcept{std::free(p);}
+#define CHECK(x) do{if(!(x)){std::fprintf(stderr,"CHECK failed at line %d: %s\n",__LINE__,#x);std::abort();}}while(0)
 int main(){
  using namespace std::chrono_literals;
+ {
+  std::atomic<bool> rendered{false};
+  axv::IncomingRingtonePlayer allocation_failure([&](const std::wstring&,const std::atomic<bool>&){
+   rendered=true;return axv::TonePreviewState::Played;
+  },1h);
+  // The one-character ID fits std::wstring's small buffer; the next
+  // allocation belongs to std::thread, after the request is installed.
+  fail_next_allocation=true;
+  CHECK(!allocation_failure.synchronize({10,1,L"x"}));
+  CHECK(!fail_next_allocation);
+  CHECK(allocation_failure.snapshot().result==axv::TonePreviewState::Failed);
+  CHECK(allocation_failure.synchronize({10,1,L"x"}));
+  const auto retry_deadline=std::chrono::steady_clock::now()+2s;
+  while(!rendered && std::chrono::steady_clock::now()<retry_deadline)std::this_thread::yield();
+  CHECK(rendered);
+  CHECK(allocation_failure.shutdown());
+ }
  std::mutex mutex;std::condition_variable entered;
  std::vector<std::wstring> ids;
  std::atomic<int> concurrent{0},maximum{0};

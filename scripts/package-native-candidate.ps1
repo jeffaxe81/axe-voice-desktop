@@ -10,9 +10,39 @@ $Output=Join-Path $Root 'build/native-candidate-installer'
 $Manifest=Get-Content (Join-Path $Prefix 'CANDIDATE-MANIFEST.json') -Raw | ConvertFrom-Json
 $Cache=Get-Content (Join-Path $Root 'build/native-sdk-tls-media/product/CMakeCache.txt') -Raw
 if($Manifest.gui_native_sdk -ne 'ON/native candidate' -or $Manifest.tls -ne $true -or
-   $Manifest.production_approved -ne $false -or $Cache -notmatch '(?m)^AXV_ENABLE_NATIVE_SIP:BOOL=ON\r?$') {
+   $Manifest.production_approved -ne $false -or $Cache -notmatch '(?m)^AXV_ENABLE_NATIVE_SIP:BOOL=ON\r?$' -or
+   $Cache -notmatch '(?m)^AXV_NATIVE_TLS_MEDIA:BOOL=ON\r?$') {
     throw 'Candidate provenance does not match the native TLS GUI build'
 }
+# Validate provenance before copying: a valid old manifest must not bless a
+# replaced GUI or dependency. Include files recursively in the install check.
+$Version = [regex]::Match($Cache, '(?m)^CMAKE_PROJECT_VERSION:STATIC=([^\r\n]+)\r?$').Groups[1].Value
+$InstallerSpec = Get-Content (Join-Path $Root 'installer/axe-native-candidate.iss') -Raw
+$InstallerVersion = [regex]::Match($InstallerSpec, '(?m)^AppVersion=([^\r\n]+)\r?$').Groups[1].Value
+if (!$Version -or $Manifest.product_version -ne $Version -or $InstallerVersion -ne $Version) {
+    throw 'Candidate product, manifest and installer versions differ'
+}
+if ($Manifest.product_sha256 -notmatch '^[0-9a-f]{64}$' -or
+    (Get-FileHash (Join-Path $Binaries 'AXE-Voice.exe') -Algorithm SHA256).Hash -ne $Manifest.product_sha256) {
+    throw 'Candidate GUI differs from the verified build'
+}
+if (!$Manifest.files -or @($Manifest.files.PSObject.Properties).Count -eq 0) { throw 'SDK file hashes missing' }
+foreach ($Entry in $Manifest.files.PSObject.Properties) {
+    $Path = Join-Path $Prefix $Entry.Name
+    if ($Entry.Value -notmatch '^[0-9a-f]{64}$' -or
+        (Get-FileHash $Path -Algorithm SHA256).Hash -ne $Entry.Value) {
+        throw "SDK manifest file missing or changed: $($Entry.Name)"
+    }
+}
+foreach ($File in (Get-ChildItem $Prefix -Recurse -File | Where-Object { $_.Extension -in @('.h','.lib','.dll') })) {
+    $Relative = $File.FullName.Substring($Prefix.Length+1).Replace('\','/')
+    $Expected = $Manifest.files.PSObject.Properties[$Relative].Value
+    if ($Expected -notmatch '^[0-9a-f]{64}$' -or (Get-FileHash $File.FullName -Algorithm SHA256).Hash -ne $Expected) {
+        throw "SDK file differs from manifest: $Relative"
+    }
+}
+# A repeated packaging run must not retain removed DLLs or license files.
+if (Test-Path $Stage) { Remove-Item $Stage -Recurse -Force }
 New-Item -ItemType Directory -Force $Stage,$Output | Out-Null
 Copy-Item (Join-Path $Binaries 'AXE-Voice.exe') $Stage
 Get-ChildItem (Join-Path $Prefix 'bin') -Filter '*.dll' | Copy-Item -Destination $Stage
@@ -38,15 +68,21 @@ $Target=Join-Path $Root 'build/native-candidate-install-check'
 $Install=Start-Process -FilePath $Installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=`"$Target`"") -Wait -PassThru
 if($Install.ExitCode -ne 0) {throw 'Candidate silent installation failed'}
 try {
+    # Reinstall into the same per-user location to exercise the upgrade path.
+    $Upgrade=Start-Process -FilePath $Installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=`"$Target`"") -Wait -PassThru
+    if($Upgrade.ExitCode -ne 0) {throw 'Candidate silent upgrade failed'}
     & (Join-Path $Target 'AXE-Voice.exe') --native-ui-smoke
     if($LASTEXITCODE -ne 0) {throw 'Installed candidate GUI smoke failed'}
-    foreach($File in (Get-ChildItem $Stage -File)) {
-        $Installed=Join-Path $Target $File.Name
+    foreach($File in (Get-ChildItem $Stage -Recurse -File)) {
+        $Installed=Join-Path $Target $File.FullName.Substring($Stage.Length+1)
         if((Get-FileHash $File.FullName).Hash -ne (Get-FileHash $Installed).Hash) {throw "Installed file differs: $($File.Name)"}
     }
 } finally {
     $Uninstall=Start-Process -FilePath (Join-Path $Target 'unins000.exe') -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -Wait -PassThru
     if($Uninstall.ExitCode -ne 0) {throw 'Candidate silent uninstall failed'}
 }
-if(Test-Path (Join-Path $Target 'AXE-Voice.exe')) {throw 'Candidate executable remained after uninstall'}
+foreach($File in (Get-ChildItem $Stage -Recurse -File)) {
+    $Installed=Join-Path $Target $File.FullName.Substring($Stage.Length+1)
+    if(Test-Path $Installed) {throw "Candidate file remained after uninstall: $($File.Name)"}
+}
 Get-FileHash $Installer -Algorithm SHA256 | Format-List

@@ -120,6 +120,11 @@ if ($TlsMedia) {
 # The ABI executables are build-only. Also execute the local libre reactor;
 # it creates no Baresip UA, account, SIP registration or media session.
 Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_libre_reactor_smoke.exe') @()
+# Bind packaging to the exact GUI binary that passed the smoke above.
+$ProductCache = Get-Content (Join-Path $ProductBuild 'CMakeCache.txt') -Raw
+$ProductVersion = [regex]::Match($ProductCache, '(?m)^CMAKE_PROJECT_VERSION:STATIC=([^\r\n]+)\r?$').Groups[1].Value
+if (!$ProductVersion) { throw 'Product version missing from CMake cache' }
+$ProductHash = if ($TlsMedia) { Get-Hash (Join-Path $ProductBuild 'Release/AXE-Voice.exe') } else { $null }
 $Licenses = Join-Path $Prefix 'licenses'
 New-Item -ItemType Directory -Force $Licenses | Out-Null
 Copy-Item (Join-Path $Re 'LICENSE') (Join-Path $Licenses 'libre-LICENSE.txt')
@@ -129,7 +134,7 @@ $Files = @{}
 Get-ChildItem $Prefix -Recurse -File | Where-Object { $_.Extension -in @('.h','.lib','.dll') } | ForEach-Object {
     $Files[$_.FullName.Substring($Prefix.Length+1).Replace('\','/')] = Get-Hash $_.FullName
 }
-@{ profile="MSVC x64 $Flavor candidate only"; tls=[bool]$TlsMedia; audio_modules=@($Modules -split ';' | Where-Object { $_ }); gui_native_sdk=$(if ($TlsMedia) { 'ON/native candidate' } else { 'OFF/not linked' });
+@{ product_version=$ProductVersion; product_sha256=$ProductHash; profile="MSVC x64 $Flavor candidate only"; tls=[bool]$TlsMedia; audio_modules=@($Modules -split ';' | Where-Object { $_ }); gui_native_sdk=$(if ($TlsMedia) { 'ON/native candidate' } else { 'OFF/not linked' });
    baresip_commit=$BaresipCommit; libre_commit=$ReCommit; version='4.12.0';
    baresip_header_sha256=$HeaderHash; baresip_library_sha256=$LibraryHash;
    libre_header_sha256=$ReHeaderHash; libre_library_sha256=$ReLibraryHash;
