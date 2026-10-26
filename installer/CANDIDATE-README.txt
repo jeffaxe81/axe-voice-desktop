@@ -1,4 +1,4 @@
-AXE Voice Native Candidate 0.57.0
+AXE Voice Native Candidate 0.57.1
 
 This is a validation build, not a production-approved release.
 Enter server, extension, port and session password in Settings, then Register.

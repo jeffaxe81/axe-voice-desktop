@@ -19,7 +19,7 @@ bool IncomingRingtonePlayer::synchronize(const IncomingRingtoneRequest& input){
  state_={next,next.active()?TonePreviewState::Playing:TonePreviewState::Idle};
  if(next.active() && !worker_.joinable()){
   try{worker_=std::thread([this]{run();});}
-  catch(...){state_.result=TonePreviewState::Failed;return false;}
+  catch(...){state_={{},TonePreviewState::Failed};return false;}
  }
  changed_.notify_all();return !invalid;
 }

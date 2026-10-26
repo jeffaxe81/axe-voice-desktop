@@ -1,4 +1,4 @@
-# Release candidata nativa0.57 — checklist atual
+# Release candidata nativa0.57.1 — checklist atual
 
 ## Implementações
 - [x] Motor Baresip/libre e OpenSSL fixados, registro/callbacks e comandos chamar/atender/encerrar no candidato.
@@ -18,6 +18,8 @@ Os testes Windows/SDK/instalador são exigidos no commit final antes de merge. C
 - [x] COPIAR STATUS / Ctrl+Shift+D: relatório local de indicadores sem dados da conta, com cópia Unicode e tratamento de falhas (0.56).
 
 - [x] DTMF via SIP INFO com modo explícito, validação da chamada e recusa visível de fila ocupada (0.57).
+
+- [x] Recuperação após falha de criação do toque, foco de botões com rolagem e pacote vinculado ao executável testado (0.57.1).
 
 ## Homologação externa pendente
 
