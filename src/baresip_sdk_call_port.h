@@ -3,6 +3,7 @@
 #include "sip_command_executor.h"
 #include "native_call_media.h"
 #include "native_transfer.h"
+#include "native_dtmf.h"
 #include <cerrno>
 #include <cstdint>
 #include <string>
@@ -94,6 +95,18 @@ public:
         // Return errors to caller; readback is not remote SIP confirmation.
         if(call_is_onhold(owned)==desired)return 0;
         return call_hold(owned,desired);
+    }
+
+    int send_dtmf_info(std::uint64_t token,char key){
+        if(!valid_native_dtmf_key(static_cast<unsigned char>(key)))return EINVAL;
+        auto* owned=resolve(token);
+        if(!owned || !adapter_.call_established_ || adapter_.hangup_sent_ ||
+           adapter_.transfer_attempted_ || call_is_onhold(owned))return EINVAL;
+        auto* account=call_account(owned);
+        if(!account || account_dtmfmode(account)!=DTMFMODE_SIP_INFO)return ENOTSUP;
+        // Pinned SDK sends one INFO with Duration=250. No RTP key release.
+        // Reentrant callbacks may close/free the call; do not use it afterwards.
+        return call_send_digit(owned,key);
     }
 
     int transfer(std::uint64_t token,const std::string& uri){

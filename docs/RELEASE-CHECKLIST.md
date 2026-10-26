@@ -1,4 +1,4 @@
-# Release candidata nativa0.56 — checklist atual
+# Release candidata nativa0.57 — checklist atual
 
 ## Implementações
 - [x] Motor Baresip/libre e OpenSSL fixados, registro/callbacks e comandos chamar/atender/encerrar no candidato.
@@ -17,6 +17,8 @@ Os testes Windows/SDK/instalador são exigidos no commit final antes de merge. C
 
 - [x] COPIAR STATUS / Ctrl+Shift+D: relatório local de indicadores sem dados da conta, com cópia Unicode e tratamento de falhas (0.56).
 
+- [x] DTMF via SIP INFO com modo explícito, validação da chamada e recusa visível de fila ocupada (0.57).
+
 ## Homologação externa pendente
 
 **Mantida pendente por solicitação do usuário em 25/10/2026.** O desenvolvimento continua; nenhum item de central/headset está aprovado por essa decisão.
@@ -27,6 +29,7 @@ Os testes Windows/SDK/instalador são exigidos no commit final antes de merge. C
 - [ ] Confirmar audibilidade do toque, parada ao atender/recusar e desconexão/reconexão da saída de toque no Windows físico.
 - [ ] Confirmar voz nos dois sentidos e headset escolhido; desconexão/reconexão física.
 - [ ] Confirmar silêncio do microfone em mudo e espera/retomada aceitas pela central.
+- [ ] Confirmar recebimento SIP INFO/DTMF e navegação da URA na central.
 - [ ] Confirmar REFER/NOTIFY, destino final e áudio após transferência direta na central.
 - [ ] Confirmar política de certificado, transporte, codecs e eventual exigência de SRTP.
 - [ ] Aceitar Windows10/11 físicos e distribuição assinada antes de produção.

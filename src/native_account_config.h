@@ -19,7 +19,7 @@ inline NativeAccountConfig native_account_config(const SipAccount& a,const std::
     if(a.use_tls && (trust.empty() || trust.size()>240 || trust.find('"')!=std::string::npos || trust.front()=='#')) return {};
     const std::string transport=a.use_tls?"tls":"udp";
     NativeAccountConfig out;
-    out.aor="<sip:"+user+"@"+host+":"+std::to_string(a.port)+";transport="+transport+">;regint=0;audio_codecs=PCMU/8000/1,PCMA/8000/1";
+    out.aor="<sip:"+user+"@"+host+":"+std::to_string(a.port)+";transport="+transport+">;regint=0;dtmfmode=info;audio_codecs=PCMU/8000/1,PCMA/8000/1";
     const auto capture=audio.capture_id.empty()?std::string("default"):native_ascii(audio.capture_id);
     const auto playback=audio.playback_id.empty()?std::string("default"):native_ascii(audio.playback_id);
     out.config="poll_method select\nsip_transports "+transport+"\nsip_verify_server yes\naudio_player wasapi,"+playback+"\naudio_source wasapi,"+capture+"\naudio_alert wasapi,default\ncall_max_calls 1\n";

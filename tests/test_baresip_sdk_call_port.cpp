@@ -79,6 +79,18 @@ extern "C" int call_transfer(call* current,const char* uri){
  return g_transfer_error;
 }
 
+static struct account g_dtmf_account;
+static int g_digits=0,g_digit_error=0;
+static bool g_digit_close=false;
+static char g_last_digit=0;
+extern "C" struct account* call_account(const call* current){return current?&g_dtmf_account:nullptr;}
+extern "C" enum dtmfmode account_dtmfmode(const struct account* current){return current?current->test_dtmfmode:DTMFMODE_RTP_EVENT;}
+extern "C" int call_send_digit(call* current,char key){
+ if(!current)return 22;++g_digits;g_last_digit=key;
+ if(g_digit_close)emit(BEVENT_CALL_CLOSED,current->owner,current);
+ return g_digit_error;
+}
+
 int main() {
     using namespace axv;
     BaresipEventMailbox mailbox;
@@ -88,6 +100,7 @@ int main() {
     ua account{1};
     call first{&account, 11}, second{&account, 22}, third{&account, 33};
 
+    if(prestart.send_dtmf_info(1,'5')==0 || g_digits)return 50;
     if(prestart.set_muted(1,true) || prestart.set_held(1,true)==0 || prestart.media_state(1).available || prestart.transfer(1,"sip:2@example.org")==0)return 29;
     if (prestart.originate(L"sip:alice@example.org") ||
         prestart.answer(1) || prestart.hangup(1)) return 1;
@@ -113,7 +126,7 @@ int main() {
     if (outgoing.size != 1 ||
         outgoing.events[0].kind != BaresipEventKind::CallOutgoing ||
         outgoing.events[0].call_id != 1) return 9;
-    if(port.set_muted(1,true) || port.set_held(1,true)==0 || port.transfer(1,"sip:2@example.org")==0)return 39;
+    if(port.send_dtmf_info(1,'5')==0 || port.set_muted(1,true) || port.set_held(1,true)==0 || port.transfer(1,"sip:2@example.org")==0)return 39;
     if (port.answer(1) || port.hangup(0) || port.hangup(2) ||
         g_answers || g_hangups) return 10;
     if (!port.hangup(1) || g_hangups != 1 || port.hangup(1)) return 11;
@@ -131,6 +144,15 @@ int main() {
     if (established.size != 1 ||
         established.events[0].kind != BaresipEventKind::CallEstablished ||
         established.events[0].call_id != 2) return 16;
+    if(port.send_dtmf_info(1,'5')==0 || port.send_dtmf_info(2,'A')==0 || g_digits)return 51;
+    if(port.send_dtmf_info(2,'5') || port.send_dtmf_info(2,'5') || g_digits!=2 || g_last_digit!='5')return 52;
+    g_dtmf_account.test_dtmfmode=DTMFMODE_RTP_EVENT;
+    if(port.send_dtmf_info(2,'#')==0 || g_digits!=2)return 53;
+    g_dtmf_account.test_dtmfmode=DTMFMODE_AUTO;
+    if(port.send_dtmf_info(2,'#')==0 || g_digits!=2)return 58;
+    g_dtmf_account.test_dtmfmode=DTMFMODE_SIP_INFO;g_digit_error=5;
+    if(port.send_dtmf_info(2,'#')!=5 || !port.media_state(2).available)return 54;
+    g_digit_error=0;
     auto media=port.media_state(2);
     if(!media.available || media.muted || media.local_hold) return 30;
     if(port.set_muted(1,true) || port.set_held(1,true)==0)return 31;
@@ -139,16 +161,18 @@ int main() {
     if(!port.set_muted(2,false) || port.media_state(2).muted || g_mutes!=2)return 34;
     if(port.set_held(2,true) || !port.media_state(2).local_hold)return 35;
     if(port.set_held(2,true) || g_holds!=1)return 36;
+    if(port.send_dtmf_info(2,'*')==0 || g_digits!=3)return 55;
     g_hold_error=5;
     if(port.set_held(2,false)!=5 || port.media_state(2).local_hold)return 37;
     g_hold_error=0;
     std::atomic<bool> invalid_media_access{false};
     std::thread media_outsider([&]{
-        if(port.media_state(2).available || port.set_muted(2,true) || port.set_held(2,true)==0 || port.transfer(2,"sip:2@example.org")==0)invalid_media_access=true;
+        if(port.send_dtmf_info(2,'5')==0 || port.media_state(2).available || port.set_muted(2,true) || port.set_held(2,true)==0 || port.transfer(2,"sip:2@example.org")==0)invalid_media_access=true;
     });media_outsider.join();
     if(invalid_media_access || g_mutes!=2 || g_holds!=2)return 38;
     if(port.transfer(2,"sip:bad%0d@example.org")==0 || port.transfer(1,"sip:2@example.org")==0 || g_transfers)return 40;
     if(port.transfer(2,"sip:2@example.org") || g_transfers!=1 || g_last_transfer!="sip:2@example.org")return 41;
+    if(port.send_dtmf_info(2,'5')==0 || g_digits!=3)return 56;
     if(port.media_state(2).transfer!=NativeTransferState::Submitted || port.transfer(2,"sip:3@example.org")==0 || g_transfers!=1)return 42;
     call foreign{&account,99};emit(BEVENT_CALL_TRANSFER_FAILED,&account,&foreign);
     if(port.media_state(2).transfer!=NativeTransferState::Submitted)return 43;
@@ -197,9 +221,15 @@ int main() {
     if(fresh.transfer(2,"sips:2@example.org") || fresh.media_state(2).available)return 46;
     g_transfer_close=false;g_transfer_replacement=nullptr;mailbox.drain();
     if(!fresh.media_state(3).available || fresh.media_state(3).transfer!=NativeTransferState::None)return 47;
+    g_digit_close=true;
+    if(fresh.send_dtmf_info(3,'0') || fresh.media_state(3).available)return 57;
+    g_digit_close=false;
+    call sixth{&account,66};
+    emit(BEVENT_CALL_INCOMING,&account,&sixth);emit(BEVENT_CALL_ESTABLISHED,&account,&sixth);
+    mailbox.drain();
     g_transfer_error=5;
-    if(fresh.transfer(3,"sip:2@example.org")!=5 || fresh.media_state(3).transfer!=NativeTransferState::Failed)return 48;
-    if(fresh.transfer(3,"sip:3@example.org")==0 || g_transfers!=3 || !fresh.hangup(3))return 49;
+    if(fresh.transfer(4,"sip:2@example.org")!=5 || fresh.media_state(4).transfer!=NativeTransferState::Failed)return 48;
+    if(fresh.transfer(4,"sip:3@example.org")==0 || g_transfers!=3 || !fresh.hangup(4))return 49;
     adapter.stop();
     if (g_handler || g_context) return 27;
     return 0;

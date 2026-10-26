@@ -1,0 +1,9 @@
+# Candidate0.57 — DTMF via SIP INFO
+
+Continue development while Dígitro/headset acceptance remains pending. Add explicit DTMF mode to the native dial pad for IVR interactions. Only0–9, * and # are accepted, only on a verified established displayed call, with local hold and attempted transfer blocking submission. Pressing DTMF arms the displayed call; digits on the on-screen keypad send one command instead of editing the destination. Typing in the destination remains editing for transfer. Mode resets on call/session replacement, hold, transfer or stop. Default SDK-free UI remains unchanged.
+
+Approaches: RTP events require timed release and negotiated-media validation; SIP INFO emits a self-contained SDK request with pinned250ms duration, avoiding a stuck event. Implement explicit SIP INFO only, not an automatic fallback. Configure dtmfmode=info and enforce the selected native account mode at the SDK port. Compatibility with the remote PBX remains pending. No audible local tone, digit history or digit-bearing diagnostics.
+
+Use the serialized native owner queue and displayed media identity. A full queue rejects a press visibly; no unbounded queue or replay. Repeated identical accepted commands are allowed because repeated digits are meaningful. SDK errors preserve the call and show a fixed diagnostic. Successful SDK submission is not confirmation of IVR receipt or asynchronous INFO acceptance. Fresh SDK ownership/state is checked at dispatch; never touch a native call pointer after call_send_digit.
+
+Tests cover keys, proof and identity, hold/transfer, repeats, wrong-thread/owner SDK access, non-INFO mode, immediate errors and reentrant call closure. Real pinned SDK parsing/linkage and existing signaling/installer fixtures remain required; actual INFO-on-dialog receipt and IVR behavior remain external acceptance. Package0.57.0.

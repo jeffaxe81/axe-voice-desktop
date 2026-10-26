@@ -27,6 +27,7 @@
 #include "incoming_ringtone_policy.h"
 #ifdef AXV_ENABLE_NATIVE_SIP
 #include "incoming_ringtone_player.h"
+#include "native_dtmf.h"
 #endif
 #include "windows_process.h"
 #include "shutdown_policy.h"
@@ -83,6 +84,7 @@ constexpr int kShowAudio = 2006;
 constexpr int kHelpButton = 2007;
 constexpr int kReadinessButton = 2008;
 constexpr int kCopyStatusButton = 2009;
+constexpr int kDtmfButton = 2010;
 constexpr int kInputAudioCombo = 2401;
 constexpr int kOutputAudioCombo = 2402;
 constexpr int kRingtoneAudioCombo = 2403;
@@ -91,8 +93,13 @@ constexpr int kFeedbackLabel = 2501;
 constexpr int kRuntimeStatusLabel = 2502;
 constexpr int kWindowWidth = 438;
 unsigned g_dpi = axv::kBaseDpi;
+#ifdef AXV_ENABLE_NATIVE_SIP
+constexpr int kFullHeight = 886;
+constexpr int kFullScrollContentEnd = 848;
+#else
 constexpr int kFullHeight = 842;
 constexpr int kFullScrollContentEnd = 804;
+#endif
 constexpr int kMiniScrollContentEnd = 340;
 int g_scroll_offset = 0;
 int g_scroll_max = 0;
@@ -135,6 +142,7 @@ axv::TonePreviewPlayer g_tone_preview;
 axv::TonePreviewState g_last_tone_state = axv::TonePreviewState::Idle;
 #ifdef AXV_ENABLE_NATIVE_SIP
 axv::IncomingRingtonePolicy g_ring_policy;
+axv::NativeDtmfMode g_dtmf_mode;
 axv::IncomingRingtonePlayer g_ring_player{[](const std::wstring& id,const std::atomic<bool>& cancel){return axv::play_windows_tone_on_endpoint(id,&cancel,true);}};
 axv::SipRuntimeObservation g_displayed_sip;
 bool g_ring_error_visible=false;
@@ -770,6 +778,10 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     const auto media=native_engine().media_state();
     const bool controls=axv::native_media_controls_current(media,observed);
     g_displayed_media=controls?media:axv::NativeCallMediaState{};
+    g_dtmf_mode.synchronize(media,observed);
+    const HWND dtmf=GetDlgItem(GetParent(g_runtime_banner),kDtmfButton);
+    EnableWindow(dtmf,axv::native_dtmf_controls_current(media,observed));
+    SetWindowTextW(dtmf,g_dtmf_mode.armed()?L"DTMF ON (SIP INFO)":L"DTMF OFF (SIP INFO)");
     const HWND mute=GetDlgItem(GetParent(g_runtime_banner),kMuteFuture);
     const HWND hold=GetDlgItem(GetParent(g_runtime_banner),kHoldFuture);
     EnableWindow(mute,controls);EnableWindow(hold,controls);
@@ -864,6 +876,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
 #ifdef AXV_ENABLE_NATIVE_SIP
         make_button(window,L"CHAMAR",kCallButton,39,651,170,51,0);
         make_button(window,L"TRANSFERIR",kTransferFuture,219,651,170,51,0);
+        make_button(window,L"DTMF OFF (SIP INFO)",kDtmfButton,39,750,350,36,0);
+        EnableWindow(GetDlgItem(window,kDtmfButton),FALSE);
 #else
         make_button(window, L"CHAMAR  •  SIP INDISPONÍVEL", kCallButton,
                     39, 651, 350, 51, 0);
@@ -951,8 +965,13 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_button(window, L"PRONTIDAO (F2)",
                     kReadinessButton, 39, 690, 169, 42, 2);
         make_button(window, L"COPIAR STATUS",kCopyStatusButton,219,690,170,42,2);
+#ifdef AXV_ENABLE_NATIVE_SIP
+        constexpr int feedback_y=806;
+#else
+        constexpr int feedback_y=762;
+#endif
         g_status = make_label(window, L"Digite um ramal ou endereço SIP.",
-                              24, 762, 390, 30, -1, g_font_small, kFeedbackLabel);
+                              24, feedback_y, 390, 30, -1, g_font_small, kFeedbackLabel);
         refresh_destination_feedback();
 
         EnableWindow(g_input_audio_combo, FALSE);
@@ -1076,7 +1095,26 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 save_ui_preferences();
                 return 0;
             }
+#ifdef AXV_ENABLE_NATIVE_SIP
+            if(control==kDtmfButton){
+                const auto call=native_engine().observation();
+                if(!g_dtmf_mode.toggle(g_displayed_media,call))
+                    SetWindowTextW(g_status,L"DTMF indisponivel: chamada exibida deve estar ativa, sem espera ou transferencia.");
+                else SetWindowTextW(g_status,g_dtmf_mode.armed()?L"DTMF via SIP INFO: use o teclado na tela. Aceite da central pendente.":L"DTMF desligado; teclado edita o destino.");
+                refresh_runtime_banner(g_baresip_process.poll());return 0;
+            }
+#endif
             if (control >= kDigitStart && control < kDigitStart + 12) {
+#ifdef AXV_ENABLE_NATIVE_SIP
+                if(g_dtmf_mode.armed()){
+                    const auto key=axv::dialpad_keys()[control-kDigitStart];
+                    const auto expected=g_displayed_media;
+                    const auto call=native_engine().observation();
+                    const bool accepted=g_dtmf_mode.active(expected,call) && native_engine().send_dtmf(key,expected);
+                    SetWindowTextW(g_status,accepted?L"Pedido DTMF via INFO enfileirado; recebimento pela central nao confirmado.":L"DTMF recusado: chamada mudou, esta em espera/transferencia ou comando ocupado. Tente novamente.");
+                    return 0;
+                }
+#endif
                 edit_number(window, axv::dialpad_keys()[control - kDigitStart]);
                 return 0;
             }
@@ -1580,7 +1618,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0 || std::wcscmp(command_line,L"--native-ui-smoke")==0);
 #ifdef AXV_ENABLE_NATIVE_SIP
-    const wchar_t* title=L"AXE Voice | Candidato nativo 0.56";
+    const wchar_t* title=L"AXE Voice | Candidato nativo 0.57";
 #else
     const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
 #endif
@@ -1599,6 +1637,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             !IsWindowEnabled(GetDlgItem(window,kMuteFuture)) && !IsWindowEnabled(GetDlgItem(window,kHoldFuture)) &&
             (GetWindowLongPtrW(g_password,GWL_STYLE)&ES_PASSWORD) &&
             !IsWindowEnabled(GetDlgItem(window,kCallButton));
+        ok=ok && GetDlgItem(window,kDtmfButton) && !IsWindowEnabled(GetDlgItem(window,kDtmfButton));
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kDtmfButton,BN_CLICKED),0);
+        ok=ok && !g_dtmf_mode.armed();
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCallButton,BN_CLICKED),0);
         ok=ok && native_engine().status()==axv::SipStatus::Disconnected;
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kMuteFuture,BN_CLICKED),0);

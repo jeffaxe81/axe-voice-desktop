@@ -1,8 +1,9 @@
 #pragma once
 #include "sip_event_projection.h"
+#include "native_dtmf.h"
 #include <string>
 namespace axv {
-enum class NativeCallAction {None,Dial,Answer,Hangup,SetMute,SetHold,Transfer};
+enum class NativeCallAction {None,Dial,Answer,Hangup,SetMute,SetHold,Transfer,Dtmf};
 struct NativeCallCommand {
  NativeCallAction action=NativeCallAction::None;
  std::uint64_t session=0,call_id=0;
@@ -14,6 +15,7 @@ inline bool native_command_is_current(const NativeCallCommand& c,const SipRuntim
  switch(c.action){
  case NativeCallAction::Dial:return s.sip==SipStatus::Registered && !s.call_id;
  case NativeCallAction::Answer:return s.sip==SipStatus::Ringing && s.call_id;
+ case NativeCallAction::Dtmf:return s.sip==SipStatus::InCall && s.call_id && c.destination.size()==1 && valid_native_dtmf_key(static_cast<unsigned char>(c.destination[0]));
  case NativeCallAction::Transfer:
  case NativeCallAction::SetMute:
  case NativeCallAction::SetHold:return s.sip==SipStatus::InCall && s.call_id;
