@@ -39,6 +39,8 @@
 #include "account_form_feedback.h"
 #include "ui_help.h"
 #include "call_readiness.h"
+#include "diagnostic_export.h"
+#include "diagnostic_clipboard_win32.h"
 #include "ui_contrast_policy.h"
 #include "ui_dpi_policy.h"
 #include "ui_viewport_policy.h"
@@ -80,6 +82,7 @@ constexpr int kCompact = 2005;
 constexpr int kShowAudio = 2006;
 constexpr int kHelpButton = 2007;
 constexpr int kReadinessButton = 2008;
+constexpr int kCopyStatusButton = 2009;
 constexpr int kInputAudioCombo = 2401;
 constexpr int kOutputAudioCombo = 2402;
 constexpr int kRingtoneAudioCombo = 2403;
@@ -161,6 +164,7 @@ bool g_compact = false;
 bool g_smoke_mode = false;
 bool g_help_requested_smoke = false;
 bool g_readiness_requested_smoke = false;
+bool g_copy_requested_smoke = false;
 bool g_destination_invalid = false;
 bool g_account_invalid_server = false;
 bool g_account_invalid_user = false;
@@ -783,7 +787,7 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
 
 #endif
 }
-std::wstring make_readiness_report() {
+axv::CallReadiness collect_call_readiness() {
     wchar_t number[129]{}, server[129]{}, user[129]{}, port[129]{};
     GetWindowTextW(g_number, number, 129);
     GetWindowTextW(g_server, server, 129);
@@ -803,8 +807,9 @@ std::wstring make_readiness_report() {
     // A device inventory is not an RTP/SRTP or headset media test.
     result.verified_media = false;
     result.dial_control_available = axv::authorize_dial(snapshot, snapshot.session, g_sip_selection, number).allowed();
-    return axv::format_call_readiness(result);
+    return result;
 }
+std::wstring make_readiness_report(){return axv::format_call_readiness(collect_call_readiness());}
 void begin_shutdown(HWND window) {
     g_sip_session_guard.revoke(axv::RuntimeProcess::Stopping, g_native_event_mailbox, g_sip_projection);
     const bool queued = g_baresip_process.request_quit_async();
@@ -943,8 +948,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
 #endif
         g_headset_status = make_label(window, L"Abra AUDIO para consultar o Windows.",
                                      39, 613, 350, 59, 2, g_font_small);
-        make_button(window, L"PRONTIDAO DE CHAMADAS (F2)",
-                    kReadinessButton, 39, 690, 350, 42, 2);
+        make_button(window, L"PRONTIDAO (F2)",
+                    kReadinessButton, 39, 690, 169, 42, 2);
+        make_button(window, L"COPIAR STATUS",kCopyStatusButton,219,690,170,42,2);
         g_status = make_label(window, L"Digite um ramal ou endereço SIP.",
                               24, 762, 390, 30, -1, g_font_small, kFeedbackLabel);
         refresh_destination_feedback();
@@ -989,6 +995,20 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         if (HIWORD(wparam) == BN_CLICKED || (HIWORD(wparam) == 1 && lparam == 0)) {
             const int control = LOWORD(wparam);
             if (control == kShowDial || control == kFocusNumber) { show_page(window, 0); return 0; }
+            if(control==kCopyStatusButton){
+                const auto status=collect_call_readiness();
+                if(g_smoke_mode){
+                    const auto report=axv::format_diagnostic_export(status);
+                    g_copy_requested_smoke=report.find(L"\r\n")!=report.npos &&
+                        report.find(L"Botao Chamar: indisponivel na interface")!=report.npos;
+                }else{
+                    const bool copied=axv::copy_call_diagnostic(window,status);
+                    SetWindowTextW(g_status,copied?
+                        L"Status copiado, sem dados da conta. Permanece na area de transferencia.":
+                        L"Nao foi possivel copiar. Tente novamente; a area de transferencia pode estar ocupada.");
+                }
+                return 0;
+            }
             if (control == kReadinessButton) {
                 refresh_runtime_banner(g_baresip_process.poll());
                 const std::wstring report = make_readiness_report();
@@ -1560,7 +1580,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0 || std::wcscmp(command_line,L"--native-ui-smoke")==0);
 #ifdef AXV_ENABLE_NATIVE_SIP
-    const wchar_t* title=L"AXE Voice | Candidato nativo 0.55.1";
+    const wchar_t* title=L"AXE Voice | Candidato nativo 0.56";
 #else
     const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
 #endif
@@ -1615,6 +1635,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         // A missing CA must reject TLS before any registration starts.
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kReadinessButton,BN_CLICKED),0);
         ok=ok && g_readiness_requested_smoke && !IsWindowEnabled(GetDlgItem(window,kCallButton));
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCopyStatusButton,BN_CLICKED),0);
+        ok=ok && g_copy_requested_smoke && GetDlgItem(window,kCopyStatusButton);
+        g_copy_requested_smoke=false;
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCopyStatusButton,1),0);
+        ok=ok && g_copy_requested_smoke && native_engine().status()==axv::SipStatus::Disconnected;
         axv::SipAccount a{L"127.0.0.1",L"1001",5061,true};
         ok=ok && !native_engine().configure_authenticated(a,L"","fixture-only");
         DestroyWindow(window); return ok?0:21;
@@ -1733,6 +1758,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             GetDlgItem(window, kReadinessButton) &&
             (GetWindowLongW(GetDlgItem(window, kReadinessButton), GWL_STYLE) & WS_VISIBLE) &&
             !IsWindowEnabled(GetDlgItem(window, kCallButton));
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCopyStatusButton,BN_CLICKED),0);
+        const bool copy_button_ok=g_copy_requested_smoke && GetDlgItem(window,kCopyStatusButton) &&
+            (GetWindowLongW(GetDlgItem(window,kCopyStatusButton),GWL_STYLE)&WS_VISIBLE);
+        g_copy_requested_smoke=false;
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCopyStatusButton,1),0);
+        ok=ok && copy_button_ok && g_copy_requested_smoke && !IsWindowEnabled(GetDlgItem(window,kCallButton));
         // Test the palette integration without modifying the host's accessibility settings.
         const bool original_contrast = g_high_contrast;
         g_high_contrast = true;
@@ -1833,7 +1864,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         {FVIRTKEY | FCONTROL, L'R', kRefreshHeadsetsButton},
         {FVIRTKEY, VK_ESCAPE, kShowDial},
         {FVIRTKEY, VK_F1, kHelpButton},
-        {FVIRTKEY, VK_F2, kReadinessButton}
+        {FVIRTKEY, VK_F2, kReadinessButton},
+        {FVIRTKEY | FCONTROL | FSHIFT, L'D', kCopyStatusButton}
     };
     HACCEL accelerator = CreateAcceleratorTableW(
         const_cast<ACCEL*>(shortcuts), static_cast<int>(sizeof(shortcuts)/sizeof(shortcuts[0])));

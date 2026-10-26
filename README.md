@@ -4,7 +4,7 @@ Integração solicitada pelo titular. A main recebe o código dos PRs existentes
 
 # AXE Voice Desktop
 
-> **Status de integração — 24/10/2026:** esta branch `main` preserva a base histórica MicroSIP/PJSIP. O desenvolvimento ativo do protótipo Win32 baseado em Baresip ocorre em `feature/axevoice-v073-sip-activation-gate` (última versão inspecionada: 0.154). Não há aceite de compilação, testes, registro SIP real, TLS/SRTP, chamada bidirecional ou instalador de produção para a nova arquitetura. Veja [critérios de promoção](docs/AXEVOICE-RELEASE-PROMOTION.md) e a [triagem das 13 PRs históricas (10 ainda em rascunho)](docs/development/draft-archive/README.md). Esta atualização é documental e não habilita execução ou telefonia.
+> **Status de integração — 25/10/2026:** a `main` inclui o candidato Win32/Baresip e instalador nativo. A build padrão continua sem SDK; use o pacote nativo candidato para validar telefonia. As verificações automatizadas de Windows/SDK/instalador não substituem o aceite na central Dígitro e com headset físico, mantido pendente. Consulte o [checklist atual](docs/RELEASE-CHECKLIST.md), o [roadmap](docs/ROADMAP.md) e os [critérios de promoção](docs/AXEVOICE-RELEASE-PROMOTION.md).
 
 Projeto para pesquisa, compilação, customização e evolução controlada de um softphone SIP desktop baseado no MicroSIP/PJSIP.
 

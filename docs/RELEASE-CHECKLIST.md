@@ -1,4 +1,4 @@
-# Release candidata nativa0.55.1 — checklist atual
+# Release candidata nativa0.56 — checklist atual
 
 ## Implementações
 - [x] Motor Baresip/libre e OpenSSL fixados, registro/callbacks e comandos chamar/atender/encerrar no candidato.
@@ -15,7 +15,13 @@ Os testes Windows/SDK/instalador são exigidos no commit final antes de merge. C
 
 - [x] Toque de chamada recebida verificada, saída independente, cancelamento e ações vinculadas à chamada exibida (0.55).
 
+- [x] COPIAR STATUS / Ctrl+Shift+D: relatório local de indicadores sem dados da conta, com cópia Unicode e tratamento de falhas (0.56).
+
 ## Homologação externa pendente
+
+**Mantida pendente por solicitação do usuário em 25/10/2026.** O desenvolvimento continua; nenhum item de central/headset está aprovado por essa decisão.
+
+- [ ] Validar copiar/colar, atalho e leitor de tela em Windows físico.
 - [ ] Registrar a conta descartável na central Dígitro identificada.
 - [ ] Confirmar chamadas originadas e recebidas entre dois endpoints reais.
 - [ ] Confirmar audibilidade do toque, parada ao atender/recusar e desconexão/reconexão da saída de toque no Windows físico.
