@@ -18,7 +18,11 @@ MARKERS = {
 def check_versions(root):
     versions = {}
     for name, pattern in MARKERS.items():
-        matches = re.findall(pattern, (root / name).read_text(encoding='utf-8'), re.MULTILINE)
+        try:
+            source = (root / name).read_text(encoding='utf-8')
+        except (OSError, UnicodeError) as error:
+            raise ValueError(f'{name}: cannot read release metadata') from error
+        matches = re.findall(pattern, source, re.MULTILINE)
         if len(matches) != 1:
             raise ValueError(f'{name}: expected exactly one release version marker, found {len(matches)}')
         version = matches[0]
