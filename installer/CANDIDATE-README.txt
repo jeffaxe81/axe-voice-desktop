@@ -1,4 +1,4 @@
-AXE Voice Native Candidate 0.57.1
+AXE Voice Native Candidate 0.58.0
 
 This is a validation build, not a production-approved release.
 Enter server, extension, port and session password in Settings, then Register.
@@ -19,3 +19,5 @@ F2 readiness separates current dial-button availability from physical audio acce
 On Audio, COPIAR STATUS or Ctrl+Shift+D copies only local boolean readiness indicators as Unicode text. No account, destination, password or device ID is included. No network or file export occurs. Clipboard contents remain until replaced; Windows history/sync follows your system settings. Physical PBX/headset acceptance remains pending.
 
 During an established call, enable DTMF ON (SIP INFO) and use the on-screen keypad for0-9, * and #. The profile uses SIP INFO only (250 ms per SDK request); RTP-event DTMF and automatic fallback are not provided. Hold/transfer or call replacement clears DTMF mode. A busy command queue rejects the press visibly. Submission does not confirm remote receipt; actual PBX/IVR behavior remains pending. No digit history is stored.
+
+The native duration label measures local time from the first verified established-call observation, including hold while the call remains InCall. Ringing/outgoing time is excluded. Call replacement, stop or lost proof resets the timer. Elapsed time does not certify audio or remote acceptance.

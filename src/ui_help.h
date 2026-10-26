@@ -28,6 +28,8 @@ inline constexpr const wchar_t* frontend_help_text() {
         L"Para receber, use ATENDER; para terminar, ENCERRAR.\n"
         L"Em chamada, MUDO/MIC MUDO controla o microfone no SDK.\n"
         L"ESPERA/RETOMAR solicita o estado local; confirme na central.\n"
+        L"DURACAO: tempo local desde a primeira observacao de chamada estabelecida.\n"
+        L"Inclui espera; nao mede qualidade nem audio.\n"
         L"Em chamada, DTMF ON (SIP INFO) envia0-9, * e # pelo teclado na tela.\n"
         L"DTMF OFF volta a editar destino; digitar no campo sempre edita o destino.\n"
         L"DTMF exige chamada sem espera/transferencia; aceite da central pendente.\n"
