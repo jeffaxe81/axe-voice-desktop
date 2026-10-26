@@ -96,9 +96,11 @@ unsigned g_dpi = axv::kBaseDpi;
 #ifdef AXV_ENABLE_NATIVE_SIP
 constexpr int kFullHeight = 886;
 constexpr int kFullScrollContentEnd = 848;
+constexpr int kFullFeedbackY = 806;
 #else
 constexpr int kFullHeight = 842;
 constexpr int kFullScrollContentEnd = 804;
+constexpr int kFullFeedbackY = 762;
 #endif
 constexpr int kMiniScrollContentEnd = 340;
 int g_scroll_offset = 0;
@@ -510,7 +512,7 @@ void apply_compact_layout(HWND root) {
     if (g_compact && g_page != 0) g_page = 0;
     position_logical(g_number_label,39,g_compact?218:246,320,20);
     position_logical(g_number,39,g_compact?242:272,350,43);
-    position_logical(g_status,24,g_compact?298:762,390,30);
+    position_logical(g_status,24,g_compact?298:kFullFeedbackY,390,30);
     SetWindowTextW(GetDlgItem(root, kCompact), g_compact ? L"MAX" : L"MINI");
     const int desired_height = axv::dpi_pixels(g_compact?kCompactHeight:kFullHeight,g_dpi);
     int fitted_height = desired_height;
@@ -965,13 +967,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_button(window, L"PRONTIDAO (F2)",
                     kReadinessButton, 39, 690, 169, 42, 2);
         make_button(window, L"COPIAR STATUS",kCopyStatusButton,219,690,170,42,2);
-#ifdef AXV_ENABLE_NATIVE_SIP
-        constexpr int feedback_y=806;
-#else
-        constexpr int feedback_y=762;
-#endif
         g_status = make_label(window, L"Digite um ramal ou endereço SIP.",
-                              24, feedback_y, 390, 30, -1, g_font_small, kFeedbackLabel);
+                              24, kFullFeedbackY, 390, 30, -1, g_font_small, kFeedbackLabel);
         refresh_destination_feedback();
 
         EnableWindow(g_input_audio_combo, FALSE);
@@ -1631,6 +1628,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if (!window) return 2;
 #ifdef AXV_ENABLE_NATIVE_SIP
     if(command_line && std::wcscmp(command_line,L"--native-ui-smoke")==0) {
+        if(g_compact){g_compact=false;apply_compact_layout(window);}
         bool ok=g_password && g_ca_file && GetDlgItem(window,kAnswerNative) &&
             GetDlgItem(window,kMuteFuture) && GetDlgItem(window,kHoldFuture) && GetDlgItem(window,kTransferFuture) &&
             !IsWindowEnabled(GetDlgItem(window,kTransferFuture)) &&
@@ -1638,6 +1636,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             (GetWindowLongPtrW(g_password,GWL_STYLE)&ES_PASSWORD) &&
             !IsWindowEnabled(GetDlgItem(window,kCallButton));
         ok=ok && GetDlgItem(window,kDtmfButton) && !IsWindowEnabled(GetDlgItem(window,kDtmfButton));
+        RECT dtmf_bounds{},feedback_bounds{};
+        GetWindowRect(GetDlgItem(window,kDtmfButton),&dtmf_bounds);GetWindowRect(g_status,&feedback_bounds);
+        ok=ok && dtmf_bounds.bottom<=feedback_bounds.top;
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),0);
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),0);
+        GetWindowRect(GetDlgItem(window,kDtmfButton),&dtmf_bounds);GetWindowRect(g_status,&feedback_bounds);
+        ok=ok && !g_compact && dtmf_bounds.bottom<=feedback_bounds.top;
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kDtmfButton,BN_CLICKED),0);
         ok=ok && !g_dtmf_mode.armed();
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCallButton,BN_CLICKED),0);
