@@ -1643,6 +1643,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),0);
         GetWindowRect(GetDlgItem(window,kDtmfButton),&dtmf_bounds);GetWindowRect(g_status,&feedback_bounds);
         ok=ok && !g_compact && dtmf_bounds.bottom<=feedback_bounds.top;
+        SetWindowPos(window,nullptr,0,0,axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(550,g_dpi),SWP_NOMOVE|SWP_NOZORDER);
+        SendMessageW(window,WM_VSCROLL,MAKEWPARAM(SB_BOTTOM,0),0);
+        GetWindowRect(GetDlgItem(window,kDtmfButton),&dtmf_bounds);GetWindowRect(g_status,&feedback_bounds);
+        ok=ok && g_scroll_offset>0 && dtmf_bounds.bottom<=feedback_bounds.top;
+        SendMessageW(window,WM_VSCROLL,MAKEWPARAM(SB_TOP,0),0);
+        GetWindowRect(GetDlgItem(window,kDtmfButton),&dtmf_bounds);GetWindowRect(g_status,&feedback_bounds);
+        ok=ok && g_scroll_offset==0 && dtmf_bounds.bottom<=feedback_bounds.top;
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kDtmfButton,BN_CLICKED),0);
         ok=ok && !g_dtmf_mode.armed();
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCallButton,BN_CLICKED),0);
