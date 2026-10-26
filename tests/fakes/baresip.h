@@ -4,6 +4,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+enum dtmfmode { DTMFMODE_RTP_EVENT=0,DTMFMODE_SIP_INFO,DTMFMODE_AUTO };
+struct account { enum dtmfmode test_dtmfmode=DTMFMODE_SIP_INFO; };
 struct ua { unsigned test_id; };
 struct audio { bool test_muted = false; };
 struct call { struct ua* owner; unsigned test_id; bool test_held = false; struct audio test_audio{}; };
@@ -32,6 +34,9 @@ void audio_mute(struct audio* selected, bool muted);
 bool audio_ismuted(const struct audio* selected);
 int call_hold(struct call* selected, bool held);
 int call_transfer(struct call* selected,const char* destination);
+int call_send_digit(struct call*,char);
+struct account* call_account(const struct call*);
+enum dtmfmode account_dtmfmode(const struct account*);
 bool call_is_onhold(const struct call* selected);
 int ua_alloc(struct ua** selected, const char* aor);
 unsigned ua_destroy(struct ua* selected);

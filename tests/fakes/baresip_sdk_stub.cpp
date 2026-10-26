@@ -33,3 +33,7 @@ extern "C" int call_hold(struct call* selected,bool held){if(!selected)return 22
 extern "C" bool call_is_onhold(const struct call* selected){return selected && selected->test_held;}
 
 extern "C" int call_transfer(struct call*,const char*){return 95;}
+
+extern "C" int call_send_digit(struct call*,char){return 95;}
+extern "C" struct account* call_account(const struct call*){return nullptr;}
+extern "C" enum dtmfmode account_dtmfmode(const struct account*){return DTMFMODE_RTP_EVENT;}

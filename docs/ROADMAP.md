@@ -11,6 +11,7 @@ A main recebeu os sete PRs de laboratório em25/10/2026. Consulte [situação, e
 - [x] 0.55: toque local de chamadas recebidas verificadas, saída independente e cancelamento por chamada. [Escopo e limites](integration/NATIVE-RINGTONE.md).
 - [x] 0.55.1: diagnóstico F2 separa disponibilidade de discagem e homologação física.
 - [x] 0.56: cópia local de diagnóstico sem dados da conta. [Escopo e limites](integration/NATIVE-DIAGNOSTIC-COPY.md).
+- [x] 0.57: modo explícito DTMF via SIP INFO, vinculado à chamada e bloqueado em espera/transferência. [Escopo e limites](integration/NATIVE-DTMF.md).
 - [ ] Homologar registro/chamadas na Dígitro e áudio bidirecional com headset físico.
 - [ ] Validar troca de dispositivos durante chamada antes de permitir roteamento ao vivo.
 - [ ] Implementar SRTP se exigido pela implantação; TLS de SIP não criptografa RTP.
