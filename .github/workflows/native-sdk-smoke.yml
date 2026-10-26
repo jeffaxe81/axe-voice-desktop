@@ -39,6 +39,8 @@ jobs:
             build/native-sdk-deps-${{ matrix.profile }}/
             build/native-sdk-${{ matrix.profile }}/prefix/
           key: msvc2022-sdk-v1-${{ matrix.profile }}-re65555da-bs9cfab81-ssl8cf17aa
+      - name: Verify local TLS fixture handshake deadline
+        run: python tests/test_native_tls_fixture.py
       - name: Build pinned MSVC candidate and run real libre reactor
         shell: pwsh
         run: |

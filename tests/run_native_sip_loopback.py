@@ -14,6 +14,14 @@ def digest(value):
     return hashlib.md5(value.encode('utf-8')).hexdigest()
 
 
+def wrap_tls_connection(context, raw):
+    # Polling must not impose its short deadline on the TLS handshake.
+    raw.settimeout(2.0)
+    connection = context.wrap_socket(raw, server_side=True)
+    connection.settimeout(0.2)
+    return connection
+
+
 def scenario(exe, mode, context=None, ca=None):
     listener = socket.socket()
     udp = context is None
@@ -74,9 +82,8 @@ def scenario(exe, mode, context=None, ca=None):
                     else:
                         if connection is None:
                             raw, _ = listener.accept()
-                            raw.settimeout(0.2)
                             try:
-                                connection = context.wrap_socket(raw, server_side=True)
+                                connection = wrap_tls_connection(context, raw)
                             except (ssl.SSLError, TimeoutError, ConnectionError):
                                 raw.close()
                                 continue

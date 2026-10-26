@@ -28,6 +28,8 @@
 #ifdef AXV_ENABLE_NATIVE_SIP
 #include "incoming_ringtone_player.h"
 #include "native_dtmf.h"
+#include "native_call_duration.h"
+#include "call_duration_format.h"
 #endif
 #include "windows_process.h"
 #include "shutdown_policy.h"
@@ -59,6 +61,9 @@ namespace {
 constexpr int kPasswordEdit=1016,kCaEdit=1017,kAnswerNative=1018;
 HWND g_password=nullptr,g_ca_file=nullptr;
 axv::NativeCallMediaState g_displayed_media;
+constexpr int kCallDurationLabel = 2503;
+HWND g_call_duration_label = nullptr;
+axv::NativeCallDuration g_call_duration;
 
 #endif
 constexpr int kCallButton = 1001;
@@ -756,6 +761,14 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     const auto observed=current_sip_observation(state);
 #ifdef AXV_ENABLE_NATIVE_SIP
     synchronize_incoming_alert(observed);
+    const auto duration=g_call_duration.observe(observed,GetTickCount64());
+    const std::wstring duration_text=duration.active
+        ? L"DURACAO " + axv::format_call_duration(duration.elapsed_ms)
+        : L"DURACAO --:--:--";
+    wchar_t previous_duration[80]{};
+    GetWindowTextW(g_call_duration_label,previous_duration,80);
+    if (std::wstring_view(previous_duration)!=duration_text)
+        SetWindowTextW(g_call_duration_label,duration_text.c_str());
 #endif
     const auto current_session = observed.session;
     // No audited native producer is linked; process state never implies SIP proof.
@@ -860,6 +873,11 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_button(window, L"AUDIO", kShowAudio, 283, 103, 131, 42);
         g_runtime_banner = make_label(window, L"MOTOR PARADO  |  SIP NAO REGISTRADO",
                                      42, 164, 347, 25, -1, g_font_regular, kRuntimeStatusLabel);
+
+#ifdef AXV_ENABLE_NATIVE_SIP
+        g_call_duration_label = make_label(window, L"DURACAO --:--:--",
+                                          42, 190, 347, 20, -1, g_font_small, kCallDurationLabel);
+#endif
 
         make_label(window, L"DISCAGEM", 39, 220, 290, 23, 0, g_font_small);
         g_number_label = make_label(window, L"Número ou endereço SIP", 39, 246, 320, 20, 0, g_font_regular);
@@ -1616,7 +1634,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0 || std::wcscmp(command_line,L"--native-ui-smoke")==0);
 #ifdef AXV_ENABLE_NATIVE_SIP
-    const wchar_t* title=L"AXE Voice | Candidato nativo 0.57.1";
+    const wchar_t* title=L"AXE Voice | Candidato nativo 0.58";
 #else
     const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
 #endif
@@ -1637,10 +1655,33 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             (GetWindowLongPtrW(g_password,GWL_STYLE)&ES_PASSWORD) &&
             !IsWindowEnabled(GetDlgItem(window,kCallButton));
         ok=ok && GetDlgItem(window,kDtmfButton) && !IsWindowEnabled(GetDlgItem(window,kDtmfButton));
+        const auto inactive_duration=[] {
+            wchar_t text[80]{};
+            GetWindowTextW(g_call_duration_label,text,80);
+            return GetDlgItem(GetParent(g_call_duration_label),kCallDurationLabel)==g_call_duration_label &&
+                   std::wstring_view(text)==L"DURACAO --:--:--";
+        };
+        const auto duration_layout_clear=[&] {
+            RECT runtime{},duration{},destination{};
+            GetWindowRect(g_runtime_banner,&runtime);
+            GetWindowRect(g_call_duration_label,&duration);
+            GetWindowRect(g_number_label,&destination);
+            bool dial_section_clear=true;
+            for(const auto& child:g_layout) {
+                if(child.logical.y!=220 || !(GetWindowLongPtrW(child.handle,GWL_STYLE)&WS_VISIBLE)) continue;
+                RECT section{};
+                GetWindowRect(child.handle,&section);
+                dial_section_clear=duration.bottom<=section.top;
+            }
+            return (GetWindowLongPtrW(g_call_duration_label,GWL_STYLE)&WS_VISIBLE) &&
+                   runtime.bottom<=duration.top && duration.bottom<=destination.top && dial_section_clear;
+        };
+        ok=ok && inactive_duration() && duration_layout_clear();
         RECT dtmf_bounds{},feedback_bounds{};
         GetWindowRect(GetDlgItem(window,kDtmfButton),&dtmf_bounds);GetWindowRect(g_status,&feedback_bounds);
         ok=ok && dtmf_bounds.bottom<=feedback_bounds.top;
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),0);
+        ok=ok && g_compact && inactive_duration() && duration_layout_clear();
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),0);
         GetWindowRect(GetDlgItem(window,kDtmfButton),&dtmf_bounds);GetWindowRect(g_status,&feedback_bounds);
         ok=ok && !g_compact && dtmf_bounds.bottom<=feedback_bounds.top;
@@ -1665,6 +1706,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kHoldFuture,BN_CLICKED),0);
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kTransferFuture,BN_CLICKED),0);
         ok=ok && !native_engine().media_state().available && native_engine().status()==axv::SipStatus::Disconnected;
+        refresh_runtime_banner(g_baresip_process.poll());
+        ok=ok && inactive_duration() && duration_layout_clear();
         std::vector<axv::AudioEndpoint> endpoints{{L"present",L"Microphone",true,false}};
         std::wstring missing=L"missing";
         const auto fixed=fill_audio_combo(g_input_audio_combo,endpoints,missing,false,true,true);

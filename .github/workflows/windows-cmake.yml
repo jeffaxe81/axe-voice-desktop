@@ -10,6 +10,13 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+      - name: Verify release versions
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p test_release_versions.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/check_release_versions.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build and test with project script
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-windows.ps1
