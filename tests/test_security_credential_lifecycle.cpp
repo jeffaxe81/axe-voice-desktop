@@ -1,7 +1,8 @@
 // Actual SDK fault-injection lifecycle probe. Compile only the reactor source
 // with libre_init=axv_fixture_libre_init and
 // mqueue_alloc=axv_fixture_mqueue_alloc; SDK libraries remain unchanged.
-// Modes: 1 init rejection; 2 queue rejection; 3 stop; 4 replace credential.
+// Modes: 1 init rejection; 2 queue rejection; 3 stop; 4 replace credential;
+// 5 thread-start allocation failure.
 // Run each mode in a separate process; checks remain active under NDEBUG.
 // Reject reactor initialization before any account creation/registration;
 // no SIP request is sent. Observe only live C++
@@ -22,6 +23,7 @@ void* candidates[64]{};
 std::atomic_flag guard = ATOMIC_FLAG_INIT;
 bool overflow = false;
 bool capture_allocations = true;
+std::atomic<bool> fail_next_allocation{false};
 struct Lock {
     Lock() { while (guard.test_and_set(std::memory_order_acquire)) {} }
     ~Lock() { guard.clear(std::memory_order_release); }
@@ -39,6 +41,7 @@ int module_close() { return 0; }
 }
 
 void* operator new(std::size_t size) {
+    if (fail_next_allocation.exchange(false)) throw std::bad_alloc();
     void* p = std::malloc(size ? size : 1);
     if (!p) throw std::bad_alloc();
     if (size >= sizeof(synthetic)) {
@@ -75,7 +78,7 @@ extern "C" int axv_fixture_mqueue_alloc(struct mqueue** out, mqueue_h* handler, 
 }
 int main(int argc, char** argv) {
     fault = argc > 1 ? std::atoi(argv[1]) : 1;
-    if (fault < 1 || fault > 4) return 10;
+    if (fault < 1 || fault > 5) return 10;
     for (std::size_t i = 0; i < secret_size; ++i)
         synthetic[i] = static_cast<char>('!' + ((i * 31 + 7) % 90));
     synthetic[secret_size] = '\0';
@@ -109,16 +112,33 @@ int main(int argc, char** argv) {
         engine.stop();
         return 0;
     }
-    if (engine.register_account()) {
+    bool registered = false;
+    bool threw = false;
+    if (fault == 5) fail_next_allocation = true;
+    try { registered = engine.register_account(); }
+    catch (...) { threw = true; }
+    const bool injection_unused = fail_next_allocation.exchange(false);
+    if (registered) {
         std::fputs("injected reactor startup rejection was not returned\n", stderr);
         engine.stop();
         return 4;
     }
+    const auto message=engine.diagnostic();
+    if(message.find(L"Falha ao iniciar motor nativo; senha descartada")==std::wstring::npos)return 14;
     const auto retained = copies();
     const auto status = engine.status();
     const auto security = engine.security_status();
-    if(!security.policy_selected || security.tls_required || security.running_process || security.verified_registration)return 11;
     engine.stop();
+    if (fault == 5 && (injection_unused || threw || retained || status != axv::SipStatus::Failed)) {
+        std::fprintf(stderr, "thread startup allocation failure: unused=%d exception=%d retained=%zu failed=%d\n",
+                     injection_unused, threw, retained, status == axv::SipStatus::Failed);
+        return 12;
+    }
+    if (threw) {
+        std::fputs("reactor startup rejection escaped register_account\n", stderr);
+        return 13;
+    }
+    if(!security.policy_selected || security.tls_required || security.running_process || security.verified_registration)return 11;
     if (copies() != 0 || engine.register_account()) {
         std::fputs("stop after startup failure retained credential or reusable configuration\n", stderr);
         return 9;

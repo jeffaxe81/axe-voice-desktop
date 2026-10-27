@@ -77,3 +77,5 @@ Consulte a [matriz das funcionalidades restantes](integration/REMAINING-FUNCTION
 - Candidate0.61: intenção SIP/SIPS preservada, limites de entrada nativa e integridade literal de arquivos no pacote; quatro frentes de testes de segurança. [Registro e acompanhamento](integration/SECURITY-HARDENING.md).
 
 - Candidate0.62: política de segurança da sessão no F2/clipboard, limpeza em falha anterior aos hooks nativos, validação de labels DNS e rejeição de SDK redirecionado; quatro frentes de testes. [Escopo](integration/SECURITY-STATUS.md).
+
+- Candidate0.63: motivos de recusa de destino sem ecoar dados, exceção de criação da thread tratada, tipos de manifesto validados e matriz de isolamento da exportação; quatro frentes de testes. [Registro](integration/SECURITY-FEEDBACK.md).

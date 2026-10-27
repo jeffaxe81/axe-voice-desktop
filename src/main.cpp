@@ -1242,7 +1242,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             const std::wstring review=L"Transferir esta chamada para:\n\n"+std::wstring(target)+L"\n\nTransferencia direta, sem consulta previa.";
             if(MessageBoxW(window,review.c_str(),L"Revisar destino da transferencia",MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2)!=IDYES)return 0;
             // The captured displayed identity remains fixed across the modal dialog.
-            if(!native_engine().transfer_call(target,expected))SetWindowTextW(g_status,L"Transferencia recusada: confira destino, TLS e chamada atual; um pedido por chamada.");
+            if(!native_engine().transfer_call(target,expected)){
+                const auto feedback=std::wstring(L"Transferencia recusada. ")+native_engine().diagnostic();
+                SetWindowTextW(g_status,feedback.c_str());
+            }
             return 0;
         }
         if((LOWORD(wparam)==kMuteFuture || LOWORD(wparam)==kHoldFuture) && HIWORD(wparam)==BN_CLICKED){
@@ -1738,7 +1741,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0 || std::wcscmp(command_line,L"--native-ui-smoke")==0);
 #ifdef AXV_ENABLE_NATIVE_SIP
-    const wchar_t* title=L"AXE Voice | Candidato nativo 0.62";
+    const wchar_t* title=L"AXE Voice | Candidato nativo 0.63";
 #else
     const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
 #endif

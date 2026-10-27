@@ -37,6 +37,7 @@ inline constexpr const wchar_t* frontend_help_text() {
         L"No teclado, informe o ramal e use CHAMAR.\n"
         L"Destino sip:/sips: explicito deve combinar com o transporte da conta.\n"
         L"O motor recusa escapes percentuais e destinos acima de512 bytes.\n"
+        L"Recusas de destino indicam formato, transporte, tamanho ou conta; revise antes de repetir.\n"
         L"Usuario da conta: letras ASCII, numeros e _ . - +.\n"
         L"Para receber, use ATENDER; para terminar, ENCERRAR.\n"
         L"Em chamada, MUDO/MIC MUDO controla o microfone no SDK.\n"

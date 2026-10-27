@@ -1,4 +1,4 @@
-# Release candidata nativa0.62 — checklist atual
+# Release candidata nativa0.63 — checklist atual
 
 ## Implementações
 - [x] Motor Baresip/libre e OpenSSL fixados, registro/callbacks e comandos chamar/atender/encerrar no candidato.
@@ -75,3 +75,5 @@ Patch0.55.1: o relatório F2 mostra a disponibilidade atual de Chamar separada d
 - Candidate0.61: exigir regressões de segurança de entradas/credenciais/autorização e teste PowerShell de hash literal, além dos gates Windows/SDK/instalador do commit final. [Limites e acompanhamento](integration/SECURITY-HARDENING.md).
 
 - Candidate0.62: verificar política do motor independente do checkbox, metadados limpos ao parar, falhas init/queue sem senha pendente, hosts malformados recusados e diretório SDK redirecionado bloqueado. [Escopo e testes](integration/SECURITY-STATUS.md).
+
+- Candidate0.63: exigir motivos de destino e reset, cinco modos nativos de ciclo/credencial, schema de manifesto estrito e isolamento da exportação. [Escopo e limites](integration/SECURITY-FEEDBACK.md).

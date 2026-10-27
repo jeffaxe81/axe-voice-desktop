@@ -48,6 +48,7 @@ jobs:
         run: |
           ./tests/test_security_package.ps1
           ./tests/test_security_package_paths.ps1
+          ./tests/test_security_manifest_types.ps1
       - name: Verify local TLS fixture handshake deadline
         run: python tests/test_native_tls_fixture.py
       - name: Build pinned MSVC candidate and run real libre reactor

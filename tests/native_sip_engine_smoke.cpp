@@ -1,4 +1,5 @@
 #include "../src/baresip_sip_engine.h"
+#include "../src/native_destination_result.h"
 #include <chrono>
 #include <thread>
 #include <cstdlib>
@@ -14,12 +15,17 @@ int main(int argc,char**argv) {
         if(!engine.configure_authenticated(account,L"","fixture-only",1500,route))return 8;
         const auto applied=engine.selected_audio_route();
         if(applied.capture_id!=route.capture_id || applied.playback_id!=route.playback_id)return 9;
+        if(engine.start_call(L"sips:200@pbx.example") || engine.diagnostic()!=axv::native_destination_error_message(axv::NativeDestinationError::TransportMismatch))return 17;
+        if(engine.transfer_call(L"sip:private!marker@pbx.example",{}) || engine.diagnostic()!=axv::native_destination_error_message(axv::NativeDestinationError::UnsupportedCharacters))return 18;
+        (void)engine.start_call(L"200"); // Syntax-valid attempt clears prior refusal even if session is stopped.
+        if(engine.diagnostic().find(L"Destino recusado")!=std::wstring::npos)return 19;
         account.use_tls=true; // Editing caller/UI input must not change configured policy.
         const auto udp_policy=engine.security_status();
         if(!udp_policy.policy_selected || udp_policy.tls_required || udp_policy.running_process || udp_policy.verified_registration)return 12;
         engine.stop();
         if(!engine.selected_audio_route().capture_id.empty())return 10;
         const auto stopped=engine.security_status();
+        if(engine.diagnostic().find(L"Destino recusado")!=std::wstring::npos)return 20;
         if(stopped.policy_selected || stopped.tls_required || stopped.running_process || stopped.verified_registration)return 13;
         if(!engine.configure_authenticated(account,L"synthetic-ca.pem","fixture-only",1500))return 14;
         const auto tls_policy=engine.security_status();

@@ -2,7 +2,9 @@
 #include "sip_account.h"
 #include "sip_address.h"
 #include "native_audio_routes.h"
+#include "native_destination_result.h"
 #include <string>
+#include <utility>
 namespace axv {
 struct NativeAccountConfig { bool valid=false; std::string aor,config; };
 inline std::string native_ascii(const std::wstring& value) {
@@ -31,29 +33,33 @@ inline NativeAccountConfig native_account_config(const SipAccount& a,const std::
 }
 // The native engine enables exactly one SIP transport. Preserve explicit intent
 // across GUI normalization and reject mismatched schemes before routing.
-inline std::string native_call_destination(const std::wstring& typed,const SipAccount& a) {
-    if(typed.size()>512) return {};
+inline NativeDestinationResult native_call_destination_result(const std::wstring& typed,const SipAccount& a) {
+    using Error=NativeDestinationError;
+    if(typed.size()>512) return {Error::TooLong,{}};
     const auto parsed=validate_address(typed);
-    if(!parsed) return {};
+    if(!parsed) return {Error::InvalidAddress,{}};
     std::string uri=native_ascii(parsed.normalized);
-    if(uri.empty()) return {};
+    if(uri.empty()) return {Error::UnsupportedCharacters,{}};
     const bool secure=uri.compare(0,5,"sips:")==0;
     const bool plain=uri.compare(0,4,"sip:")==0;
-    if((secure && !a.use_tls) || (plain && a.use_tls)) return {};
+    if((secure && !a.use_tls) || (plain && a.use_tls)) return {Error::TransportMismatch,{}};
     if(uri.find('@')==std::string::npos) {
-        if(!native_account_config(a,a.use_tls?L"validated-ca":L"").valid) return {};
+        if(!native_account_config(a,a.use_tls?L"validated-ca":L"").valid) return {Error::InvalidAccount,{}};
         if(secure || plain) uri.erase(0,secure?5:4);
         uri=std::string(a.use_tls?"sips:":"sip:")+uri+"@"+native_ascii(a.server)+":"+std::to_string(a.port)+(a.use_tls?";transport=tls":";transport=udp");
     }
-    if(uri.size()>512) return {};
+    if(uri.size()>512) return {Error::TooLong,{}};
     const auto start=uri.compare(0,5,"sips:")==0?5u:4u;
     const auto at=uri.find('@');
-    if(at==std::string::npos || at<=start) return {};
+    if(at==std::string::npos || at<=start) return {Error::InvalidAddress,{}};
     // Keep native call users within the same supported grammar as REFER.
     for(std::size_t i=start;i<at;++i){
         const char c=uri[i];
-        if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_'||c=='.'||c=='-'||c=='+'||c=='*'||c=='#')) return {};
+        if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_'||c=='.'||c=='-'||c=='+'||c=='*'||c=='#')) return {Error::UnsupportedCharacters,{}};
     }
-    return uri;
+    return {Error::None,std::move(uri)};
+}
+inline std::string native_call_destination(const std::wstring& typed,const SipAccount& a) {
+    return native_call_destination_result(typed,a).uri;
 }
 } // namespace axv
