@@ -14,6 +14,7 @@ A main recebeu os sete PRs de laboratório em25/10/2026. Consulte [situação, e
 - [x] 0.57: modo explícito DTMF via SIP INFO, vinculado à chamada e bloqueado em espera/transferência. [Escopo e limites](integration/NATIVE-DTMF.md).
 - [x] 0.57.1: recuperação do toque, rolagem por foco e integridade do pacote após auditoria em cinco frentes. [Escopo](integration/PARALLEL-HARDENING.md).
 - [x] 0.58: duração local de chamada estabelecida, gate de versões e handshake TLS local com timeout separado. [Escopo e limites](integration/NATIVE-CALL-DURATION.md).
+- [x] 0.59: inventário de áudio assíncrono em duas abas, coalescência, cancelamento visual e recuperação, conforme requisitos registrados de PR30. [Escopo](integration/ASYNC-AUDIO-INVENTORY.md).
 - [ ] Homologar registro/chamadas na Dígitro e áudio bidirecional com headset físico.
 - [ ] Validar troca de dispositivos durante chamada antes de permitir roteamento ao vivo.
 - [ ] Implementar SRTP se exigido pela implantação; TLS de SIP não criptografa RTP.
