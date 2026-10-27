@@ -18,5 +18,13 @@ int main() {
                               L"Inventario nao comprova audio"}) {
         if (text.find(clause) == text.npos) return 5;
     }
+    // Removing a hotplug policy or its limitation must make help incomplete.
+    for (const auto policy : {L"apenas com a aba Audio visivel", L"Eventos agrupados",
+                               L"dropdown fechado", L"observador indisponivel",
+                               L"consulta periodica", L"botao ATUALIZAR",
+                               L"Notificacoes nao alteram a chamada",
+                               L"Ajustes continua", L"diagnostico manual independente"}) {
+        if (text.find(policy) == text.npos) return 6;
+    }
     return 0;
 }

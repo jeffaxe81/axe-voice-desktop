@@ -15,6 +15,7 @@ A main recebeu os sete PRs de laboratório em25/10/2026. Consulte [situação, e
 - [x] 0.57.1: recuperação do toque, rolagem por foco e integridade do pacote após auditoria em cinco frentes. [Escopo](integration/PARALLEL-HARDENING.md).
 - [x] 0.58: duração local de chamada estabelecida, gate de versões e handshake TLS local com timeout separado. [Escopo e limites](integration/NATIVE-CALL-DURATION.md).
 - [x] 0.59: inventário de áudio assíncrono em duas abas, coalescência, cancelamento visual e recuperação, conforme requisitos registrados de PR30. [Escopo](integration/ASYNC-AUDIO-INVENTORY.md).
+- [x] 0.60: observador Core Audio, debounce, fallback periódico e invalidação de inventário obsoleto. [Escopo](integration/AUDIO-DEVICE-NOTIFICATIONS.md).
 - [ ] Homologar registro/chamadas na Dígitro e áudio bidirecional com headset físico.
 - [ ] Validar troca de dispositivos durante chamada antes de permitir roteamento ao vivo.
 - [ ] Implementar SRTP se exigido pela implantação; TLS de SIP não criptografa RTP.
@@ -70,3 +71,5 @@ SHA-256: `9c1ff942ae1ae56bdfcdd04c3d6e242a056d7f0dd50bb19f6e13226e7c819b83`
 
 ## Projeto 2 — Mobile
 Registrado para etapa posterior. Não iniciar antes de liberação formal do Projeto 1.
+
+Consulte a [matriz das funcionalidades restantes](integration/REMAINING-FUNCTIONALITIES.md) para separar código entregue, escopo histórico e homologação externa.
