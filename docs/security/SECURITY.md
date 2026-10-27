@@ -19,3 +19,7 @@ A rodada com quatro frentes de testes adiciona recusa de downgrade de destino SI
 ## Candidate0.62
 
 Resumo booleano da política no F2/clipboard, limpeza na falha de partida do reactor, sintaxe de host compartilhada e bloqueio de SDK redirecionado. [Registro e limites](../integration/SECURITY-STATUS.md).
+
+## Candidate0.63
+
+Resultados estruturados de destino com feedback fixo, falha de criação de thread recuperável e schema escalar do manifesto. [Evidência e limitações](../integration/SECURITY-FEEDBACK.md).

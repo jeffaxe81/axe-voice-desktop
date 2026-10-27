@@ -15,7 +15,12 @@ foreach ($Item in (Get-ChildItem -LiteralPath $Prefix -Recurse -Force)) {
     if ($Item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'SDK redirected paths are not allowed' }
 }
 # Reject stale ABI-only provenance or an SDK-free product cache before staging.
-$Manifest=Get-Content (Join-Path $Prefix 'CANDIDATE-MANIFEST.json') -Raw | ConvertFrom-Json
+$Manifest=Get-Content (Join-Path $Prefix 'CANDIDATE-MANIFEST.json') -Raw | ConvertFrom-Json -NoEnumerate
+# Reject collection/string coercion before comparing provenance or hashes.
+if ($null -eq $Manifest -or $Manifest.GetType() -ne [System.Management.Automation.PSCustomObject] -or $Manifest.gui_native_sdk -isnot [string] -or
+    $Manifest.tls -isnot [bool] -or $Manifest.production_approved -isnot [bool] -or
+    $Manifest.product_version -isnot [string] -or $Manifest.product_sha256 -isnot [string] -or
+    $null -eq $Manifest.files -or $Manifest.files.GetType() -ne [System.Management.Automation.PSCustomObject]) { throw 'Candidate manifest has invalid field types' }
 $Cache=Get-Content (Join-Path $Root 'build/native-sdk-tls-media/product/CMakeCache.txt') -Raw
 if($Manifest.gui_native_sdk -ne 'ON/native candidate' -or $Manifest.tls -ne $true -or
    $Manifest.production_approved -ne $false -or $Cache -notmatch '(?m)^AXV_ENABLE_NATIVE_SIP:BOOL=ON\r?$' -or
@@ -36,6 +41,7 @@ if ($Manifest.product_sha256 -notmatch '^[0-9a-f]{64}$' -or
 }
 if (!$Manifest.files -or @($Manifest.files.PSObject.Properties).Count -eq 0) { throw 'SDK file hashes missing' }
 foreach ($Entry in $Manifest.files.PSObject.Properties) {
+    if ($Entry.Value -isnot [string]) { throw 'SDK manifest hash must be a string' }
     $Path = Join-Path $Prefix $Entry.Name
     if ($Entry.Value -notmatch '^[0-9a-f]{64}$' -or
         (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash -ne $Entry.Value) {

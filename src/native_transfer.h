@@ -24,8 +24,12 @@ inline bool valid_native_transfer_uri(const std::string& uri){
  const auto parsed=validate_address(wide);
  return parsed && parsed.normalized==wide;
 }
+inline NativeDestinationResult native_transfer_destination_result(const std::wstring& typed,const SipAccount& account){
+ auto result=native_call_destination_result(typed,account);
+ if(!result || valid_native_transfer_uri(result.uri))return result;
+ return {NativeDestinationError::InvalidAddress,{}};
+}
 inline std::string native_transfer_destination(const std::wstring& typed,const SipAccount& account){
- auto uri=native_call_destination(typed,account);
- return valid_native_transfer_uri(uri)?uri:std::string{};
+ return native_transfer_destination_result(typed,account).uri;
 }
 }
