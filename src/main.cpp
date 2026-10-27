@@ -862,8 +862,8 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     SetWindowTextW(mute,controls && media.muted?L"MIC MUDO":L"MUDO");
     SetWindowTextW(hold,controls && media.local_hold?L"RETOMAR":L"ESPERA");
     const bool routes_locked=observed.process!=axv::RuntimeProcess::Stopped;
-    EnableWindow(g_input_audio_combo,!routes_locked && SendMessageW(g_input_audio_combo,CB_GETCOUNT,0,0)>0);
-    EnableWindow(g_output_audio_combo,!routes_locked && SendMessageW(g_output_audio_combo,CB_GETCOUNT,0,0)>0);
+    EnableWindow(g_input_audio_combo,!routes_locked && g_audio_inventory_current && SendMessageW(g_input_audio_combo,CB_GETCOUNT,0,0)>0);
+    EnableWindow(g_output_audio_combo,!routes_locked && g_audio_inventory_current && SendMessageW(g_output_audio_combo,CB_GETCOUNT,0,0)>0);
     static std::wstring last_native_diagnostic;
     const auto diagnostic=native_engine().diagnostic();
     if(diagnostic!=last_native_diagnostic){SetWindowTextW(g_process_status,diagnostic.c_str());last_native_diagnostic=diagnostic;}
