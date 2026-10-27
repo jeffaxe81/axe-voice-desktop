@@ -7,13 +7,26 @@ int main(int argc,char**argv) {
     axv::BaresipSipEngine engine;
     if(engine.status()!=axv::SipStatus::Disconnected || engine.start_call(L"100") || engine.set_muted(true,{}) || engine.set_held(true,{}) || engine.transfer_call(L"1002",{}) || engine.send_dtmf(L'5',{}) || engine.answer_call({}) || engine.hangup_call({}) || engine.media_state().available) return 1;
     if(argc==1) {
+        const auto initial_security=engine.security_status();
+        if(initial_security.policy_selected || initial_security.tls_required || initial_security.running_process || initial_security.verified_registration)return 11;
         axv::SipAccount account{L"127.0.0.1",L"1001",5060,false};
         const axv::NativeAudioRoute route{L"capture-id",L"playback-id"};
         if(!engine.configure_authenticated(account,L"","fixture-only",1500,route))return 8;
         const auto applied=engine.selected_audio_route();
         if(applied.capture_id!=route.capture_id || applied.playback_id!=route.playback_id)return 9;
+        account.use_tls=true; // Editing caller/UI input must not change configured policy.
+        const auto udp_policy=engine.security_status();
+        if(!udp_policy.policy_selected || udp_policy.tls_required || udp_policy.running_process || udp_policy.verified_registration)return 12;
         engine.stop();
         if(!engine.selected_audio_route().capture_id.empty())return 10;
+        const auto stopped=engine.security_status();
+        if(stopped.policy_selected || stopped.tls_required || stopped.running_process || stopped.verified_registration)return 13;
+        if(!engine.configure_authenticated(account,L"synthetic-ca.pem","fixture-only",1500))return 14;
+        const auto tls_policy=engine.security_status();
+        if(!tls_policy.policy_selected || !tls_policy.tls_required || tls_policy.running_process || tls_policy.verified_registration)return 15;
+        account.use_tls=false;
+        if(!engine.security_status().tls_required)return 16;
+        engine.stop();
         return 0;
     }
     axv::SipAccount account{L"127.0.0.1",L"1001",static_cast<unsigned short>(std::atoi(argv[1])),false};

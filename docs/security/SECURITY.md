@@ -15,3 +15,7 @@ Como este repositório é público, qualquer dado enviado deve ser tratado como 
 ## Candidate0.61
 
 A rodada com quatro frentes de testes adiciona recusa de downgrade de destino SIP/SIPS, validação nativa limitada e hashes de arquivos literais no pacote. Resultados, limites e acompanhamento de memória estão em [Segurança0.61](../integration/SECURITY-HARDENING.md). Não equivale a pentest completo, assinatura ou SRTP.
+
+## Candidate0.62
+
+Resumo booleano da política no F2/clipboard, limpeza na falha de partida do reactor, sintaxe de host compartilhada e bloqueio de SDK redirecionado. [Registro e limites](../integration/SECURITY-STATUS.md).

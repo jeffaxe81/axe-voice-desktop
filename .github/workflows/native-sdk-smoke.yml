@@ -45,7 +45,9 @@ jobs:
           key: msvc2022-sdk-v1-${{ matrix.profile }}-re65555da-bs9cfab81-ssl8cf17aa
       - name: Verify literal package file integrity
         shell: pwsh
-        run: ./tests/test_security_package.ps1
+        run: |
+          ./tests/test_security_package.ps1
+          ./tests/test_security_package_paths.ps1
       - name: Verify local TLS fixture handshake deadline
         run: python tests/test_native_tls_fixture.py
       - name: Build pinned MSVC candidate and run real libre reactor

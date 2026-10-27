@@ -1,4 +1,5 @@
 #include "sip_address.h"
+#include "sip_host.h"
 #include <cwctype>
 
 namespace axv {
@@ -28,12 +29,8 @@ AddressResult validate_address(const std::wstring& input) {
     if (at == 0 || at == value.size() - 1 || value.find(L'@', at + 1) != std::wstring::npos)
         return {AddressError::InvalidHost, L""};
     std::wstring host = value.substr(at + 1);
-    if (host.front() == L'.' || host.back() == L'.') return {AddressError::InvalidHost, L""};
-    for (wchar_t c : host) {
-        if (!std::iswalnum(c) && c != L'-' && c != L'.' && c != L':')
-            return {AddressError::InvalidHost, L""};
-    }
     auto portColon = host.find(L':');
+    if (!valid_sip_host(host.substr(0, portColon))) return {AddressError::InvalidHost, L""};
     if (portColon != std::wstring::npos) {
         std::wstring port = host.substr(portColon + 1);
         if (port.empty() || port.size() > 5) return {AddressError::InvalidPort, L""};

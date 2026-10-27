@@ -3,6 +3,7 @@
 #include "sip_runtime_observation.h"
 #include "native_audio_routes.h"
 #include "native_call_media.h"
+#include "native_security_status.h"
 #include <memory>
 namespace axv {
 // Candidate native implementation. All SDK pointers stay on its owner thread.
@@ -24,6 +25,7 @@ public:
     bool transfer_call(const std::wstring& destination,const NativeCallMediaState& expected);
     bool send_dtmf(wchar_t key,const NativeCallMediaState& expected);
     NativeCallMediaState media_state() const;
+    NativeSecurityStatus security_status() const;
     void hangup() override;
     void stop();
     SipRuntimeObservation observation() const;

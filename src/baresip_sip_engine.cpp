@@ -21,6 +21,7 @@ struct BaresipSipEngine::Impl {
     using Action=NativeCallAction;
     mutable std::mutex mutex;
     SipAccount account;
+    bool policy_selected=false,tls_required=false;
     NativeAccountConfig config;
     NativeAudioRoute audio_route;
     NativeAudioRouteStatus audio_issue=NativeAudioRouteStatus::Ready;
@@ -156,12 +157,16 @@ BaresipSipEngine::~BaresipSipEngine(){stop();}
 SipRuntimeObservation BaresipSipEngine::observation()const {std::lock_guard<std::mutex> lock(impl_->mutex);return impl_->view;}
 NativeAudioRoute BaresipSipEngine::selected_audio_route()const {std::lock_guard<std::mutex> lock(impl_->mutex);return impl_->audio_route;}
 NativeCallMediaState BaresipSipEngine::media_state()const {std::lock_guard<std::mutex> lock(impl_->mutex);return impl_->media;}
+NativeSecurityStatus BaresipSipEngine::security_status()const {
+    std::lock_guard<std::mutex> lock(impl_->mutex);
+    return native_security_status(impl_->policy_selected,impl_->tls_required,impl_->view);
+}
 SipStatus BaresipSipEngine::status()const{return observation().sip;}
 bool BaresipSipEngine::configure(const SipAccount&){return false;} // explicit authentication is required
 bool BaresipSipEngine::configure_authenticated(const SipAccount& a,const std::wstring& ca,std::string password,unsigned timeout,const NativeAudioRoute& audio) {
     const auto cfg=native_account_config(a,ca,audio);
     if(impl_->reactor.snapshot().running || !cfg.valid || password.empty() || password.size()>1024 || password.find('\0')!=std::string::npos || timeout<100 || timeout>60000) {erase(password);return false;}
-    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->audio_route=audio;impl_->audio_issue=NativeAudioRouteStatus::Ready;}
+    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->audio_route=audio;impl_->audio_issue=NativeAudioRouteStatus::Ready;impl_->policy_selected=true;impl_->tls_required=a.use_tls;}
     impl_->account=a;impl_->config=cfg;erase(impl_->password);impl_->password=password;erase(password);impl_->configured=true;impl_->timeout_ms=timeout;return true;
 }
 bool BaresipSipEngine::register_account(){
@@ -169,7 +174,13 @@ bool BaresipSipEngine::register_account(){
     impl_->configured=false;impl_->failed=false;
     {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->sdk_error=0;impl_->sdk_stage.clear();}
     {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->view={RuntimeProcess::Running,SipStatus::Registering};}
-    return impl_->reactor.start();
+    if(impl_->reactor.start())return true;
+    // Initialization may fail before owner hooks exist. Join before touching
+    // pending credentials; do not leave the UI claiming registration is pending.
+    (void)impl_->reactor.stop();
+    erase(impl_->password);
+    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->view={RuntimeProcess::Failed,SipStatus::Failed};impl_->command={};impl_->media={};}
+    return false;
 }
 bool BaresipSipEngine::start_call(const std::wstring& s){const auto uri=native_call_destination(s,impl_->account);return !uri.empty()&&impl_->submit(Impl::Action::Dial,uri);}
 bool BaresipSipEngine::set_muted(bool desired,const NativeCallMediaState& expected){return impl_->submit(Impl::Action::SetMute,{},desired,&expected);}
@@ -188,7 +199,7 @@ void BaresipSipEngine::hangup(){(void)hangup_call(observation());}
 void BaresipSipEngine::stop(){
     {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->view={RuntimeProcess::Stopping,SipStatus::Disconnected};impl_->command={};}
     impl_->reactor.stop();impl_->configured=false;erase(impl_->password);
-    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->view={RuntimeProcess::Stopped,SipStatus::Disconnected};impl_->media={};impl_->last_hold_error=0;impl_->mute_rejected=false;impl_->dtmf_rejected=false;impl_->audio_route={};impl_->audio_issue=NativeAudioRouteStatus::Ready;}
+    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->view={RuntimeProcess::Stopped,SipStatus::Disconnected};impl_->media={};impl_->last_hold_error=0;impl_->mute_rejected=false;impl_->dtmf_rejected=false;impl_->audio_route={};impl_->audio_issue=NativeAudioRouteStatus::Ready;impl_->policy_selected=false;impl_->tls_required=false;}
 }
 std::wstring BaresipSipEngine::diagnostic()const {
     {std::lock_guard<std::mutex> lock(impl_->mutex);

@@ -68,6 +68,8 @@ inline constexpr const wchar_t* frontend_help_text() {
         L"Chamadas na central e audio fisico ainda exigem homologacao.\n\n"
         L"Ctrl+1: Teclado  Ctrl+2: Ajustes  Ctrl+3: Audio\n"
         L"F1: Ajuda  F2: Prontidao  Ctrl+M: MINI/MAX\n"
+        L"F2 e COPIAR STATUS incluem a politica de seguranca configurada no motor.\n"
+        L"TLS obrigatorio indica politica, nao prova de negociacao ou SRTP.\n"
         L"Ctrl+Shift+D / COPIAR STATUS: copia local sem dados da conta.\n"
         L"O texto permanece na area de transferencia ate ser substituido.";
 #else

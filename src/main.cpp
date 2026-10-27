@@ -919,7 +919,14 @@ axv::CallReadiness collect_call_readiness() {
     result.dial_control_available = axv::authorize_dial(snapshot, snapshot.session, g_sip_selection, number).allowed();
     return result;
 }
-std::wstring make_readiness_report(){return axv::format_call_readiness(collect_call_readiness());}
+axv::NativeSecurityStatus collect_security_status(){
+#ifdef AXV_ENABLE_NATIVE_SIP
+    return native_engine().security_status();
+#else
+    return {};
+#endif
+}
+std::wstring make_readiness_report(){return axv::format_call_readiness(collect_call_readiness())+L"\n\n"+axv::format_native_security_status(collect_security_status());}
 void begin_shutdown(HWND window) {
     g_sip_session_guard.revoke(axv::RuntimeProcess::Stopping, g_native_event_mailbox, g_sip_projection);
     const bool queued = g_baresip_process.request_quit_async();
@@ -1120,11 +1127,11 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             if(control==kCopyStatusButton){
                 const auto status=collect_call_readiness();
                 if(g_smoke_mode){
-                    const auto report=axv::format_diagnostic_export(status);
+                    const auto report=axv::format_diagnostic_export(status,collect_security_status());
                     g_copy_requested_smoke=report.find(L"\r\n")!=report.npos &&
                         report.find(L"Botao Chamar: indisponivel na interface")!=report.npos;
                 }else{
-                    const bool copied=axv::copy_call_diagnostic(window,status);
+                    const bool copied=axv::copy_call_diagnostic(window,status,collect_security_status());
                     SetWindowTextW(g_status,copied?
                         L"Status copiado, sem dados da conta. Permanece na area de transferencia.":
                         L"Nao foi possivel copiar. Tente novamente; a area de transferencia pode estar ocupada.");
@@ -1731,7 +1738,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0 || std::wcscmp(command_line,L"--native-ui-smoke")==0);
 #ifdef AXV_ENABLE_NATIVE_SIP
-    const wchar_t* title=L"AXE Voice | Candidato nativo 0.61";
+    const wchar_t* title=L"AXE Voice | Candidato nativo 0.62";
 #else
     const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
 #endif
