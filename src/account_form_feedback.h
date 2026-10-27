@@ -52,7 +52,7 @@ inline AccountFormFeedback evaluate_account_form(const std::wstring& server,
     }
     if (error == AccountError::InvalidUser) {
         return {AccountFeedbackKind::Invalid, error, 0,
-                L"Usuario SIP invalido: remova espacos e caracteres especiais."};
+                L"Usuario SIP invalido: use letras ASCII, numeros e _ . - +."};
     }
     if (error != AccountError::None) {
         return {AccountFeedbackKind::Invalid, error, 0,

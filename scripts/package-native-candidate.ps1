@@ -23,21 +23,21 @@ if (!$Version -or $Manifest.product_version -ne $Version -or $InstallerVersion -
     throw 'Candidate product, manifest and installer versions differ'
 }
 if ($Manifest.product_sha256 -notmatch '^[0-9a-f]{64}$' -or
-    (Get-FileHash (Join-Path $Binaries 'AXE-Voice.exe') -Algorithm SHA256).Hash -ne $Manifest.product_sha256) {
+    (Get-FileHash -LiteralPath (Join-Path $Binaries 'AXE-Voice.exe') -Algorithm SHA256).Hash -ne $Manifest.product_sha256) {
     throw 'Candidate GUI differs from the verified build'
 }
 if (!$Manifest.files -or @($Manifest.files.PSObject.Properties).Count -eq 0) { throw 'SDK file hashes missing' }
 foreach ($Entry in $Manifest.files.PSObject.Properties) {
     $Path = Join-Path $Prefix $Entry.Name
     if ($Entry.Value -notmatch '^[0-9a-f]{64}$' -or
-        (Get-FileHash $Path -Algorithm SHA256).Hash -ne $Entry.Value) {
+        (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash -ne $Entry.Value) {
         throw "SDK manifest file missing or changed: $($Entry.Name)"
     }
 }
 foreach ($File in (Get-ChildItem $Prefix -Recurse -File | Where-Object { $_.Extension -in @('.h','.lib','.dll') })) {
     $Relative = $File.FullName.Substring($Prefix.Length+1).Replace('\','/')
     $Expected = $Manifest.files.PSObject.Properties[$Relative].Value
-    if ($Expected -notmatch '^[0-9a-f]{64}$' -or (Get-FileHash $File.FullName -Algorithm SHA256).Hash -ne $Expected) {
+    if ($Expected -notmatch '^[0-9a-f]{64}$' -or (Get-FileHash -LiteralPath $File.FullName -Algorithm SHA256).Hash -ne $Expected) {
         throw "SDK file differs from manifest: $Relative"
     }
 }
@@ -75,7 +75,7 @@ try {
     if($LASTEXITCODE -ne 0) {throw 'Installed candidate GUI smoke failed'}
     foreach($File in (Get-ChildItem $Stage -Recurse -File)) {
         $Installed=Join-Path $Target $File.FullName.Substring($Stage.Length+1)
-        if((Get-FileHash $File.FullName).Hash -ne (Get-FileHash $Installed).Hash) {throw "Installed file differs: $($File.Name)"}
+        if((Get-FileHash -LiteralPath $File.FullName).Hash -ne (Get-FileHash -LiteralPath $Installed).Hash) {throw "Installed file differs: $($File.Name)"}
     }
 } finally {
     $Uninstall=Start-Process -FilePath (Join-Path $Target 'unins000.exe') -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -Wait -PassThru
@@ -85,4 +85,4 @@ foreach($File in (Get-ChildItem $Stage -Recurse -File)) {
     $Installed=Join-Path $Target $File.FullName.Substring($Stage.Length+1)
     if(Test-Path $Installed) {throw "Candidate file remained after uninstall: $($File.Name)"}
 }
-Get-FileHash $Installer -Algorithm SHA256 | Format-List
+Get-FileHash -LiteralPath $Installer -Algorithm SHA256 | Format-List

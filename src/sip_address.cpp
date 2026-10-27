@@ -23,7 +23,7 @@ AddressResult validate_address(const std::wstring& input) {
             if (!std::iswdigit(c) && c != L'+' && c != L'*' && c != L'#')
                 return {AddressError::InvalidUser, L""};
         }
-        return {AddressError::None, value};
+        return {AddressError::None, colon == std::wstring::npos ? value : input};
     }
     if (at == 0 || at == value.size() - 1 || value.find(L'@', at + 1) != std::wstring::npos)
         return {AddressError::InvalidHost, L""};

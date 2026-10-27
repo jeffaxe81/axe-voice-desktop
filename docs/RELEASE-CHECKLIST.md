@@ -1,4 +1,4 @@
-# Release candidata nativa0.60 — checklist atual
+# Release candidata nativa0.61 — checklist atual
 
 ## Implementações
 - [x] Motor Baresip/libre e OpenSSL fixados, registro/callbacks e comandos chamar/atender/encerrar no candidato.
@@ -71,3 +71,5 @@ Mudo, espera/retomada locais e pedido de transferência direta estão conectados
 Until these are complete, the executable is a prototype GUI, **not** an operational softphone.
 
 Patch0.55.1: o relatório F2 mostra a disponibilidade atual de Chamar separada da homologação de áudio. Checklist pendente não significa bloqueio de discagem; botão disponível não comprova mídia ou compatibilidade da central.
+
+- Candidate0.61: exigir regressões de segurança de entradas/credenciais/autorização e teste PowerShell de hash literal, além dos gates Windows/SDK/instalador do commit final. [Limites e acompanhamento](integration/SECURITY-HARDENING.md).
