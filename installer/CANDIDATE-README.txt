@@ -1,4 +1,4 @@
-AXE Voice Native Candidate 0.59.0
+AXE Voice Native Candidate 0.60.0
 
 This is a validation build, not a production-approved release.
 Enter server, extension, port and session password in Settings, then Register.
@@ -23,3 +23,5 @@ During an established call, enable DTMF ON (SIP INFO) and use the on-screen keyp
 The native duration label measures local time from the first verified established-call observation, including hold while the call remains InCall. Ringing/outgoing time is excluded. Call replacement, stop or lost proof resets the timer. Elapsed time does not certify audio or remote acceptance.
 
 Audio and Settings device queries now run asynchronously in independent channels. Repeated requests coalesce; leaving a pane discards its visual update. Cancel/close does not interrupt a blocked driver. Errors retain previous selections while disabling controls until fresh success; native call routes remain fixed for the session.
+
+Audio device notifications now schedule debounced inventory updates only on the visible Audio pane with closed dropdowns. A periodic/manual fallback remains if the observer is unavailable. Call routes do not change automatically; physical hotplug and target PBX acceptance remain pending.

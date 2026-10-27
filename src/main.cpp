@@ -22,6 +22,8 @@
 #include "audio_devices.h"
 #include "audio_inventory_async.h"
 #include "audio_inventory_retry.h"
+#include "audio_endpoint_watcher_win32.h"
+#include "audio_device_change_policy.h"
 #include "audio_panel_selection.h"
 #include "audio_selection_feedback.h"
 #include "native_audio_routes.h"
@@ -151,6 +153,8 @@ std::wstring g_selected_ringtone_id;
 bool g_audio_inventory_current = false;
 axv::AudioInventoryAsync g_audio_worker{axv::inspect_windows_audio_devices};
 axv::AudioInventoryRetry g_audio_retry;
+axv::AudioEndpointWatcher g_audio_endpoint_watcher;
+axv::AudioDeviceChangePolicy g_audio_change_policy;
 axv::AudioInventoryAsync g_settings_audio_worker{axv::inspect_windows_audio_devices};
 axv::AudioInventoryRetry g_settings_audio_retry;
 axv::TonePreviewPlayer g_tone_preview;
@@ -503,9 +507,10 @@ void bring_focused_control_into_view(HWND window, HWND control) {
 
 void show_page(HWND root, int page) {
     if (g_page != page) {
-        if (g_page == 2) { g_audio_worker.cancel(); g_audio_retry.reset(); g_audio_inventory_current=false; }
+        if (g_page == 2) { g_audio_change_policy.leave(); g_audio_worker.cancel(); g_audio_retry.reset(); g_audio_inventory_current=false; }
         if (g_page == 1) { g_settings_audio_worker.cancel(); g_settings_audio_retry.reset(); }
     }
+    if (g_page != page && page == 2) g_audio_change_policy.enter(GetTickCount64());
     if (g_page != page) set_viewport_scroll(root, 0);
     g_page = page;
     for (auto child : g_dial_controls) {
@@ -755,6 +760,7 @@ void request_audio_panel() {
     if (g_smoke_mode) return;
     g_audio_inventory_current=false;
     g_audio_worker.request();
+    g_audio_change_policy.refreshed(GetTickCount64());
     EnableWindow(g_input_audio_combo,FALSE);
     EnableWindow(g_output_audio_combo,FALSE);
     EnableWindow(g_ringtone_audio_combo,FALSE);
@@ -766,6 +772,22 @@ bool audio_dropdown_open() {
         SendMessageW(g_output_audio_combo,CB_GETDROPPEDSTATE,0,0) ||
         SendMessageW(g_ringtone_audio_combo,CB_GETDROPPEDSTATE,0,0);
 }
+// GUI-thread notification handling invalidates the current generation immediately.
+// Device identities and open dropdown contents remain untouched until refresh.
+void audio_devices_changed(ULONGLONG now) {
+    if (g_smoke_mode || g_compact || g_page != 2) return;
+    g_audio_worker.cancel();
+    g_audio_retry.reset();
+    g_audio_inventory_current=false;
+    g_audio_change_policy.changed(now);
+}
+void poll_audio_notifications() {
+    if (g_smoke_mode) return;
+    const auto now=GetTickCount64();
+    if (g_audio_endpoint_watcher.take_changed()) audio_devices_changed(now);
+    if (!g_compact && g_page==2 &&
+        axv::audio_device_refresh_due(g_audio_change_policy,now,audio_dropdown_open(),g_audio_worker.snapshot())) request_audio_panel();
+}
 void poll_audio_inventory() {
     if (g_smoke_mode || g_compact) return;
     const auto now=GetTickCount64();
@@ -775,7 +797,10 @@ void poll_audio_inventory() {
             else if(g_audio_worker.snapshot().launch_failed) g_audio_retry.failed(now);
         }
         axv::AudioInventory inventory;
-        if(g_audio_worker.take(inventory)) apply_audio_inventory(inventory);
+        if(g_audio_worker.take(inventory)) {
+            g_audio_change_policy.completed(now);
+            apply_audio_inventory(inventory);
+        }
     }
     if(g_page==1) {
         if(g_settings_audio_worker.snapshot().pending && g_settings_audio_retry.ready(now)) {
@@ -862,8 +887,10 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     SetWindowTextW(mute,controls && media.muted?L"MIC MUDO":L"MUDO");
     SetWindowTextW(hold,controls && media.local_hold?L"RETOMAR":L"ESPERA");
     const bool routes_locked=observed.process!=axv::RuntimeProcess::Stopped;
-    EnableWindow(g_input_audio_combo,!routes_locked && g_audio_inventory_current && SendMessageW(g_input_audio_combo,CB_GETCOUNT,0,0)>0);
-    EnableWindow(g_output_audio_combo,!routes_locked && g_audio_inventory_current && SendMessageW(g_output_audio_combo,CB_GETCOUNT,0,0)>0);
+    if (!SendMessageW(g_input_audio_combo,CB_GETDROPPEDSTATE,0,0))
+        EnableWindow(g_input_audio_combo,!routes_locked && g_audio_inventory_current && SendMessageW(g_input_audio_combo,CB_GETCOUNT,0,0)>0);
+    if (!SendMessageW(g_output_audio_combo,CB_GETDROPPEDSTATE,0,0))
+        EnableWindow(g_output_audio_combo,!routes_locked && g_audio_inventory_current && SendMessageW(g_output_audio_combo,CB_GETCOUNT,0,0)>0);
     static std::wstring last_native_diagnostic;
     const auto diagnostic=native_engine().diagnostic();
     if(diagnostic!=last_native_diagnostic){SetWindowTextW(g_process_status,diagnostic.c_str());last_native_diagnostic=diagnostic;}
@@ -1585,8 +1612,13 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         EndPaint(window, &paint);
         return 0;
     }
+    case WM_DEVICECHANGE:
+        if (axv::is_audio_device_change(static_cast<std::uintptr_t>(wparam)))
+            audio_devices_changed(GetTickCount64());
+        return 0;
     case WM_TIMER:
         if (wparam == kProcessTimer) {
+            poll_audio_notifications();
             poll_audio_inventory();
             // No Windows UI operations occur on the WASAPI worker thread.
             const auto tone_state = g_tone_preview.state();
@@ -1656,6 +1688,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         DestroyWindow(window);
         return 0;
     case WM_DESTROY:
+        g_audio_endpoint_watcher.stop();
         g_audio_worker.close();
         g_settings_audio_worker.close();
         g_tone_preview.request_stop();
@@ -1698,7 +1731,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0 || std::wcscmp(command_line,L"--native-ui-smoke")==0);
 #ifdef AXV_ENABLE_NATIVE_SIP
-    const wchar_t* title=L"AXE Voice | Candidato nativo 0.59";
+    const wchar_t* title=L"AXE Voice | Candidato nativo 0.60";
 #else
     const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
 #endif
@@ -1709,23 +1742,29 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
     if (!window) return 2;
+    if (!g_smoke_mode) (void)g_audio_endpoint_watcher.start();
     if (g_smoke_mode) {
         if(g_compact){g_compact=false;apply_compact_layout(window);}
         for(int pass=0;pass<2;++pass) {
             SendMessageW(window,WM_COMMAND,MAKEWPARAM(kShowAudio,BN_CLICKED),0);
+            SendMessageW(window,WM_DEVICECHANGE,0x8000,0);
+            SendMessageW(window,WM_DEVICECHANGE,0x8004,1);
+            SendMessageW(window,WM_DEVICECHANGE,0x8001,1);
             SendMessageW(window,WM_COMMAND,MAKEWPARAM(kRefreshHeadsetsButton,BN_CLICKED),0);
             SendMessageW(window,WM_TIMER,kProcessTimer,0);
             SendMessageW(window,WM_COMMAND,MAKEWPARAM(kShowSettings,BN_CLICKED),0);
+            SendMessageW(window,WM_DEVICECHANGE,0x7,0);
             SendMessageW(window,WM_COMMAND,MAKEWPARAM(kAudioDevicesButton,BN_CLICKED),0);
             SendMessageW(window,WM_COMMAND,MAKEWPARAM(kAudioDevicesButton,BN_CLICKED),0);
             SendMessageW(window,WM_TIMER,kProcessTimer,0);
             SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),0);
+            SendMessageW(window,WM_DEVICECHANGE,0x18,1);
             SendMessageW(window,WM_TIMER,kProcessTimer,0);
             SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),0);
         }
         const auto audio=g_audio_worker.snapshot();
         const auto settings=g_settings_audio_worker.snapshot();
-        if(audio.busy || audio.pending || audio.ready || settings.busy || settings.pending || settings.ready ||
+        if(g_audio_endpoint_watcher.active() || audio.busy || audio.pending || audio.ready || settings.busy || settings.pending || settings.ready ||
             g_audio_inventory_current || !GetDlgItem(window,kAudioDevicesButton)) {
             DestroyWindow(window); return 22;
         }

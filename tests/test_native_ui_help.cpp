@@ -12,6 +12,14 @@ int main(){
                            L"Inventario nao comprova audio"}) {
    if (help.find(clause) == help.npos) return 2;
  }
+    // Removing a hotplug policy or its limitation must make help incomplete.
+    for (const auto policy : {L"apenas com a aba Audio visivel", L"Eventos agrupados",
+                               L"dropdown fechado", L"observador indisponivel",
+                               L"consulta periodica", L"botao ATUALIZAR",
+                               L"Notificacoes nao alteram a chamada",
+                               L"Ajustes continua", L"diagnostico manual independente"}) {
+        if (help.find(policy) == help.npos) return 3;
+    }
  return help.find(L"REGISTRAR")!=help.npos && help.find(L"CA PEM")!=help.npos &&
         help.find(L"padrao de comunicacao")!=help.npos &&
         help.find(L"primeira observacao de chamada estabelecida")!=help.npos &&

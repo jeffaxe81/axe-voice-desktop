@@ -1,4 +1,4 @@
-# Release candidata nativa0.59 — checklist atual
+# Release candidata nativa0.60 — checklist atual
 
 ## Implementações
 - [x] Motor Baresip/libre e OpenSSL fixados, registro/callbacks e comandos chamar/atender/encerrar no candidato.
@@ -24,6 +24,8 @@ Os testes Windows/SDK/instalador são exigidos no commit final antes de merge. C
 - [x] Duração local condicionada à evidência da chamada, consistência de versões e regressão de handshake TLS (0.58).
 
 - [x] Consultas de dispositivos fora da GUI, canais independentes e descarte de gerações obsoletas (0.59).
+
+- [x] Observação opcional de dispositivos, debounce/fallback sem inanição e callbacks sem acesso à UI (0.60).
 
 ## Homologação externa pendente
 

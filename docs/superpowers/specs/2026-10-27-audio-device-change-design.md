@@ -1,0 +1,7 @@
+# Candidate0.60 — device notifications and automatic inventory
+
+Complete the public PR30/v0.140–0.144 notification requirements after asynchronous inventory0.59. An optional IMMNotificationClient observer signals only a lock-free change flag. No HWND, endpoint IDs, enumeration, SIP action or route mutation in callbacks. GUI owns COM start/stop; close the signal before unregister/release, and use a fresh signal after restart. Failed registration leaves manual/periodic fallbacks.
+
+While Audio is visible, events invalidate in-flight inventory generations immediately, debounce250ms and refresh only with dropdowns closed. Generic arrival/removal/node/config WM_DEVICECHANGE also signal; no lParam dereference. Periodic fallback is paced5000ms from completion and never replaces busy/pending/ready work. Slow probes must deliver rather than be starved by fallback. Event cancellation remains immediate. Settings stays a separate manual channel; session routes remain fixed.
+
+Ten fronts implement signal, policy, Win32 observer, UI, help, COM doubles, worker integration, COM contract audit, remaining-requirement matrix and whole-branch review. Smoke never registers COM observer or starts probes. Fake SDK interfaces verify ownership, real Windows builds verify actual signatures/linkage; neither proves physical notification/hotplug delivery. Physical hardware and Dígitro/headset/INFO acceptance remain pending. Product0.60.0.
