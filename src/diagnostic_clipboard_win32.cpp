@@ -8,9 +8,9 @@
 #include "diagnostic_export.h"
 #include <cstring>
 namespace axv {
-bool copy_call_diagnostic(HWND owner,const CallReadiness& state){
+bool copy_call_diagnostic(HWND owner,const CallReadiness& state,const NativeSecurityStatus& security){
  if(!owner)return false;
- const auto text=format_diagnostic_export(state);
+ const auto text=format_diagnostic_export(state,security);
  const auto bytes=(text.size()+1)*sizeof(wchar_t);
  const auto memory=GlobalAlloc(GMEM_MOVEABLE,bytes);
  if(!memory)return false;

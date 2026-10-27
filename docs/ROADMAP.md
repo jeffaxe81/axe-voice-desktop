@@ -75,3 +75,5 @@ Registrado para etapa posterior. Não iniciar antes de liberação formal do Pro
 Consulte a [matriz das funcionalidades restantes](integration/REMAINING-FUNCTIONALITIES.md) para separar código entregue, escopo histórico e homologação externa.
 
 - Candidate0.61: intenção SIP/SIPS preservada, limites de entrada nativa e integridade literal de arquivos no pacote; quatro frentes de testes de segurança. [Registro e acompanhamento](integration/SECURITY-HARDENING.md).
+
+- Candidate0.62: política de segurança da sessão no F2/clipboard, limpeza em falha anterior aos hooks nativos, validação de labels DNS e rejeição de SDK redirecionado; quatro frentes de testes. [Escopo](integration/SECURITY-STATUS.md).

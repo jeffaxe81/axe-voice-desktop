@@ -36,4 +36,10 @@ int main(){
  CHECK(copied==axv::format_diagnostic_export(ready));
  // Simulated system clipboard owns/frees the successful allocation.
  std::free(memory);memory=nullptr;
+ reset();const axv::NativeSecurityStatus security{true,true,true,true};
+ CHECK(axv::copy_call_diagnostic(owner,ready,security));
+ CHECK(copied==axv::format_diagnostic_export(ready,security));
+ CHECK(copied.find(L"TLS obrigatorio; CA confiavel exigida")!=copied.npos);
+ CHECK(copied.find(L"Registro SIP atual: verificado")!=copied.npos);
+ std::free(memory);memory=nullptr;
 }

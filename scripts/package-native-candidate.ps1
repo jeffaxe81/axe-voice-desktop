@@ -6,6 +6,14 @@ $Prefix=Join-Path $Root 'build/native-sdk-tls-media/prefix'
 $Binaries=Join-Path $Root 'build/native-sdk-tls-media/product/Release'
 $Stage=Join-Path $Root 'build/native-candidate-stage'
 $Output=Join-Path $Root 'build/native-candidate-installer'
+# Recursive enumeration must not skip directories later followed by staging.
+$SdkDirectory = Get-Item -LiteralPath $Prefix -Force
+for ($Ancestor = $SdkDirectory; $Ancestor -and $Ancestor.FullName -ne $Root; $Ancestor = $Ancestor.Parent) {
+    if ($Ancestor.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'SDK redirected paths are not allowed' }
+}
+foreach ($Item in (Get-ChildItem -LiteralPath $Prefix -Recurse -Force)) {
+    if ($Item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'SDK redirected paths are not allowed' }
+}
 # Reject stale ABI-only provenance or an SDK-free product cache before staging.
 $Manifest=Get-Content (Join-Path $Prefix 'CANDIDATE-MANIFEST.json') -Raw | ConvertFrom-Json
 $Cache=Get-Content (Join-Path $Root 'build/native-sdk-tls-media/product/CMakeCache.txt') -Raw

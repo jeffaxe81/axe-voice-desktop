@@ -109,8 +109,9 @@ if ($TlsMedia) {
     Invoke-Checked 'cmake' @('--build',$ProductBuild,'--config','Release','--parallel','4','--target','axv_native_tls_media_probe')
     Get-ChildItem (Join-Path $Prefix 'bin') -Filter '*.dll' | Copy-Item -Destination (Join-Path $ProductBuild 'Release')
     Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_tls_media_probe.exe') @()
-    Invoke-Checked 'cmake' @('--build',$ProductBuild,'--config','Release','--parallel','4','--target','axv_native_pending_secret_smoke','axv_native_sip_engine_smoke','axv_native_sdk_secret_smoke','axv_native_audio_config_smoke','axv_native_audio_mute_smoke','AXEVoice')
+    Invoke-Checked 'cmake' @('--build',$ProductBuild,'--config','Release','--parallel','4','--target','axv_native_credential_lifecycle_smoke','axv_native_pending_secret_smoke','axv_native_sip_engine_smoke','axv_native_sdk_secret_smoke','axv_native_audio_config_smoke','axv_native_audio_mute_smoke','AXEVoice')
     Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_sip_engine_smoke.exe') @()
+    foreach ($Mode in 1..4) { Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_credential_lifecycle_smoke.exe') @([string]$Mode) }
     Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_pending_secret_smoke.exe') @()
     Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_sdk_secret_smoke.exe') @()
     Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_audio_config_smoke.exe') @()

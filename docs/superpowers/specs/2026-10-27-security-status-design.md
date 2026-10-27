@@ -1,0 +1,9 @@
+# Candidate0.62 — política de segurança visível e falhas de inicialização
+
+Continuar a rodada de segurança com quatro especialistas de testes simultâneos, conforme solicitação anterior. A decisão técnica é manter Win32/C++17 e acrescentar ao F2/COPIAR STATUS um resumo estático, somente booleano, da política realmente configurada no motor. Usar o checkbox da interface seria incorreto quando uma sessão já existe; acrescentar negociação/cifras ou SRTP sem suporte ampliaria o escopo e daria falsa garantia.
+
+NativeSecurityStatus contém policy_selected, tls_required, running_process e verified_registration. O motor mantém os dois primeiros sob mutex após configuração aceita; parar limpa ambos. Falha mantém somente a política selecionada para diagnóstico, nunca evidência de sessão/registro. Formatação distingue política TLS/UDP/ausente, processo e prova atual de registro; sempre informa ausência de SRTP e homologação. F2 e cópia incluem o mesmo resumo, sem identificadores nem valores de conta/CA/senha. Checkbox editado não altera política do motor.
+
+Corrigir três problemas reproduzidos pelos testes: falha libre_init/mqueue anterior aos hooks deve limpar senha e publicar Failed, após juntar a thread; nomes de host devem conter labels ASCII não vazios com bordas alfanuméricas; pasta/arquivo redirecionado no SDK não pode escapar da validação antes de staging. O limite de host é253 caracteres/63 por label. Sem DNS ou rede para validar sintaxe. Teste de pacote usa symlink Linux/junction Windows, sem execução de DLL sintética.
+
+Preservar TLS/certificados, identidade de chamada, rotas fixas e assinatura pendente. Sem alegar pentest completo, criptografia de mídia ou homologação física. Testes nativos induzem falha antes de conta/registro; funções SDK de inicialização são substituídas somente no objeto de teste, sem alterar SDK ou caminho da aplicação distribuída.
