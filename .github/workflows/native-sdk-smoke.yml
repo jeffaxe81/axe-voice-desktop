@@ -13,6 +13,7 @@ on:
       - 'tests/run_native_sip_loopback.py'
       - 'tests/native_*'
       - 'tests/test_native_package_gates.ps1'
+      - 'tests/test_security_*'
       - 'tests/test_audio_device_change*'
       - 'tests/test_audio_endpoint_watcher.cpp'
       - 'tests/audio_watcher_fakes/**'
@@ -42,6 +43,9 @@ jobs:
             build/native-sdk-deps-${{ matrix.profile }}/
             build/native-sdk-${{ matrix.profile }}/prefix/
           key: msvc2022-sdk-v1-${{ matrix.profile }}-re65555da-bs9cfab81-ssl8cf17aa
+      - name: Verify literal package file integrity
+        shell: pwsh
+        run: ./tests/test_security_package.ps1
       - name: Verify local TLS fixture handshake deadline
         run: python tests/test_native_tls_fixture.py
       - name: Build pinned MSVC candidate and run real libre reactor

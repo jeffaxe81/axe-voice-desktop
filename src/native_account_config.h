@@ -29,16 +29,31 @@ inline NativeAccountConfig native_account_config(const SipAccount& a,const std::
     if(a.use_tls) out.config+="sip_cafile "+trust+"\n";
     out.valid=true; return out;
 }
+// The native engine enables exactly one SIP transport. Preserve explicit intent
+// across GUI normalization and reject mismatched schemes before routing.
 inline std::string native_call_destination(const std::wstring& typed,const SipAccount& a) {
+    if(typed.size()>512) return {};
     const auto parsed=validate_address(typed);
     if(!parsed) return {};
     std::string uri=native_ascii(parsed.normalized);
     if(uri.empty()) return {};
+    const bool secure=uri.compare(0,5,"sips:")==0;
+    const bool plain=uri.compare(0,4,"sip:")==0;
+    if((secure && !a.use_tls) || (plain && a.use_tls)) return {};
     if(uri.find('@')==std::string::npos) {
         if(!native_account_config(a,a.use_tls?L"validated-ca":L"").valid) return {};
-        return std::string(a.use_tls?"sips:":"sip:")+uri+"@"+native_ascii(a.server)+":"+std::to_string(a.port)+(a.use_tls?";transport=tls":";transport=udp");
+        if(secure || plain) uri.erase(0,secure?5:4);
+        uri=std::string(a.use_tls?"sips:":"sip:")+uri+"@"+native_ascii(a.server)+":"+std::to_string(a.port)+(a.use_tls?";transport=tls":";transport=udp");
     }
-    if(a.use_tls && uri.compare(0,5,"sips:")!=0) return {};
+    if(uri.size()>512) return {};
+    const auto start=uri.compare(0,5,"sips:")==0?5u:4u;
+    const auto at=uri.find('@');
+    if(at==std::string::npos || at<=start) return {};
+    // Keep native call users within the same supported grammar as REFER.
+    for(std::size_t i=start;i<at;++i){
+        const char c=uri[i];
+        if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_'||c=='.'||c=='-'||c=='+'||c=='*'||c=='#')) return {};
+    }
     return uri;
 }
 } // namespace axv

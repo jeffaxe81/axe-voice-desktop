@@ -18,8 +18,9 @@ inline AccountError validate_account(const SipAccount& a) {
             return AccountError::InvalidServer;
     }
     for (wchar_t c : a.username) {
-        if (std::iswspace(c) || std::iswcntrl(c) || c == L'@' ||
-            c == L'<' || c == L'>' || c == L'"' || c == L':')
+        if (!((c >= L'a' && c <= L'z') || (c >= L'A' && c <= L'Z') ||
+              (c >= L'0' && c <= L'9') || c == L'_' || c == L'.' ||
+              c == L'-' || c == L'+'))
             return AccountError::InvalidUser;
     }
     return AccountError::None;

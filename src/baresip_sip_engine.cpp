@@ -45,7 +45,7 @@ struct BaresipSipEngine::Impl {
     BaresipNativeLibreReactor reactor{[this]{tick();},[this]{begin();},[this]{end();}};
     static inline std::atomic<Impl*> process_owner{nullptr};
     ~Impl(){reactor.stop();erase(password);}
-    void fail() { failed=true; adapter.stop(); if(owned){erase_sdk_account_password(ua_account(owned));ua_stop_all(true);owned=nullptr;} std::lock_guard<std::mutex> lock(mutex); view={RuntimeProcess::Failed,SipStatus::Failed}; command={};media={};last_hold_error=0;mute_rejected=false;dtmf_rejected=false;audio_issue=NativeAudioRouteStatus::Ready; }
+    void fail() { erase(password); failed=true; adapter.stop(); if(owned){erase_sdk_account_password(ua_account(owned));ua_stop_all(true);owned=nullptr;} std::lock_guard<std::mutex> lock(mutex); view={RuntimeProcess::Failed,SipStatus::Failed}; command={};media={};last_hold_error=0;mute_rejected=false;dtmf_rejected=false;audio_issue=NativeAudioRouteStatus::Ready; }
     bool checked(int error,const wchar_t* stage) {
         if(!error)return true;
         {std::lock_guard<std::mutex> lock(mutex);sdk_error=error;sdk_stage=stage;}

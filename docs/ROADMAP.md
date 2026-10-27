@@ -73,3 +73,5 @@ SHA-256: `9c1ff942ae1ae56bdfcdd04c3d6e242a056d7f0dd50bb19f6e13226e7c819b83`
 Registrado para etapa posterior. Não iniciar antes de liberação formal do Projeto 1.
 
 Consulte a [matriz das funcionalidades restantes](integration/REMAINING-FUNCTIONALITIES.md) para separar código entregue, escopo histórico e homologação externa.
+
+- Candidate0.61: intenção SIP/SIPS preservada, limites de entrada nativa e integridade literal de arquivos no pacote; quatro frentes de testes de segurança. [Registro e acompanhamento](integration/SECURITY-HARDENING.md).
