@@ -20,6 +20,9 @@
 #include "baresip_probe.h"
 #include "baresip_modules.h"
 #include "audio_devices.h"
+#include "audio_inventory_async.h"
+#include "audio_inventory_retry.h"
+#include "audio_panel_selection.h"
 #include "audio_selection_feedback.h"
 #include "native_audio_routes.h"
 #include "audio_routing_preview.h"
@@ -145,6 +148,11 @@ std::vector<axv::AudioEndpoint> g_audio_outputs;
 std::wstring g_selected_input_id;
 std::wstring g_selected_output_id;
 std::wstring g_selected_ringtone_id;
+bool g_audio_inventory_current = false;
+axv::AudioInventoryAsync g_audio_worker{axv::inspect_windows_audio_devices};
+axv::AudioInventoryRetry g_audio_retry;
+axv::AudioInventoryAsync g_settings_audio_worker{axv::inspect_windows_audio_devices};
+axv::AudioInventoryRetry g_settings_audio_retry;
 axv::TonePreviewPlayer g_tone_preview;
 axv::TonePreviewState g_last_tone_state = axv::TonePreviewState::Idle;
 #ifdef AXV_ENABLE_NATIVE_SIP
@@ -494,6 +502,10 @@ void bring_focused_control_into_view(HWND window, HWND control) {
 }
 
 void show_page(HWND root, int page) {
+    if (g_page != page) {
+        if (g_page == 2) { g_audio_worker.cancel(); g_audio_retry.reset(); g_audio_inventory_current=false; }
+        if (g_page == 1) { g_settings_audio_worker.cancel(); g_settings_audio_retry.reset(); }
+    }
     if (g_page != page) set_viewport_scroll(root, 0);
     g_page = page;
     for (auto child : g_dial_controls) {
@@ -515,7 +527,7 @@ void show_page(HWND root, int page) {
 
 // Mini mode keeps only the target and true SIP state, without fake call actions.
 void apply_compact_layout(HWND root) {
-    if (g_compact && g_page != 0) g_page = 0;
+    if (g_compact && g_page != 0) show_page(root, 0);
     position_logical(g_number_label,39,g_compact?218:246,320,20);
     position_logical(g_number,39,g_compact?242:272,350,43);
     position_logical(g_status,24,g_compact?298:kFullFeedbackY,390,30);
@@ -642,7 +654,7 @@ void edit_number(HWND root, wchar_t action) {
 }
 
 bool can_preview_selected_ringtone(){
-    if(g_smoke_mode || g_tone_preview.state()==axv::TonePreviewState::Playing)return false;
+    if(g_smoke_mode || !g_audio_inventory_current || g_tone_preview.state()==axv::TonePreviewState::Playing)return false;
 #ifdef AXV_ENABLE_NATIVE_SIP
     if(g_ring_player.busy() || axv::verified_incoming_call(native_engine().observation()))return false;
     return axv::fixed_native_ringtone_selection(g_audio_outputs,g_selected_ringtone_id).available();
@@ -695,7 +707,7 @@ axv::AudioSelectionRefresh fill_audio_combo(
     return selection;
 }
 
-void refresh_audio_panel() {
+void apply_audio_inventory(const axv::AudioInventory& inventory) {
     bool fixed_routes=false,native_routes=false;
 #ifdef AXV_ENABLE_NATIVE_SIP
     native_routes=true;
@@ -705,12 +717,16 @@ void refresh_audio_panel() {
         g_selected_input_id=route.capture_id;g_selected_output_id=route.playback_id;
     }
 #endif
-    const auto inventory = axv::inspect_windows_audio_devices();
-    if (inventory.error != axv::AudioInventoryError::None) {
-        g_audio_inputs.clear(); g_audio_outputs.clear();
-        fill_audio_combo(g_input_audio_combo, g_audio_inputs, g_selected_input_id,false,fixed_routes,native_routes);
-        fill_audio_combo(g_output_audio_combo, g_audio_outputs, g_selected_output_id,false,fixed_routes,native_routes);
-        fill_audio_combo(g_ringtone_audio_combo, g_audio_outputs, g_selected_ringtone_id, true,false,native_routes);
+    g_audio_inventory_current = inventory.error == axv::AudioInventoryError::None;
+    const auto selection=axv::reconcile_audio_panel(
+        {g_selected_input_id,g_selected_output_id,g_selected_ringtone_id},inventory,native_routes);
+    g_selected_input_id=selection.input_id;
+    g_selected_output_id=selection.output_id;
+    g_selected_ringtone_id=selection.ringtone_id;
+    if (!g_audio_inventory_current) {
+        EnableWindow(g_input_audio_combo,FALSE);
+        EnableWindow(g_output_audio_combo,FALSE);
+        EnableWindow(g_ringtone_audio_combo,FALSE);
         EnableWindow(GetDlgItem(GetParent(g_ringtone_audio_combo), kTestRingtoneButton), FALSE);
         SetWindowTextW(g_headset_status, L"Falha ao consultar os dispositivos do Windows.");
         return;
@@ -733,6 +749,45 @@ void refresh_audio_panel() {
         ? (fixed_routes?L"Rota da sessao fixada. Pare o motor para trocar; teste com headset pendente.":L"Microfone e saida serao aplicados no proximo registro.")
         :axv::native_audio_route_feedback(route_status));
 #endif
+}
+
+void request_audio_panel() {
+    if (g_smoke_mode) return;
+    g_audio_inventory_current=false;
+    g_audio_worker.request();
+    EnableWindow(g_input_audio_combo,FALSE);
+    EnableWindow(g_output_audio_combo,FALSE);
+    EnableWindow(g_ringtone_audio_combo,FALSE);
+    EnableWindow(GetDlgItem(GetParent(g_ringtone_audio_combo),kTestRingtoneButton),FALSE);
+    SetWindowTextW(g_headset_status,L"Consultando dispositivos de audio...");
+}
+bool audio_dropdown_open() {
+    return SendMessageW(g_input_audio_combo,CB_GETDROPPEDSTATE,0,0) ||
+        SendMessageW(g_output_audio_combo,CB_GETDROPPEDSTATE,0,0) ||
+        SendMessageW(g_ringtone_audio_combo,CB_GETDROPPEDSTATE,0,0);
+}
+void poll_audio_inventory() {
+    if (g_smoke_mode || g_compact) return;
+    const auto now=GetTickCount64();
+    if(g_page==2 && !audio_dropdown_open()) {
+        if(g_audio_worker.snapshot().pending && g_audio_retry.ready(now)) {
+            if(g_audio_worker.start_pending()) g_audio_retry.started();
+            else if(g_audio_worker.snapshot().launch_failed) g_audio_retry.failed(now);
+        }
+        axv::AudioInventory inventory;
+        if(g_audio_worker.take(inventory)) apply_audio_inventory(inventory);
+    }
+    if(g_page==1) {
+        if(g_settings_audio_worker.snapshot().pending && g_settings_audio_retry.ready(now)) {
+            if(g_settings_audio_worker.start_pending()) g_settings_audio_retry.started();
+            else if(g_settings_audio_worker.snapshot().launch_failed) g_settings_audio_retry.failed(now);
+        }
+        axv::AudioInventory inventory;
+        if(g_settings_audio_worker.take(inventory)) {
+            const auto summary=axv::audio_inventory_summary(inventory);
+            SetWindowTextW(g_audio_status,summary.c_str());
+        }
+    }
 }
 
 axv::RuntimeProcess observed_process(axv::ProcessStatus status, bool stopping) {
@@ -807,8 +862,8 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     SetWindowTextW(mute,controls && media.muted?L"MIC MUDO":L"MUDO");
     SetWindowTextW(hold,controls && media.local_hold?L"RETOMAR":L"ESPERA");
     const bool routes_locked=observed.process!=axv::RuntimeProcess::Stopped;
-    EnableWindow(g_input_audio_combo,!routes_locked && SendMessageW(g_input_audio_combo,CB_GETCOUNT,0,0)>0);
-    EnableWindow(g_output_audio_combo,!routes_locked && SendMessageW(g_output_audio_combo,CB_GETCOUNT,0,0)>0);
+    EnableWindow(g_input_audio_combo,!routes_locked && g_audio_inventory_current && SendMessageW(g_input_audio_combo,CB_GETCOUNT,0,0)>0);
+    EnableWindow(g_output_audio_combo,!routes_locked && g_audio_inventory_current && SendMessageW(g_output_audio_combo,CB_GETCOUNT,0,0)>0);
     static std::wstring last_native_diagnostic;
     const auto diagnostic=native_engine().diagnostic();
     if(diagnostic!=last_native_diagnostic){SetWindowTextW(g_process_status,diagnostic.c_str());last_native_diagnostic=diagnostic;}
@@ -954,8 +1009,13 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                     39, 605, 170, 39, 1);
         make_button(window, L"PARAR MOTOR", kStopBaresipButton,
                     218, 605, 171, 39, 1);
+#ifdef AXV_ENABLE_NATIVE_SIP
+        make_button(window,L"DISPOSITIVOS DE AUDIO",kAudioDevicesButton,39,654,350,36,1);
+        g_audio_status=make_label(window,L"Audio nao inspecionado.",39,750,350,40,1,g_font_small);
+#else
         g_audio_status = make_label(window, L"Áudio não inspecionado.",
                                     39, 654, 350, 41, 1, g_font_small);
+#endif
         g_process_status = make_label(window, L"Baresip parado; registro SIP indisponível.",
                                       39, 702, 350, 43, 1, g_font_small);
         make_label(window, L"HEADSET / AUDIO - TRES ROTAS", 39, 218, 352, 27, 2, g_font_small);
@@ -1065,7 +1125,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 return 0;
             }
             if (control == kRefreshHeadsetsButton && g_page == 2) {
-                if (!g_smoke_mode) refresh_audio_panel();
+                request_audio_panel();
                 return 0;
             }
             if (control == kShowAudio) {
@@ -1075,7 +1135,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                     save_ui_preferences();
                 }
                 show_page(window, 2);
-                if (!g_smoke_mode) refresh_audio_panel();
+                request_audio_panel();
                 return 0;
             }
             if (control == kShowSettings) {
@@ -1089,7 +1149,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             }
             if (control == kCompact) {
                 g_compact = !g_compact;
-                if (g_compact) g_page = 0;
+                if (g_compact) show_page(window, 0);
                 apply_compact_layout(window);
                 save_ui_preferences();
                 return 0;
@@ -1265,7 +1325,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             return 0;
         }
         if (LOWORD(wparam) == kRefreshHeadsetsButton && HIWORD(wparam) == BN_CLICKED) {
-            if (!g_smoke_mode) refresh_audio_panel();
+            request_audio_panel();
             return 0;
         }
         if (HIWORD(wparam) == CBN_SELCHANGE) {
@@ -1325,9 +1385,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             return 0;
         }
         if (LOWORD(wparam) == kAudioDevicesButton && HIWORD(wparam) == BN_CLICKED) {
-            const axv::AudioInventory inventory = axv::inspect_windows_audio_devices();
-            const std::wstring summary = axv::audio_inventory_summary(inventory);
-            SetWindowTextW(g_audio_status, summary.c_str());
+            if (!g_smoke_mode && g_page==1 && !g_compact) {
+                g_settings_audio_worker.request();
+                SetWindowTextW(g_audio_status,L"Consultando dispositivos de audio...");
+            }
             return 0;
         }
         if (LOWORD(wparam) == kProbeButton && HIWORD(wparam) == BN_CLICKED) {
@@ -1526,6 +1587,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
     }
     case WM_TIMER:
         if (wparam == kProcessTimer) {
+            poll_audio_inventory();
             // No Windows UI operations occur on the WASAPI worker thread.
             const auto tone_state = g_tone_preview.state();
             if (tone_state != g_last_tone_state) {
@@ -1594,6 +1656,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         DestroyWindow(window);
         return 0;
     case WM_DESTROY:
+        g_audio_worker.close();
+        g_settings_audio_worker.close();
         g_tone_preview.request_stop();
 #ifdef AXV_ENABLE_NATIVE_SIP
         g_ring_player.stop();
@@ -1634,7 +1698,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0 || std::wcscmp(command_line,L"--native-ui-smoke")==0);
 #ifdef AXV_ENABLE_NATIVE_SIP
-    const wchar_t* title=L"AXE Voice | Candidato nativo 0.58";
+    const wchar_t* title=L"AXE Voice | Candidato nativo 0.59";
 #else
     const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
 #endif
@@ -1645,6 +1709,28 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         axv::dpi_pixels(kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
     if (!window) return 2;
+    if (g_smoke_mode) {
+        if(g_compact){g_compact=false;apply_compact_layout(window);}
+        for(int pass=0;pass<2;++pass) {
+            SendMessageW(window,WM_COMMAND,MAKEWPARAM(kShowAudio,BN_CLICKED),0);
+            SendMessageW(window,WM_COMMAND,MAKEWPARAM(kRefreshHeadsetsButton,BN_CLICKED),0);
+            SendMessageW(window,WM_TIMER,kProcessTimer,0);
+            SendMessageW(window,WM_COMMAND,MAKEWPARAM(kShowSettings,BN_CLICKED),0);
+            SendMessageW(window,WM_COMMAND,MAKEWPARAM(kAudioDevicesButton,BN_CLICKED),0);
+            SendMessageW(window,WM_COMMAND,MAKEWPARAM(kAudioDevicesButton,BN_CLICKED),0);
+            SendMessageW(window,WM_TIMER,kProcessTimer,0);
+            SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),0);
+            SendMessageW(window,WM_TIMER,kProcessTimer,0);
+            SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),0);
+        }
+        const auto audio=g_audio_worker.snapshot();
+        const auto settings=g_settings_audio_worker.snapshot();
+        if(audio.busy || audio.pending || audio.ready || settings.busy || settings.pending || settings.ready ||
+            g_audio_inventory_current || !GetDlgItem(window,kAudioDevicesButton)) {
+            DestroyWindow(window); return 22;
+        }
+        show_page(window,0);
+    }
 #ifdef AXV_ENABLE_NATIVE_SIP
     if(command_line && std::wcscmp(command_line,L"--native-ui-smoke")==0) {
         if(g_compact){g_compact=false;apply_compact_layout(window);}
@@ -1735,6 +1821,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         SendMessageW(g_ringtone_audio_combo,CB_SETCURSEL,0,0);
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kRingtoneAudioCombo,CBN_SELCHANGE),reinterpret_cast<LPARAM>(g_ringtone_audio_combo));
         ok=ok && g_selected_ringtone_id.empty() && !can_preview_selected_ringtone() && !g_ring_player.snapshot().request.active();
+        // A failed inventory must retain selections without timer re-enabling them.
+        const axv::AudioPanelSelection retained{g_selected_input_id,g_selected_output_id,g_selected_ringtone_id};
+        axv::AudioInventory inventory_error;inventory_error.error=axv::AudioInventoryError::EndpointQueryFailed;
+        apply_audio_inventory(inventory_error);
+        refresh_runtime_banner(g_baresip_process.poll());
+        ok=ok && g_selected_input_id==retained.input_id && g_selected_output_id==retained.output_id &&
+            g_selected_ringtone_id==retained.ringtone_id && !g_audio_inventory_current &&
+            !IsWindowEnabled(g_input_audio_combo) && !IsWindowEnabled(g_output_audio_combo) &&
+            !IsWindowEnabled(g_ringtone_audio_combo);
         // A missing CA must reject TLS before any registration starts.
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kReadinessButton,BN_CLICKED),0);
         ok=ok && g_readiness_requested_smoke && !IsWindowEnabled(GetDlgItem(window,kCallButton));
