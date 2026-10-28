@@ -83,3 +83,5 @@ Consulte a [matriz das funcionalidades restantes](integration/REMAINING-FUNCTION
 - Candidate0.64: configuração recuperável com limpeza de credenciais, diagnóstico limpo após parada, argumentos Windows preservados e proveniência de todos os arquivos SDK; quatro frentes de testes. [Escopo](integration/SECURITY-RECOVERY.md).
 
 - Candidate0.65: limpeza de início parcial, primeira causa de falha preservada e visível, rejeição inativa sem reaproveitar conta antiga e caminhos canônicos do manifesto; quatro frentes de testes. [Registro](integration/SECURITY-OWNER-LIFECYCLE.md).
+
+- Candidate0.65.1: recursos do processo auxiliar liberados mesmo em falha de memória; quatro auditorias de segurança e regressão Windows de recuperação. [Escopo](integration/SECURITY-PROCESS-RESOURCES.md).

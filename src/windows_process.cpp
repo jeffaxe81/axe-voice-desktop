@@ -2,9 +2,33 @@
 #include "windows_argument_quote.h"
 #include <string>
 #include <vector>
+#include <new>
 
 namespace axv {
 namespace {
+struct ScopedHandle {
+    HANDLE value = nullptr;
+    ScopedHandle() = default;
+    ScopedHandle(const ScopedHandle&) = delete;
+    ScopedHandle& operator=(const ScopedHandle&) = delete;
+    ~ScopedHandle() { close(); }
+    void close() noexcept {
+        if (value && value != INVALID_HANDLE_VALUE) CloseHandle(value);
+        value = nullptr;
+    }
+    HANDLE release() noexcept {
+        const HANDLE result = value;
+        value = nullptr;
+        return result;
+    }
+};
+struct ScopedAttributeList {
+    PPROC_THREAD_ATTRIBUTE_LIST value = nullptr;
+    ScopedAttributeList() = default;
+    ScopedAttributeList(const ScopedAttributeList&) = delete;
+    ScopedAttributeList& operator=(const ScopedAttributeList&) = delete;
+    ~ScopedAttributeList() { if (value) DeleteProcThreadAttributeList(value); }
+};
 DWORD WINAPI send_quit_on_worker(LPVOID pipe_handle) {
     HANDLE write_end = static_cast<HANDLE>(pipe_handle);
     constexpr char command[] = "/quit\n";
@@ -28,7 +52,7 @@ void WindowsProcess::release_handles() {
 }
 
 bool WindowsProcess::start(const std::filesystem::path& executable,
-                           const std::filesystem::path& config_directory) {
+                           const std::filesystem::path& config_directory) try {
     if (poll() == ProcessStatus::Running) {
         last_error_ = ERROR_ALREADY_EXISTS;
         return false;
@@ -84,38 +108,37 @@ bool WindowsProcess::start(const std::filesystem::path& executable,
     SECURITY_ATTRIBUTES sa = {};
     sa.nLength = sizeof(sa);
     sa.bInheritHandle = TRUE;
-    HANDLE child_read = nullptr, parent_write = nullptr;
-    if (!CreatePipe(&child_read, &parent_write, &sa, 0)) {
+    ScopedHandle child_read, parent_write;
+    if (!CreatePipe(&child_read.value, &parent_write.value, &sa, 0)) {
         last_error_ = GetLastError();
         release_handles(); state_ = ProcessStatus::Failed; return false;
     }
-    if (!SetHandleInformation(parent_write, HANDLE_FLAG_INHERIT, 0)) {
+    if (!SetHandleInformation(parent_write.value, HANDLE_FLAG_INHERIT, 0)) {
         last_error_ = GetLastError();
-        CloseHandle(child_read); CloseHandle(parent_write);
         release_handles(); state_ = ProcessStatus::Failed; return false;
     }
-    HANDLE nul = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+    ScopedHandle nul;
+    nul.value = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
                              &sa, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (nul == INVALID_HANDLE_VALUE) {
+    if (nul.value == INVALID_HANDLE_VALUE) {
         last_error_ = GetLastError();
-        CloseHandle(child_read); CloseHandle(parent_write);
         release_handles(); state_ = ProcessStatus::Failed; return false;
     }
     SIZE_T attr_size = 0;
     InitializeProcThreadAttributeList(nullptr, 1, 0, &attr_size);
     std::vector<unsigned char> attr_storage(attr_size);
     auto* attrs = reinterpret_cast<PPROC_THREAD_ATTRIBUTE_LIST>(attr_storage.data());
+    // Declared after storage: delete the initialized list before freeing its buffer.
+    ScopedAttributeList attribute_list;
     if (!InitializeProcThreadAttributeList(attrs, 1, 0, &attr_size)) {
         last_error_ = GetLastError();
-        CloseHandle(child_read); CloseHandle(parent_write); CloseHandle(nul);
         release_handles(); state_ = ProcessStatus::Failed; return false;
     }
-    HANDLE allowed[] = {child_read, nul};
+    attribute_list.value = attrs;
+    HANDLE allowed[] = {child_read.value, nul.value};
     if (!UpdateProcThreadAttribute(attrs, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
                                    allowed, sizeof(allowed), nullptr, nullptr)) {
         last_error_ = GetLastError();
-        DeleteProcThreadAttributeList(attrs);
-        CloseHandle(child_read); CloseHandle(parent_write); CloseHandle(nul);
         release_handles(); state_ = ProcessStatus::Failed; return false;
     }
 
@@ -127,9 +150,9 @@ bool WindowsProcess::start(const std::filesystem::path& executable,
     STARTUPINFOEXW startup = {};
     startup.StartupInfo.cb = sizeof(startup);
     startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
-    startup.StartupInfo.hStdInput = child_read;
-    startup.StartupInfo.hStdOutput = nul;
-    startup.StartupInfo.hStdError = nul;
+    startup.StartupInfo.hStdInput = child_read.value;
+    startup.StartupInfo.hStdOutput = nul.value;
+    startup.StartupInfo.hStdError = nul.value;
     startup.lpAttributeList = attrs;
     PROCESS_INFORMATION info = {};
     const BOOL created = CreateProcessW(absolute.c_str(), command_buffer.data(),
@@ -137,14 +160,12 @@ bool WindowsProcess::start(const std::filesystem::path& executable,
         EXTENDED_STARTUPINFO_PRESENT, nullptr, working_directory.c_str(),
         &startup.StartupInfo, &info);
     if (!created) last_error_ = GetLastError();
-    DeleteProcThreadAttributeList(attrs);
-    CloseHandle(child_read);
-    CloseHandle(nul);
+    child_read.close();
+    nul.close();
     if (!created) {
-        CloseHandle(parent_write);
         release_handles(); state_ = ProcessStatus::Failed; return false;
     }
-    stdin_write_ = parent_write;
+    stdin_write_ = parent_write.release();
     process_ = info.hProcess;
     process_id_ = info.dwProcessId;
 
@@ -171,6 +192,12 @@ bool WindowsProcess::start(const std::filesystem::path& executable,
     CloseHandle(info.hThread);
     state_ = ProcessStatus::Running;
     return true;
+} catch (const std::bad_alloc&) {
+    // Scoped locals have already unwound; no partial launch remains armed.
+    release_handles();
+    last_error_ = ERROR_NOT_ENOUGH_MEMORY;
+    state_ = ProcessStatus::Failed;
+    return false;
 }
 
 ProcessStatus WindowsProcess::poll() {
