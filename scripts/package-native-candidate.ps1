@@ -41,6 +41,11 @@ if ($Manifest.product_sha256 -notmatch '^[0-9a-f]{64}$' -or
 }
 if (!$Manifest.files -or @($Manifest.files.PSObject.Properties).Count -eq 0) { throw 'SDK file hashes missing' }
 foreach ($Entry in $Manifest.files.PSObject.Properties) {
+    $Name = $Entry.Name
+    if (!$Name -or $Name -match '[\x00-\x1F\x7F<>:"|?*\\]' -or $Name.StartsWith('/')) { throw 'SDK manifest path is not canonical' }
+    foreach ($Part in $Name.Split('/')) {
+        if ($Part -match '^(CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM[1-9\u00B9\u00B2\u00B3]|LPT[1-9\u00B9\u00B2\u00B3]) *(\.|$)' -or !$Part -or $Part -eq '.' -or $Part -eq '..' -or $Part.EndsWith('.') -or $Part.EndsWith(' ')) { throw 'SDK manifest path is not canonical' }
+    }
     if ($Entry.Value -isnot [string]) { throw 'SDK manifest hash must be a string' }
     $Path = Join-Path $Prefix $Entry.Name
     if ($Entry.Value -notmatch '^[0-9a-f]{64}$' -or

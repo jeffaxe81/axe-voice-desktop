@@ -14,6 +14,16 @@ namespace axv {
 enum class LibreReactorFault {
     None, InitRejected, QueueRejected, HookFailed, MainLoopFailed
 };
+inline const wchar_t* libre_reactor_fault_message(LibreReactorFault fault) {
+    switch(fault) {
+    case LibreReactorFault::InitRejected:return L"Falha ao iniciar motor nativo; senha descartada. Inicializacao libre recusada.";
+    case LibreReactorFault::QueueRejected:return L"Falha ao iniciar motor nativo; senha descartada. Fila nativa indisponivel.";
+    case LibreReactorFault::HookFailed:return L"Falha em etapa do motor nativo; sessao encerrada e senha descartada. Pare o motor e registre novamente.";
+    case LibreReactorFault::MainLoopFailed:return L"Falha no ciclo do motor nativo; sessao encerrada e senha descartada. Pare o motor e registre novamente.";
+    case LibreReactorFault::None:return L"";
+    }
+    return L"Falha do motor nativo. Pare o motor antes de tentar novamente.";
+}
 struct LibreReactorSnapshot {
     bool running=false;
     std::uint64_t generation=0;
@@ -24,6 +34,8 @@ struct LibreReactorSnapshot {
 // Owns a libre re_main() thread and a native mqueue in that SAME thread.
 // on_start/on_tick/on_stop run exclusively on that thread. Only wake()/stop()
 // can be called by clients; they never touch Baresip UA or credentials.
+// The stopping hook must tolerate partial startup; it runs once after the start
+// hook is attempted, including when that hook throws. No hooks run if init/queue fails.
 // Caller must serialize start(), stop() and destruction from a non-owner thread.
 class BaresipNativeLibreReactor {
 public:

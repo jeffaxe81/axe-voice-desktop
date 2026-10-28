@@ -1,4 +1,4 @@
-# Release candidata nativa0.64 — checklist atual
+# Release candidata nativa0.65 — checklist atual
 
 ## Implementações
 - [x] Motor Baresip/libre e OpenSSL fixados, registro/callbacks e comandos chamar/atender/encerrar no candidato.
@@ -79,3 +79,5 @@ Patch0.55.1: o relatório F2 mostra a disponibilidade atual de Chamar separada d
 - Candidate0.63: exigir motivos de destino e reset, cinco modos nativos de ciclo/credencial, schema de manifesto estrito e isolamento da exportação. [Escopo e limites](integration/SECURITY-FEEDBACK.md).
 
 - Candidate0.64: exigir matriz de falhas de configuração inicial/substituição, ciclo de diagnóstico, perfil Windows com separador final e arquivos SDK/licenças extras recusados. [Evidência e limites](integration/SECURITY-RECOVERY.md).
+
+- Candidate0.65: exigir callbacks de limpeza no proprietário, primeira falha preservada, rejeições de conta sem registro antigo e nomes de manifesto recusados antes de hash. [Escopo](integration/SECURITY-OWNER-LIFECYCLE.md).

@@ -104,13 +104,15 @@ $ProductArguments = @('-S',$Root,'-B',$ProductBuild,'-G','Visual Studio 17 2022'
 if ($TlsMedia) { $ProductArguments += @('-DAXV_NATIVE_TLS_MEDIA=ON','-DAXV_ENABLE_NATIVE_SIP=ON',"-DOPENSSL_ROOT_DIR=$Prefix",'-DOPENSSL_USE_STATIC_LIBS=OFF') }
 Invoke-Checked 'cmake' $ProductArguments
 Invoke-Checked 'cmake' @('--build',$ProductBuild,'--config','Release','--parallel','4','--target',
-    'axv_native_baresip_sdk_abi_probe','axv_native_baresip_abi_probe','axv_native_libre_reactor_smoke')
+    'axv_native_baresip_sdk_abi_probe','axv_native_baresip_abi_probe','axv_native_libre_reactor_smoke','axv_native_reactor_cleanup_smoke')
 if ($TlsMedia) {
     Invoke-Checked 'cmake' @('--build',$ProductBuild,'--config','Release','--parallel','4','--target','axv_native_tls_media_probe')
     Get-ChildItem (Join-Path $Prefix 'bin') -Filter '*.dll' | Copy-Item -Destination (Join-Path $ProductBuild 'Release')
     Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_tls_media_probe.exe') @()
-    Invoke-Checked 'cmake' @('--build',$ProductBuild,'--config','Release','--parallel','4','--target','axv_native_configure_failure_smoke','axv_native_diagnostic_lifecycle_smoke','axv_native_credential_lifecycle_smoke','axv_native_pending_secret_smoke','axv_native_sip_engine_smoke','axv_native_sdk_secret_smoke','axv_native_audio_config_smoke','axv_native_audio_mute_smoke','AXEVoice')
+    Invoke-Checked 'cmake' @('--build',$ProductBuild,'--config','Release','--parallel','4','--target','axv_native_engine_fault_smoke','axv_native_configure_rejection_smoke','axv_native_configure_failure_smoke','axv_native_diagnostic_lifecycle_smoke','axv_native_credential_lifecycle_smoke','axv_native_pending_secret_smoke','axv_native_sip_engine_smoke','axv_native_sdk_secret_smoke','axv_native_audio_config_smoke','axv_native_audio_mute_smoke','AXEVoice')
     Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_sip_engine_smoke.exe') @()
+    Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_configure_rejection_smoke.exe') @()
+    foreach ($FaultMode in 1..3) { Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_engine_fault_smoke.exe') @([string]$FaultMode) }
     foreach ($Case in @('initial','replacement')) {
         foreach ($Point in 1..16) { Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_configure_failure_smoke.exe') @([string]$Point,$Case) }
     }
@@ -126,6 +128,7 @@ if ($TlsMedia) {
 # The ABI executables are build-only. Also execute the local libre reactor;
 # it creates no Baresip UA, account, SIP registration or media session.
 Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_libre_reactor_smoke.exe') @()
+Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_reactor_cleanup_smoke.exe') @()
 # Bind packaging to the exact GUI binary that passed the smoke above.
 $ProductCache = Get-Content (Join-Path $ProductBuild 'CMakeCache.txt') -Raw
 $ProductVersion = [regex]::Match($ProductCache, '(?m)^CMAKE_PROJECT_VERSION:STATIC=([^\r\n]+)\r?$').Groups[1].Value

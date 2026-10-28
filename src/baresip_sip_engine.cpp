@@ -140,6 +140,14 @@ struct BaresipSipEngine::Impl {
         }
         publish_media(observed,calls);
     }
+    void reject_configuration() {
+        erase(password);configured=false;
+        std::lock_guard<std::mutex> lock(mutex);
+        view={RuntimeProcess::Failed,SipStatus::Failed};command={};media={};
+        policy_selected=false;tls_required=false;audio_route={};
+        destination_feedback.clear();sdk_error=0;sdk_stage.clear();
+        start_rejected=false;configure_rejected=true;
+    }
     void end() {
         // No SDK callback can race this: all SDK work is serialized by re_main.
         adapter.stop();
@@ -148,7 +156,12 @@ struct BaresipSipEngine::Impl {
         owned=nullptr;
         if(claimed){conf_close(); if(core)baresip_close(); mod_close(); core=false; process_owner.store(nullptr); claimed=false;}
         erase(password);
-        std::lock_guard<std::mutex> lock(mutex); view={RuntimeProcess::Stopped,SipStatus::Disconnected}; destination_feedback.clear(); command={};media={};last_hold_error=0;mute_rejected=false;dtmf_rejected=false;audio_issue=NativeAudioRouteStatus::Ready;
+        const bool faulted=failed || reactor.snapshot().fault!=LibreReactorFault::None;
+        std::lock_guard<std::mutex> lock(mutex);
+        view=faulted && view.process!=RuntimeProcess::Stopping
+            ? SipRuntimeObservation{RuntimeProcess::Failed,SipStatus::Failed}
+            : SipRuntimeObservation{RuntimeProcess::Stopped,SipStatus::Disconnected};
+        destination_feedback.clear(); command={};media={};last_hold_error=0;mute_rejected=false;dtmf_rejected=false;audio_issue=NativeAudioRouteStatus::Ready;
     }
     bool submit(Action a,std::string uri={},bool desired=false,const NativeCallMediaState* expected=nullptr,const SipRuntimeObservation* displayed=nullptr) {
         {std::lock_guard<std::mutex> lock(mutex);
@@ -176,13 +189,18 @@ NativeSecurityStatus BaresipSipEngine::security_status()const {
     return native_security_status(impl_->policy_selected,impl_->tls_required,impl_->view);
 }
 SipStatus BaresipSipEngine::status()const{return observation().sip;}
-bool BaresipSipEngine::configure(const SipAccount&){return false;} // explicit authentication is required
+bool BaresipSipEngine::configure(const SipAccount&){
+    if(!impl_->reactor.snapshot().running)impl_->reject_configuration();
+    return false; // explicit authentication is required; stale intent is never reused.
+}
 bool BaresipSipEngine::configure_authenticated(const SipAccount& a,const std::wstring& ca,std::string password,unsigned timeout,const NativeAudioRoute& audio) {
     PasswordEraseGuard wipe_input{password};
     if(impl_->reactor.snapshot().running)return false; // Do not disturb a live session.
     try {
         auto cfg=native_account_config(a,ca,audio);
-        if(!cfg.valid || password.empty() || password.size()>1024 || password.find('\0')!=std::string::npos || timeout<100 || timeout>60000)return false;
+        if(!cfg.valid || password.empty() || password.size()>1024 || password.find('\0')!=std::string::npos || timeout<100 || timeout>60000){
+            impl_->reject_configuration();return false;
+        }
         auto next_account=a;
         auto next_audio=audio;
         std::lock_guard<std::mutex> lock(impl_->mutex);
@@ -200,12 +218,7 @@ bool BaresipSipEngine::configure_authenticated(const SipAccount& a,const std::ws
         return true;
     } catch (...) {
         // No credential or partially prepared configuration may remain armed.
-        erase(impl_->password);impl_->configured=false;
-        std::lock_guard<std::mutex> lock(impl_->mutex);
-        impl_->view={RuntimeProcess::Failed,SipStatus::Failed};impl_->command={};impl_->media={};
-        impl_->policy_selected=false;impl_->tls_required=false;impl_->audio_route={};
-        impl_->destination_feedback.clear();impl_->sdk_error=0;impl_->sdk_stage.clear();
-        impl_->start_rejected=false;impl_->configure_rejected=true;
+        impl_->reject_configuration();
         return false;
     }
 }
@@ -248,9 +261,11 @@ void BaresipSipEngine::stop(){
     {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->view={RuntimeProcess::Stopped,SipStatus::Disconnected};impl_->media={};impl_->last_hold_error=0;impl_->mute_rejected=false;impl_->dtmf_rejected=false;impl_->audio_route={};impl_->audio_issue=NativeAudioRouteStatus::Ready;impl_->policy_selected=false;impl_->tls_required=false;impl_->destination_feedback.clear();impl_->start_rejected=false;impl_->configure_rejected=false;impl_->sdk_error=0;impl_->sdk_stage.clear();}
 }
 std::wstring BaresipSipEngine::diagnostic()const {
+    const auto reactor_fault=impl_->reactor.snapshot().fault;
     {std::lock_guard<std::mutex> lock(impl_->mutex);
      if(impl_->sdk_error)return L"Falha SDK em "+impl_->sdk_stage+L": "+std::to_wstring(impl_->sdk_error);
      if(impl_->configure_rejected)return L"Nao foi possivel preparar a conta; senha descartada. Confira os recursos do computador e informe os dados novamente.";
+     if(impl_->view.process==RuntimeProcess::Failed && reactor_fault!=LibreReactorFault::None)return libre_reactor_fault_message(reactor_fault);
      if(impl_->start_rejected)return L"Falha ao iniciar motor nativo; senha descartada. Confira os recursos do computador e tente registrar novamente.";
      if(impl_->destination_feedback.error()!=NativeDestinationError::None)return native_destination_error_message(impl_->destination_feedback.error());
      if(impl_->audio_issue!=NativeAudioRouteStatus::Ready)return native_audio_route_feedback(impl_->audio_issue);
