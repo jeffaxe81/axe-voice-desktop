@@ -85,3 +85,7 @@ Consulte a [matriz das funcionalidades restantes](integration/REMAINING-FUNCTION
 - Candidate0.65: limpeza de início parcial, primeira causa de falha preservada e visível, rejeição inativa sem reaproveitar conta antiga e caminhos canônicos do manifesto; quatro frentes de testes. [Registro](integration/SECURITY-OWNER-LIFECYCLE.md).
 
 - Candidate0.65.1: recursos do processo auxiliar liberados mesmo em falha de memória; quatro auditorias de segurança e regressão Windows de recuperação. [Escopo](integration/SECURITY-PROCESS-RESOURCES.md).
+
+- Candidate0.65.2: preparação do registro sem leitura antecipada da senha, limpeza por escopo e contenção de exceções da GUI; quatro auditorias de segurança. [Escopo](integration/GUI-CREDENTIAL-RECOVERY.md).
+- [ ] Validar atualização A→B com arquivos removidos e implementar inventário seguro do conteúdo instalado, preservando arquivos do usuário.
+- [ ] Definir e testar atualização com aplicativo aberto antes de modificar seus arquivos. [Acompanhamento dos dois itens](integration/INSTALLER-UPGRADE-FOLLOWUP.md).
