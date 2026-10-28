@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AXEVoiceDesktop VERSION 0.65.2 LANGUAGES CXX)
+project(AXEVoiceDesktop VERSION 0.66.0 LANGUAGES CXX)
 if(NOT WIN32)
   message(FATAL_ERROR "This bootstrap currently supports Windows only")
 endif()
@@ -207,7 +207,7 @@ if(BUILD_TESTING)
   set_tests_properties(native_reactor_fault_status PROPERTIES TIMEOUT 15)
 endif()
 if(BUILD_TESTING)
-  foreach(security_test IN ITEMS security_sip_inputs security_credentials security_command_boundaries security_destination_feedback native_security_status native_destination_result security_report_isolation native_destination_feedback windows_argument_quote)
+  foreach(security_test IN ITEMS security_sip_inputs security_credentials security_command_boundaries security_destination_feedback native_security_status native_destination_result security_report_isolation native_destination_feedback windows_argument_quote recent_destinations recent_destinations_security recent_destinations_failures recent_destinations_authorization)
     add_executable(test_${security_test} tests/test_${security_test}.cpp)
     target_compile_features(test_${security_test} PRIVATE cxx_std_17)
     target_link_libraries(test_${security_test} PRIVATE axv_sip_address)
@@ -220,6 +220,10 @@ if(BUILD_TESTING)
   target_include_directories(test_native_registration_ui BEFORE PRIVATE tests/registration_ui_fakes)
   target_compile_features(test_native_registration_ui PRIVATE cxx_std_17)
   add_test(NAME native_registration_ui COMMAND test_native_registration_ui)
+  add_executable(test_recent_destination_win32 tests/test_recent_destination_win32.cpp)
+  target_compile_features(test_recent_destination_win32 PRIVATE cxx_std_17)
+  target_link_libraries(test_recent_destination_win32 PRIVATE axv_sip_address user32)
+  add_test(NAME recent_destination_win32 COMMAND test_recent_destination_win32)
   add_executable(test_native_registration_win32 tests/test_native_registration_win32.cpp)
   target_compile_features(test_native_registration_win32 PRIVATE cxx_std_17)
   target_link_libraries(test_native_registration_win32 PRIVATE user32)
@@ -651,7 +655,7 @@ set_tests_properties(ui_smoke ui_blackbox PROPERTIES LABELS "blackbox")
 set_tests_properties(integration_sip_safety baresip_sdk_abi_probe windows_process security_process_resources sip_runtime_session_guard
   audio_inventory_async audio_inventory_shutdown audio_inventory_epochs audio_inventory_channels audio_inventory_failures
   audio_device_change_integration audio_endpoint_watcher
-  security_command_boundaries native_reactor_fault_status native_registration_win32
+  security_command_boundaries native_reactor_fault_status native_registration_win32 recent_destination_win32 recent_destinations_authorization
   baresip_sdk_provenance
   sip_event_projection baresip_event_mailbox baresip_callback_ingress
   baresip_callback_lifecycle baresip_sdk_event_adapter baresip_sdk_single_owner

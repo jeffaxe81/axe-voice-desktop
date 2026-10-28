@@ -33,6 +33,7 @@
 #ifdef AXV_ENABLE_NATIVE_SIP
 #include "incoming_ringtone_player.h"
 #include "native_registration_ui.h"
+#include "recent_destination_ui.h"
 #include "native_dtmf.h"
 #include "native_call_duration.h"
 #include "call_duration_format.h"
@@ -70,6 +71,7 @@ axv::NativeCallMediaState g_displayed_media;
 constexpr int kCallDurationLabel = 2503;
 HWND g_call_duration_label = nullptr;
 axv::NativeCallDuration g_call_duration;
+axv::RecentDestinations g_recent_destinations;
 
 #endif
 constexpr int kCallButton = 1001;
@@ -96,6 +98,7 @@ constexpr int kHelpButton = 2007;
 constexpr int kReadinessButton = 2008;
 constexpr int kCopyStatusButton = 2009;
 constexpr int kDtmfButton = 2010;
+constexpr int kRecentDestinationsButton = 2011;
 constexpr int kInputAudioCombo = 2401;
 constexpr int kOutputAudioCombo = 2402;
 constexpr int kRingtoneAudioCombo = 2403;
@@ -835,12 +838,60 @@ axv::SipRuntimeObservation current_sip_observation(axv::ProcessStatus state) {
         axv::SipEvidence::None,g_native_event_mailbox,g_sip_projection);
 #endif
 }
+#ifdef AXV_ENABLE_NATIVE_SIP
+void clear_recent_destinations(HWND window) {
+    g_recent_destinations.clear();
+    EnableWindow(GetDlgItem(window,kRecentDestinationsButton),FALSE);
+    SetWindowTextW(g_status,L"Lista de destinos recentes limpa.");
+}
+bool choose_recent_destination(HWND window,std::uint64_t token) {
+    const auto current=current_sip_observation(g_baresip_process.poll());
+    if(!axv::fill_recent_destination(g_recent_destinations,token,current,g_number)) {
+        SetWindowTextW(g_status,L"Destino recente indisponivel; a sessao pode ter mudado.");return false;
+    }
+    show_page(window,0);
+    SendMessageW(g_number,EM_SETSEL,0,-1);
+    SetWindowTextW(g_status,L"Destino recente preenchido. Revise e clique CHAMAR.");
+    return true;
+}
+void show_recent_destinations(HWND window) {
+    g_recent_destinations.synchronize(current_sip_observation(g_baresip_process.poll()));
+    if(!g_recent_destinations.size()) {
+        SetWindowTextW(g_status,L"Sem discagens solicitadas nesta sessao. Recentes ficam somente na memoria.");return;
+    }
+    struct Menu {HMENU value=CreatePopupMenu();~Menu(){if(value)DestroyMenu(value);}} menu;
+    if(!menu.value){SetWindowTextW(g_status,L"Nao foi possivel abrir os destinos recentes.");return;}
+    try {
+        std::array<std::uint64_t,axv::RecentDestinations::capacity> tokens{};
+        if(!AppendMenuW(menu.value,MF_STRING|MF_GRAYED,0,L"Discagens solicitadas nesta sessao"))return;
+        const auto count=g_recent_destinations.size();
+        for(std::size_t i=0;i<count;++i) {
+            const auto* entry=g_recent_destinations.at(i);
+            tokens[i]=entry->token;
+            const auto label=std::to_wstring(i+1)+L". "+entry->destination;
+            if(!AppendMenuW(menu.value,MF_STRING,static_cast<UINT_PTR>(i+1),label.c_str()))return;
+        }
+        if(!AppendMenuW(menu.value,MF_SEPARATOR,0,nullptr) ||
+           !AppendMenuW(menu.value,MF_STRING,100,L"LIMPAR RECENTES") ||
+           !AppendMenuW(menu.value,MF_STRING|MF_GRAYED,0,L"Escolha preenche; use CHAMAR para discar."))return;
+        RECT anchor{};GetWindowRect(g_number,&anchor);
+        const auto chosen=TrackPopupMenu(menu.value,TPM_RETURNCMD|TPM_NONOTIFY|TPM_RIGHTBUTTON,
+                                         anchor.left,anchor.bottom,0,window,nullptr);
+        if(chosen==100)clear_recent_destinations(window);
+        else if(chosen>=1 && static_cast<std::size_t>(chosen)<=count)
+            (void)choose_recent_destination(window,tokens[static_cast<std::size_t>(chosen)-1]);
+    }catch(...){SetWindowTextW(g_status,L"Nao foi possivel preparar a lista de destinos recentes.");}
+}
+#endif
+
 void refresh_runtime_banner(axv::ProcessStatus state) {
     if (!g_runtime_banner) return;
     // Thread-safe receive boundary is active, but not connected to Baresip C API.
     // Bind native event lifetime to actual process lifetime, not to a timer tick.
     const auto observed=current_sip_observation(state);
 #ifdef AXV_ENABLE_NATIVE_SIP
+    g_recent_destinations.synchronize(observed);
+    EnableWindow(GetDlgItem(GetParent(g_runtime_banner),kRecentDestinationsButton),g_recent_destinations.size()!=0);
     synchronize_incoming_alert(observed);
     const auto duration=g_call_duration.observe(observed,GetTickCount64());
     const std::wstring duration_text=duration.active
@@ -969,7 +1020,11 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                                           42, 190, 347, 20, -1, g_font_small, kCallDurationLabel);
 #endif
 
-        make_label(window, L"DISCAGEM", 39, 220, 290, 23, 0, g_font_small);
+        make_label(window, L"DISCAGEM", 39, 220, 200, 23, 0, g_font_small);
+#ifdef AXV_ENABLE_NATIVE_SIP
+        make_button(window,L"RECENTES",kRecentDestinationsButton,270,216,119,28,0);
+        EnableWindow(GetDlgItem(window,kRecentDestinationsButton),FALSE);
+#endif
         g_number_label = make_label(window, L"Número ou endereço SIP", 39, 246, 320, 20, 0, g_font_regular);
         g_number = make_edit(window, L"", kNumberEdit, 39, 272, 350, 43, 0);
 
@@ -1207,6 +1262,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 return 0;
             }
 #ifdef AXV_ENABLE_NATIVE_SIP
+            if(control==kRecentDestinationsButton){show_recent_destinations(window);return 0;}
             if(control==kDtmfButton){
                 const auto call=native_engine().observation();
                 if(!g_dtmf_mode.toggle(g_displayed_media,call))
@@ -1442,13 +1498,20 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             // provenance on every user action, including synthetic WM_COMMAND.
             wchar_t number[256] = {};
             GetWindowTextW(g_number, number, 256);
+            const std::wstring typed_destination(number); // Prepare before the engine accepts any request.
             const auto observed=current_sip_observation(g_baresip_process.poll());
             const auto permission = axv::authorize_dial(
-                observed, observed.session, g_sip_selection, number);
+                observed, observed.session, g_sip_selection, typed_destination);
             if (!permission.allowed()) {
                 SetWindowTextW(g_status, axv::dial_denial_text(permission.reason));
             } else if (!g_sip_selection.engine->start_call(permission.normalized_destination)) {
                 SetWindowTextW(g_status, g_sip_selection.engine->diagnostic().c_str());
+            } else {
+#ifdef AXV_ENABLE_NATIVE_SIP
+                // An accepted local request does not establish a completed call.
+                (void)g_recent_destinations.remember(observed,typed_destination,true);
+                EnableWindow(GetDlgItem(window,kRecentDestinationsButton),g_recent_destinations.size()!=0);
+#endif
             }
             return 0;
         }
@@ -1729,7 +1792,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0 || std::wcscmp(command_line,L"--native-ui-smoke")==0);
 #ifdef AXV_ENABLE_NATIVE_SIP
-    const wchar_t* title=L"AXE Voice | Candidato nativo 0.65.2";
+    const wchar_t* title=L"AXE Voice | Candidato nativo 0.66";
 #else
     const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
 #endif
@@ -1799,6 +1862,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             return (GetWindowLongPtrW(g_call_duration_label,GWL_STYLE)&WS_VISIBLE) &&
                    runtime.bottom<=duration.top && duration.bottom<=destination.top && dial_section_clear;
         };
+        RECT recents_bounds{},number_label_bounds{};
+        GetWindowRect(GetDlgItem(window,kRecentDestinationsButton),&recents_bounds);
+        GetWindowRect(g_number_label,&number_label_bounds);
+        ok=ok && GetDlgItem(window,kRecentDestinationsButton) &&
+            !IsWindowEnabled(GetDlgItem(window,kRecentDestinationsButton)) &&
+            recents_bounds.bottom<=number_label_bounds.top;
+        // Empty/synthetic commands never open a popup or create a dial request.
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kRecentDestinationsButton,BN_CLICKED),0);
+        ok=ok && g_recent_destinations.size()==0 && !IsWindowEnabled(GetDlgItem(window,kCallButton));
         ok=ok && inactive_duration() && duration_layout_clear();
         RECT dtmf_bounds{},feedback_bounds{};
         GetWindowRect(GetDlgItem(window,kDtmfButton),&dtmf_bounds);GetWindowRect(g_status,&feedback_bounds);
@@ -2103,6 +2175,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         {FVIRTKEY | FCONTROL, L'2', kShowSettings},
         {FVIRTKEY | FCONTROL, L'3', kShowAudio},
         {FVIRTKEY | FCONTROL, L'R', kRefreshHeadsetsButton},
+#ifdef AXV_ENABLE_NATIVE_SIP
+        {FVIRTKEY | FCONTROL, L'H', kRecentDestinationsButton},
+#endif
         {FVIRTKEY, VK_ESCAPE, kShowDial},
         {FVIRTKEY, VK_F1, kHelpButton},
         {FVIRTKEY, VK_F2, kReadinessButton},
