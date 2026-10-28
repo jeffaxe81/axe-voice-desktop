@@ -89,3 +89,5 @@ Consulte a [matriz das funcionalidades restantes](integration/REMAINING-FUNCTION
 - Candidate0.65.2: preparação do registro sem leitura antecipada da senha, limpeza por escopo e contenção de exceções da GUI; quatro auditorias de segurança. [Escopo](integration/GUI-CREDENTIAL-RECOVERY.md).
 - [ ] Validar atualização A→B com arquivos removidos e implementar inventário seguro do conteúdo instalado, preservando arquivos do usuário.
 - [ ] Definir e testar atualização com aplicativo aberto antes de modificar seus arquivos. [Acompanhamento dos dois itens](integration/INSTALLER-UPGRADE-FOLLOWUP.md).
+
+- Candidate0.66: destinos recentes na memória da sessão, seleção para preencher/revisar e limpeza; dez itens, Ctrl+H e autorização de chamada independente. [Escopo](integration/SESSION-RECENT-DESTINATIONS.md).
