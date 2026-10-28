@@ -41,15 +41,24 @@ int wmain(int argc, wchar_t** argv) {
         if (!GetProcessHandleCount(GetCurrentProcess(), &before)) return 3;
         bool started = false;
         bool unexpected_exception = false;
+        DWORD launch_error = ERROR_SUCCESS;
+        axv::ProcessStatus launch_state = axv::ProcessStatus::Stopped;
         injected = false;
         {
             axv::WindowsProcess process;
             remaining = index;
             injecting = true;
             try { started = process.start(executable); }
-            catch (const std::bad_alloc&) { /* Cleanup must survive unwinding. */ }
             catch (...) { unexpected_exception = true; }
             injecting = false;
+            launch_error = process.last_error();
+            launch_state = process.poll();
+            if (injected && !unexpected_exception) {
+                if (started || launch_error != ERROR_NOT_ENOUGH_MEMORY ||
+                    launch_state != axv::ProcessStatus::Failed) return 9;
+                // Reuse the same object after every rejected launch.
+                if (!process.start(executable) || !process.stop()) return 10;
+            }
             // Destructor must release all resources, including partial starts.
         }
         if (!GetProcessHandleCount(GetCurrentProcess(), &after)) return 4;
