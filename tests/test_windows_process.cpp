@@ -39,6 +39,18 @@ int wmain(int argc, wchar_t** argv) {
     }
     if (!seen) { process.stop(); return 15; }
     if (!process.stop()) return 16;
+    // Verify the child's actual CRT argv, including a trailing separator.
+    std::filesystem::remove(marker, ec);
+    if(ec)return 43;
+    if(!process.start(std::filesystem::path(argv[1]),profile / L""))return 44;
+    seen=false;
+    for(int i=0;i!=50;++i){
+        if(std::filesystem::exists(marker)){seen=true;break;}
+        if(process.poll()!=ProcessStatus::Running)break;
+        Sleep(100);
+    }
+    if(!seen){process.stop();return 45;}
+    if(!process.stop())return 46;
     std::filesystem::remove_all(profile, ec);
     if (ec) return 17;
 

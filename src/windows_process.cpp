@@ -1,4 +1,5 @@
 #include "windows_process.h"
+#include "windows_argument_quote.h"
 #include <string>
 #include <vector>
 
@@ -118,8 +119,8 @@ bool WindowsProcess::start(const std::filesystem::path& executable,
         release_handles(); state_ = ProcessStatus::Failed; return false;
     }
 
-    std::wstring command = L"\"" + absolute.wstring() + L"\"";
-    if (!profile.empty()) command += L" -f \"" + profile.wstring() + L"\"";
+    std::wstring command = quote_windows_argument(absolute.wstring());
+    if (!profile.empty()) command += L" -f " + quote_windows_argument(profile.wstring());
     std::vector<wchar_t> command_buffer(command.begin(), command.end());
     command_buffer.push_back(L'\0');
     const auto working_directory = absolute.parent_path().wstring();

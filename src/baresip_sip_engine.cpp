@@ -12,10 +12,19 @@
 #include <mutex>
 #include <chrono>
 #include <utility>
+#include <type_traits>
 extern "C" { extern const struct mod_export exports_g711, exports_wasapi; }
 namespace axv {
 namespace {
 void erase(std::string& s) { volatile char* p=s.empty()?nullptr:&s[0]; for(std::size_t i=0;i<s.size();++i)p[i]=0; s.clear(); }
+static_assert(std::is_nothrow_move_assignable<SipAccount>::value &&
+              std::is_nothrow_move_assignable<NativeAccountConfig>::value &&
+              std::is_nothrow_move_assignable<NativeAudioRoute>::value,
+              "Prepared account state must commit without throwing");
+struct PasswordEraseGuard {
+    std::string& value;
+    ~PasswordEraseGuard(){erase(value);}
+};
 std::uint64_t now_ms() {return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());}
 }
 struct BaresipSipEngine::Impl {
@@ -35,7 +44,7 @@ struct BaresipSipEngine::Impl {
     SipRuntimeObservation view{RuntimeProcess::Stopped,SipStatus::Disconnected};
     int sdk_error=0;
     NativeDestinationFeedback destination_feedback;
-    bool start_rejected=false;
+    bool start_rejected=false,configure_rejected=false;
     std::wstring sdk_stage;
     bool configured=false,core=false,ua_initialized=false,claimed=false,failed=false;
     unsigned timeout_ms=15000;
@@ -169,15 +178,41 @@ NativeSecurityStatus BaresipSipEngine::security_status()const {
 SipStatus BaresipSipEngine::status()const{return observation().sip;}
 bool BaresipSipEngine::configure(const SipAccount&){return false;} // explicit authentication is required
 bool BaresipSipEngine::configure_authenticated(const SipAccount& a,const std::wstring& ca,std::string password,unsigned timeout,const NativeAudioRoute& audio) {
-    const auto cfg=native_account_config(a,ca,audio);
-    if(impl_->reactor.snapshot().running || !cfg.valid || password.empty() || password.size()>1024 || password.find('\0')!=std::string::npos || timeout<100 || timeout>60000) {erase(password);return false;}
-    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->audio_route=audio;impl_->audio_issue=NativeAudioRouteStatus::Ready;impl_->policy_selected=true;impl_->tls_required=a.use_tls;impl_->destination_feedback.clear();impl_->start_rejected=false;}
-    impl_->account=a;impl_->config=cfg;erase(impl_->password);impl_->password=password;erase(password);impl_->configured=true;impl_->timeout_ms=timeout;return true;
+    PasswordEraseGuard wipe_input{password};
+    if(impl_->reactor.snapshot().running)return false; // Do not disturb a live session.
+    try {
+        auto cfg=native_account_config(a,ca,audio);
+        if(!cfg.valid || password.empty() || password.size()>1024 || password.find('\0')!=std::string::npos || timeout<100 || timeout>60000)return false;
+        auto next_account=a;
+        auto next_audio=audio;
+        std::lock_guard<std::mutex> lock(impl_->mutex);
+        // Everything except this password copy is already prepared. The account,
+        // config and audio moves below use their fixed standard allocators.
+        erase(impl_->password);
+        impl_->password=password;
+        impl_->account=std::move(next_account);impl_->config=std::move(cfg);
+        impl_->audio_route=std::move(next_audio);impl_->audio_issue=NativeAudioRouteStatus::Ready;
+        impl_->policy_selected=true;impl_->tls_required=a.use_tls;
+        impl_->destination_feedback.clear();impl_->start_rejected=false;impl_->configure_rejected=false;
+        impl_->sdk_error=0;impl_->sdk_stage.clear();
+        impl_->view={RuntimeProcess::Stopped,SipStatus::Disconnected};
+        impl_->configured=true;impl_->timeout_ms=timeout;
+        return true;
+    } catch (...) {
+        // No credential or partially prepared configuration may remain armed.
+        erase(impl_->password);impl_->configured=false;
+        std::lock_guard<std::mutex> lock(impl_->mutex);
+        impl_->view={RuntimeProcess::Failed,SipStatus::Failed};impl_->command={};impl_->media={};
+        impl_->policy_selected=false;impl_->tls_required=false;impl_->audio_route={};
+        impl_->destination_feedback.clear();impl_->sdk_error=0;impl_->sdk_stage.clear();
+        impl_->start_rejected=false;impl_->configure_rejected=true;
+        return false;
+    }
 }
 bool BaresipSipEngine::register_account(){
     if(!impl_->configured || impl_->reactor.snapshot().running)return false;
     impl_->configured=false;impl_->failed=false;
-    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->sdk_error=0;impl_->sdk_stage.clear();impl_->destination_feedback.clear();impl_->start_rejected=false;}
+    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->sdk_error=0;impl_->sdk_stage.clear();impl_->destination_feedback.clear();impl_->start_rejected=false;impl_->configure_rejected=false;}
     {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->view={RuntimeProcess::Running,SipStatus::Registering};}
     try { if(impl_->reactor.start())return true; }
     catch (...) { /* Keep the failure path allocation-free until credentials are cleared. */ }
@@ -210,11 +245,12 @@ void BaresipSipEngine::hangup(){(void)hangup_call(observation());}
 void BaresipSipEngine::stop(){
     {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->view={RuntimeProcess::Stopping,SipStatus::Disconnected};impl_->command={};}
     impl_->reactor.stop();impl_->configured=false;erase(impl_->password);
-    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->view={RuntimeProcess::Stopped,SipStatus::Disconnected};impl_->media={};impl_->last_hold_error=0;impl_->mute_rejected=false;impl_->dtmf_rejected=false;impl_->audio_route={};impl_->audio_issue=NativeAudioRouteStatus::Ready;impl_->policy_selected=false;impl_->tls_required=false;impl_->destination_feedback.clear();impl_->start_rejected=false;}
+    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->view={RuntimeProcess::Stopped,SipStatus::Disconnected};impl_->media={};impl_->last_hold_error=0;impl_->mute_rejected=false;impl_->dtmf_rejected=false;impl_->audio_route={};impl_->audio_issue=NativeAudioRouteStatus::Ready;impl_->policy_selected=false;impl_->tls_required=false;impl_->destination_feedback.clear();impl_->start_rejected=false;impl_->configure_rejected=false;impl_->sdk_error=0;impl_->sdk_stage.clear();}
 }
 std::wstring BaresipSipEngine::diagnostic()const {
     {std::lock_guard<std::mutex> lock(impl_->mutex);
      if(impl_->sdk_error)return L"Falha SDK em "+impl_->sdk_stage+L": "+std::to_wstring(impl_->sdk_error);
+     if(impl_->configure_rejected)return L"Nao foi possivel preparar a conta; senha descartada. Confira os recursos do computador e informe os dados novamente.";
      if(impl_->start_rejected)return L"Falha ao iniciar motor nativo; senha descartada. Confira os recursos do computador e tente registrar novamente.";
      if(impl_->destination_feedback.error()!=NativeDestinationError::None)return native_destination_error_message(impl_->destination_feedback.error());
      if(impl_->audio_issue!=NativeAudioRouteStatus::Ready)return native_audio_route_feedback(impl_->audio_issue);
