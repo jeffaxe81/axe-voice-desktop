@@ -622,6 +622,10 @@ if(BUILD_TESTING)
   endif()
   target_link_libraries(test_windows_process PRIVATE axv_windows_process)
   add_test(NAME windows_process COMMAND test_windows_process $<TARGET_FILE:axv_test_child_process> $<TARGET_FILE:axv_test_exit_process> $<TARGET_FILE:axv_test_interactive_process>)
+  add_executable(test_security_process_resources tests/test_security_process_resources.cpp)
+  target_compile_features(test_security_process_resources PRIVATE cxx_std_17)
+  target_link_libraries(test_security_process_resources PRIVATE axv_windows_process)
+  add_test(NAME security_process_resources COMMAND test_security_process_resources $<TARGET_FILE:axv_test_child_process>)
 endif()
 if(BUILD_TESTING)
   add_executable(test_sip_event_projection_legacy tests/test_sip_event_projection_legacy.cpp)
@@ -636,7 +640,7 @@ foreach(axv_test IN LISTS axv_registered_tests)
   set_tests_properties("${axv_test}" PROPERTIES LABELS "unit")
 endforeach()
 set_tests_properties(ui_smoke ui_blackbox PROPERTIES LABELS "blackbox")
-set_tests_properties(integration_sip_safety baresip_sdk_abi_probe windows_process sip_runtime_session_guard
+set_tests_properties(integration_sip_safety baresip_sdk_abi_probe windows_process security_process_resources sip_runtime_session_guard
   audio_inventory_async audio_inventory_shutdown audio_inventory_epochs audio_inventory_channels audio_inventory_failures
   audio_device_change_integration audio_endpoint_watcher
   security_command_boundaries native_reactor_fault_status
@@ -659,7 +663,7 @@ if(MINGW)
   target_link_libraries(axv_audio_test_tone PUBLIC ksuser)
   target_link_options(AXEVoice PRIVATE -municode)
   if(BUILD_TESTING)
-    foreach(axv_unicode_target IN ITEMS test_ui_blackbox axv_test_child_process test_windows_process)
+    foreach(axv_unicode_target IN ITEMS test_ui_blackbox axv_test_child_process test_windows_process test_security_process_resources)
       target_link_options(${axv_unicode_target} PRIVATE -municode)
     endforeach()
   endif()
