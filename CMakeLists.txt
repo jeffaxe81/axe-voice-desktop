@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AXEVoiceDesktop VERSION 0.65.1 LANGUAGES CXX)
+project(AXEVoiceDesktop VERSION 0.65.2 LANGUAGES CXX)
 if(NOT WIN32)
   message(FATAL_ERROR "This bootstrap currently supports Windows only")
 endif()
@@ -216,6 +216,14 @@ if(BUILD_TESTING)
   endforeach()
 endif()
 if(BUILD_TESTING)
+  add_executable(test_native_registration_ui tests/test_native_registration_ui.cpp)
+  target_include_directories(test_native_registration_ui BEFORE PRIVATE tests/registration_ui_fakes)
+  target_compile_features(test_native_registration_ui PRIVATE cxx_std_17)
+  add_test(NAME native_registration_ui COMMAND test_native_registration_ui)
+  add_executable(test_native_registration_win32 tests/test_native_registration_win32.cpp)
+  target_compile_features(test_native_registration_win32 PRIVATE cxx_std_17)
+  target_link_libraries(test_native_registration_win32 PRIVATE user32)
+  add_test(NAME native_registration_win32 COMMAND test_native_registration_win32)
   add_executable(test_diagnostic_export tests/test_diagnostic_export.cpp)
   target_compile_features(test_diagnostic_export PRIVATE cxx_std_17)
   add_test(NAME diagnostic_export COMMAND test_diagnostic_export)
@@ -643,7 +651,7 @@ set_tests_properties(ui_smoke ui_blackbox PROPERTIES LABELS "blackbox")
 set_tests_properties(integration_sip_safety baresip_sdk_abi_probe windows_process security_process_resources sip_runtime_session_guard
   audio_inventory_async audio_inventory_shutdown audio_inventory_epochs audio_inventory_channels audio_inventory_failures
   audio_device_change_integration audio_endpoint_watcher
-  security_command_boundaries native_reactor_fault_status
+  security_command_boundaries native_reactor_fault_status native_registration_win32
   baresip_sdk_provenance
   sip_event_projection baresip_event_mailbox baresip_callback_ingress
   baresip_callback_lifecycle baresip_sdk_event_adapter baresip_sdk_single_owner

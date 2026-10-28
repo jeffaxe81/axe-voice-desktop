@@ -3,7 +3,7 @@
 int main(){
  axv::CallReadiness state{true,true,true,true,true,false,true};
  const auto text=axv::format_diagnostic_export(state);
- if(text.find(L"0.65.1")==text.npos || text.find(L"Botao Chamar: disponivel na interface")==text.npos ||
+ if(text.find(L"0.65.2")==text.npos || text.find(L"Botao Chamar: disponivel na interface")==text.npos ||
     text.find(L"RTP/SRTP nao verificado")==text.npos || text.find(L"CHECKLIST PENDENTE")==text.npos)return 1;
  if(text.find(L"\r\n")==text.npos || text.find(L'\0')!=text.npos)return 2;
  for(std::size_t i=0;i<text.size();++i){

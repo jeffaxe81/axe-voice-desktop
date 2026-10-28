@@ -32,6 +32,7 @@
 #include "incoming_ringtone_policy.h"
 #ifdef AXV_ENABLE_NATIVE_SIP
 #include "incoming_ringtone_player.h"
+#include "native_registration_ui.h"
 #include "native_dtmf.h"
 #include "native_call_duration.h"
 #include "call_duration_format.h"
@@ -1268,22 +1269,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
 #endif
         if (LOWORD(wparam) == kStartBaresipButton && HIWORD(wparam) == BN_CLICKED) {
 #ifdef AXV_ENABLE_NATIVE_SIP
-            wchar_t server[256]{},user[129]{},port[16]{},secret[257]{},ca[260]{};
-            GetWindowTextW(g_server,server,256); GetWindowTextW(g_user,user,129);
-            GetWindowTextW(g_port,port,16); GetWindowTextW(g_password,secret,257);
-            GetWindowTextW(g_ca_file,ca,260);
-            const auto feedback=axv::evaluate_account_form(server,user,port);
-            if(!feedback.valid()) {SecureZeroMemory(secret,sizeof(secret));refresh_account_feedback();return 0;}
-            const unsigned long value=std::wcstoul(port,nullptr,10);
-            axv::SipAccount account{server,user,static_cast<unsigned short>(value),SendMessageW(g_tls,BM_GETCHECK,0,0)==BST_CHECKED};
-            const int bytes=WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,secret,-1,nullptr,0,nullptr,nullptr);
-            std::string password(bytes>1?static_cast<std::size_t>(bytes):0,'\0');
-            if(bytes>1) {WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,secret,-1,password.data(),bytes,nullptr,nullptr);password.pop_back();}
-            SecureZeroMemory(secret,sizeof(secret)); SetWindowTextW(g_password,L"");
-            const bool configured=native_engine().configure_authenticated(account,ca,password,15000,{g_selected_input_id,g_selected_output_id});
-            if(!password.empty())SecureZeroMemory(password.data(),password.size()); password.clear();
-            const bool accepted=configured && native_engine().register_account();
-            SetWindowTextW(g_process_status,accepted?L"Registro solicitado; aguardando confirmacao da central.":L"Dados, CA, senha ou audio invalidos; pare o motor ativo e confira os dados.");
+            const auto result=axv::register_native_account_ui(native_engine(),
+                {g_server,g_user,g_port,g_password,g_ca_file,g_tls},g_selected_input_id,g_selected_output_id);
+            SetWindowTextW(g_process_status,axv::native_registration_result_message(result));
             return 0;
 #endif
             if (g_shutdown.pending()) {
@@ -1741,7 +1729,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0 || std::wcscmp(command_line,L"--native-ui-smoke")==0);
 #ifdef AXV_ENABLE_NATIVE_SIP
-    const wchar_t* title=L"AXE Voice | Candidato nativo 0.65.1";
+    const wchar_t* title=L"AXE Voice | Candidato nativo 0.65.2";
 #else
     const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
 #endif

@@ -1,4 +1,4 @@
-# Release candidata nativa0.65.1 — checklist atual
+# Release candidata nativa0.65.2 — checklist atual
 
 ## Implementações
 - [x] Motor Baresip/libre e OpenSSL fixados, registro/callbacks e comandos chamar/atender/encerrar no candidato.
@@ -83,3 +83,5 @@ Patch0.55.1: o relatório F2 mostra a disponibilidade atual de Chamar separada d
 - Candidate0.65: exigir callbacks de limpeza no proprietário, primeira falha preservada, rejeições de conta sem registro antigo e nomes de manifesto recusados antes de hash. [Escopo](integration/SECURITY-OWNER-LIFECYCLE.md).
 
 - Candidate0.65.1: exigir falhas de alocação no processo auxiliar sem handles retidos, retorno de erro e nova tentativa no mesmo objeto. [Escopo](integration/SECURITY-PROCESS-RESOURCES.md).
+
+- Candidate0.65.2: exigir injeção de falhas na rotina de registro da GUI sem exceção escapando, sem liberação de buffer ativo com senha e sem registro após preparação recusada. [Escopo](integration/GUI-CREDENTIAL-RECOVERY.md). Atualização entre conteúdos diferentes continua em [acompanhamento](integration/INSTALLER-UPGRADE-FOLLOWUP.md).
