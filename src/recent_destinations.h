@@ -19,7 +19,7 @@ public:
     bool remember(const SipRuntimeObservation& observed,const std::wstring& destination,bool accepted) noexcept {
         synchronize(observed);
         if(!accepted || !valid_context(observed) || observed.sip!=SipStatus::Registered || observed.call_id ||
-           destination.empty() || destination.size()>128 || next_token_==std::numeric_limits<std::uint64_t>::max())return false;
+           destination.empty() || destination.size()>128 || next_token_==(std::numeric_limits<std::uint64_t>::max)())return false;
         try {
             // Reject unsupported native user grammar and parameters even when a
             // caller incorrectly claims acceptance. Keep the original typed text.
