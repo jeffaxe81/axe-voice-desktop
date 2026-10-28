@@ -73,7 +73,7 @@ void BaresipNativeLibreReactor::tick_on_owner() noexcept {
     } catch (...) {
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            status_.fault=LibreReactorFault::HookFailed;
+            if(status_.fault==LibreReactorFault::None)status_.fault=LibreReactorFault::HookFailed;
         }
         ending_=true;
         re_cancel();
@@ -121,7 +121,7 @@ void BaresipNativeLibreReactor::run() noexcept {
     } catch (...) {
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            status_.fault=LibreReactorFault::HookFailed;
+            if(status_.fault==LibreReactorFault::None)status_.fault=LibreReactorFault::HookFailed;
         }
     }
     if (!began) {
@@ -137,15 +137,15 @@ void BaresipNativeLibreReactor::run() noexcept {
         const int loop_error=re_main(nullptr);
         if (loop_error) {
             std::lock_guard<std::mutex> lock(mutex_);
-            status_.fault=LibreReactorFault::MainLoopFailed;
+            if(status_.fault==LibreReactorFault::None)status_.fault=LibreReactorFault::MainLoopFailed;
         }
     }
     ending_=true;
     tmr_cancel(&timer_);
-    try { if (began && stopping_) stopping_(); }
+    try { if (stopping_) stopping_(); }
     catch (...) {
         std::lock_guard<std::mutex> lock(mutex_);
-        status_.fault=LibreReactorFault::HookFailed;
+        if(status_.fault==LibreReactorFault::None)status_.fault=LibreReactorFault::HookFailed;
     }
     {
         std::lock_guard<std::mutex> lock(mutex_);

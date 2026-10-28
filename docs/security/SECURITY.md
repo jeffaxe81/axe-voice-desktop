@@ -27,3 +27,7 @@ Resultados estruturados de destino com feedback fixo, falha de criação de thre
 ## Candidate0.64
 
 Recuperação da configuração sob falha de alocação, limpeza de diagnóstico anterior, codificação CRT dos argumentos e hashes de todos os arquivos SDK. [Registro e limites](../integration/SECURITY-RECOVERY.md).
+
+## Candidate0.65
+
+Inicialização parcial limpa, fault original preservado, conta pendente revogada ao rejeitar nova configuração e nomes canônicos no manifesto. [Evidência e limites](../integration/SECURITY-OWNER-LIFECYCLE.md).

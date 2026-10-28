@@ -81,3 +81,5 @@ Consulte a [matriz das funcionalidades restantes](integration/REMAINING-FUNCTION
 - Candidate0.63: motivos de recusa de destino sem ecoar dados, exceção de criação da thread tratada, tipos de manifesto validados e matriz de isolamento da exportação; quatro frentes de testes. [Registro](integration/SECURITY-FEEDBACK.md).
 
 - Candidate0.64: configuração recuperável com limpeza de credenciais, diagnóstico limpo após parada, argumentos Windows preservados e proveniência de todos os arquivos SDK; quatro frentes de testes. [Escopo](integration/SECURITY-RECOVERY.md).
+
+- Candidate0.65: limpeza de início parcial, primeira causa de falha preservada e visível, rejeição inativa sem reaproveitar conta antiga e caminhos canônicos do manifesto; quatro frentes de testes. [Registro](integration/SECURITY-OWNER-LIFECYCLE.md).
