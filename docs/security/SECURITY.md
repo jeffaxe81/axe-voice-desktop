@@ -23,3 +23,7 @@ Resumo booleano da política no F2/clipboard, limpeza na falha de partida do rea
 ## Candidate0.63
 
 Resultados estruturados de destino com feedback fixo, falha de criação de thread recuperável e schema escalar do manifesto. [Evidência e limitações](../integration/SECURITY-FEEDBACK.md).
+
+## Candidate0.64
+
+Recuperação da configuração sob falha de alocação, limpeza de diagnóstico anterior, codificação CRT dos argumentos e hashes de todos os arquivos SDK. [Registro e limites](../integration/SECURITY-RECOVERY.md).

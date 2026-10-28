@@ -109,8 +109,12 @@ if ($TlsMedia) {
     Invoke-Checked 'cmake' @('--build',$ProductBuild,'--config','Release','--parallel','4','--target','axv_native_tls_media_probe')
     Get-ChildItem (Join-Path $Prefix 'bin') -Filter '*.dll' | Copy-Item -Destination (Join-Path $ProductBuild 'Release')
     Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_tls_media_probe.exe') @()
-    Invoke-Checked 'cmake' @('--build',$ProductBuild,'--config','Release','--parallel','4','--target','axv_native_credential_lifecycle_smoke','axv_native_pending_secret_smoke','axv_native_sip_engine_smoke','axv_native_sdk_secret_smoke','axv_native_audio_config_smoke','axv_native_audio_mute_smoke','AXEVoice')
+    Invoke-Checked 'cmake' @('--build',$ProductBuild,'--config','Release','--parallel','4','--target','axv_native_configure_failure_smoke','axv_native_diagnostic_lifecycle_smoke','axv_native_credential_lifecycle_smoke','axv_native_pending_secret_smoke','axv_native_sip_engine_smoke','axv_native_sdk_secret_smoke','axv_native_audio_config_smoke','axv_native_audio_mute_smoke','AXEVoice')
     Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_sip_engine_smoke.exe') @()
+    foreach ($Case in @('initial','replacement')) {
+        foreach ($Point in 1..16) { Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_configure_failure_smoke.exe') @([string]$Point,$Case) }
+    }
+    Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_diagnostic_lifecycle_smoke.exe') @()
     foreach ($Mode in 1..5) { Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_credential_lifecycle_smoke.exe') @([string]$Mode) }
     Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_pending_secret_smoke.exe') @()
     Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_sdk_secret_smoke.exe') @()
@@ -132,8 +136,10 @@ New-Item -ItemType Directory -Force $Licenses | Out-Null
 Copy-Item (Join-Path $Re 'LICENSE') (Join-Path $Licenses 'libre-LICENSE.txt')
 Copy-Item (Join-Path $Baresip 'LICENSE') (Join-Path $Licenses 'baresip-LICENSE.txt')
 if ($TlsMedia) { Copy-Item (Join-Path $OpenSSL 'LICENSE.txt') (Join-Path $Licenses 'OpenSSL-LICENSE.txt') }
+"Candidate SDK profile: $Flavor. TLS/media compilation is not handshake, device, call or production approval." |
+    Set-Content (Join-Path $Prefix 'README.txt') -Encoding utf8
 $Files = @{}
-Get-ChildItem $Prefix -Recurse -File | Where-Object { $_.Extension -in @('.h','.lib','.dll') } | ForEach-Object {
+Get-ChildItem -LiteralPath $Prefix -Recurse -File -Force | Where-Object { $_.FullName -ne (Join-Path $Prefix 'CANDIDATE-MANIFEST.json') } | ForEach-Object {
     $Files[$_.FullName.Substring($Prefix.Length+1).Replace('\','/')] = Get-Hash $_.FullName
 }
 @{ product_version=$ProductVersion; product_sha256=$ProductHash; profile="MSVC x64 $Flavor candidate only"; tls=[bool]$TlsMedia; audio_modules=@($Modules -split ';' | Where-Object { $_ }); gui_native_sdk=$(if ($TlsMedia) { 'ON/native candidate' } else { 'OFF/not linked' });
@@ -142,5 +148,3 @@ Get-ChildItem $Prefix -Recurse -File | Where-Object { $_.Extension -in @('.h','.
    libre_header_sha256=$ReHeaderHash; libre_library_sha256=$ReLibraryHash;
    reactor_smoke='exit 0'; tls_media_probe=$(if ($TlsMedia) { 'exit 0, no handshake/devices opened' } else { 'not applicable' }); openssl_commit=$(if ($TlsMedia) { $OpenSSLCommit } else { $null }); files=$Files; production_approved=$false } |
     ConvertTo-Json -Depth 4 | Set-Content (Join-Path $Prefix 'CANDIDATE-MANIFEST.json') -Encoding utf8
-"Candidate SDK profile: $Flavor. TLS/media compilation is not handshake, device, call or production approval." |
-    Set-Content (Join-Path $Prefix 'README.txt') -Encoding utf8

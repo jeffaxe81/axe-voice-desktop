@@ -48,7 +48,7 @@ foreach ($Entry in $Manifest.files.PSObject.Properties) {
         throw "SDK manifest file missing or changed: $($Entry.Name)"
     }
 }
-foreach ($File in (Get-ChildItem $Prefix -Recurse -File | Where-Object { $_.Extension -in @('.h','.lib','.dll') })) {
+foreach ($File in (Get-ChildItem -LiteralPath $Prefix -Recurse -File -Force | Where-Object { $_.FullName -ne (Join-Path $Prefix 'CANDIDATE-MANIFEST.json') })) {
     $Relative = $File.FullName.Substring($Prefix.Length+1).Replace('\','/')
     $Expected = $Manifest.files.PSObject.Properties[$Relative].Value
     if ($Expected -notmatch '^[0-9a-f]{64}$' -or (Get-FileHash -LiteralPath $File.FullName -Algorithm SHA256).Hash -ne $Expected) {

@@ -79,3 +79,5 @@ Consulte a [matriz das funcionalidades restantes](integration/REMAINING-FUNCTION
 - Candidate0.62: política de segurança da sessão no F2/clipboard, limpeza em falha anterior aos hooks nativos, validação de labels DNS e rejeição de SDK redirecionado; quatro frentes de testes. [Escopo](integration/SECURITY-STATUS.md).
 
 - Candidate0.63: motivos de recusa de destino sem ecoar dados, exceção de criação da thread tratada, tipos de manifesto validados e matriz de isolamento da exportação; quatro frentes de testes. [Registro](integration/SECURITY-FEEDBACK.md).
+
+- Candidate0.64: configuração recuperável com limpeza de credenciais, diagnóstico limpo após parada, argumentos Windows preservados e proveniência de todos os arquivos SDK; quatro frentes de testes. [Escopo](integration/SECURITY-RECOVERY.md).
