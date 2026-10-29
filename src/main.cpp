@@ -66,8 +66,8 @@
 
 namespace {
 #ifdef AXV_ENABLE_NATIVE_SIP
-// Declared before runtime/audio globals so the Running marker outlives teardown.
-axv::NativeInstallGuard g_native_install_guard;
+// Retain through process exit, including detached audio probes after owner teardown.
+axv::NativeInstallGuard g_native_install_guard{axv::NativeInstallGuardLifetime::Process};
 constexpr int kPasswordEdit=1016,kCaEdit=1017,kAnswerNative=1018;
 HWND g_password=nullptr,g_ca_file=nullptr;
 axv::NativeCallMediaState g_displayed_media;
@@ -1827,7 +1827,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
 #ifdef AXV_ENABLE_NATIVE_SIP
-    const wchar_t* title=L"AXE Voice | Candidato nativo 0.68";
+    const wchar_t* title=L"AXE Voice | Candidato nativo 0.68.1";
 #else
     const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
 #endif

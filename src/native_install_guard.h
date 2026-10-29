@@ -6,6 +6,7 @@
 #include <string>
 namespace axv {
 enum class NativeInstallGuardResult {Acquired,Busy,Failed};
+enum class NativeInstallGuardLifetime {Scope,Process};
 struct NativeInstallGuardNames {std::wstring application,setup;};
 namespace install_guard_detail {
 struct Handle {
@@ -32,14 +33,17 @@ inline std::optional<NativeInstallGuardNames> native_install_guard_names() noexc
         return names;
     }catch(...){return std::nullopt;}
 }
-// Publish before probing the peer. Keep the process-global holder alive until
-// SIP/audio globals have finished teardown; never use mutex wait ownership.
+// Publish before probing the peer. The native GUI selects Process lifetime;
+// reusable guards default to scoped RAII. Never use mutex wait ownership.
 class NativeInstallGuard {
 public:
-    NativeInstallGuard()=default;
+    explicit NativeInstallGuard(NativeInstallGuardLifetime lifetime=NativeInstallGuardLifetime::Scope) noexcept
+        : lifetime_(lifetime) {}
     NativeInstallGuard(const NativeInstallGuard&)=delete;
     NativeInstallGuard& operator=(const NativeInstallGuard&)=delete;
-    ~NativeInstallGuard(){release();}
+    // Process-owned markers must also cover detached work after owner teardown.
+    // Windows closes the retained handle when the process actually terminates.
+    ~NativeInstallGuard(){if(lifetime_==NativeInstallGuardLifetime::Scope)release();}
     NativeInstallGuardResult acquire(const NativeInstallGuardNames& names) noexcept {
         using Result=NativeInstallGuardResult;
         if(marker_ || names.application.empty() || names.setup.empty() || names.application==names.setup)return Result::Failed;
@@ -57,6 +61,7 @@ public:
     }
     void release() noexcept {if(marker_)CloseHandle(marker_);marker_=nullptr;}
 private:
+    const NativeInstallGuardLifetime lifetime_;
     HANDLE marker_=nullptr;
 };
 }

@@ -18,7 +18,7 @@ int child(const std::string& id) {
     const HANDLE exit_now=OpenEventW(SYNCHRONIZE,FALSE,(base+L".Exit").c_str());
     if(!entered||!ready||!release||!exit_now)return fail(1,"child event open");
     {
-        axv::NativeInstallGuard guard;
+        axv::NativeInstallGuard guard{axv::NativeInstallGuardLifetime::Process};
         if(guard.acquire({base+L".Running",base+L".Setup"})!=axv::NativeInstallGuardResult::Acquired)
             return fail(2,"child marker acquisition");
         axv::AudioInventoryAsync inventory([=]{

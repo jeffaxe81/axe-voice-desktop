@@ -61,9 +61,9 @@ as permission to mutate installed files or start the native runtime.
 
 ## Lifetime and installer handoff
 
-The native guard is acquired at the beginning of `wWinMain`. Its global RAII
-holder precedes the native engine and runtime globals in declaration order, so
-its destructor runs after their destruction. Returning from the message loop or
+The native guard is acquired at the beginning of `wWinMain`. In0.68.1 its global holder selects process lifetime: its destructor retains the
+marker, and Windows closes the handle at actual process termination. Scoped
+RAII remains the default for reusable guard instances. Returning from the message loop or
 destroying the main window must not release protection before native SDK,
 reactor, and player teardown. Rejected startup releases any partial acquisition.
 
@@ -118,3 +118,7 @@ payload, or remove obsolete files from older installations. Obsolete-file
 cleanup remains separate pending work. It also does not protect arbitrary custom
 installation directories shared by different accounts, because its scope is the
 owner SID rather than the target path.
+
+## 0.68.1 additional coverage
+
+Six specialist fronts added independent process TokenUser name checks, malformed/reacquisition cases, production interactive postinstall and setup contention/cancellation fixtures, and a child-process blocked-inventory lifetime regression. The initial Windows regression failed as intended (run40944854547, code10). Final corrected Windows/SDK/installer gates must pass before promotion. No new physical acceptance is implied.

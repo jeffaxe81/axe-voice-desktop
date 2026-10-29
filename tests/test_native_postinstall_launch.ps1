@@ -1,5 +1,5 @@
-# Real production Inno [Run] acceptance check. Requires an unlocked, interactive
-# Windows desktop at the same integrity level as this PowerShell process.
+# Real production Inno [Run] acceptance check. Uses Win32 window messages on
+# the runner desktop at the same integrity level as this PowerShell process.
 # /SILENT and /VERYSILENT both suppress entries marked skipifsilent, so neither
 # is used. No direct application launch or test-only installer is substituted.
 function Invoke-NativePostinstallLaunchCheck {
@@ -38,9 +38,10 @@ public static class NativePostinstallWindows {
     public static string Class(IntPtr window) { var text = new StringBuilder(256); GetClassName(window, text, text.Capacity); return text.ToString(); }
     public static string Text(IntPtr window) { var text = new StringBuilder(1024); GetWindowText(window, text, text.Capacity); return text.ToString(); }
     public static void Click(IntPtr window) {
-        IntPtr result;
-        if (SendMessageTimeout(window, 0x00F5, IntPtr.Zero, IntPtr.Zero, 2, 2000, out result) == IntPtr.Zero)
-            throw new InvalidOperationException("Wizard button did not respond to BM_CLICK");
+        // Installation can block the button handler while copying files. Post
+        // the click and observe the next page under the outer bounded deadline.
+        if (!PostMessage(window, 0x00F5, IntPtr.Zero, IntPtr.Zero))
+            throw new InvalidOperationException("Could not post wizard BM_CLICK");
     }
 }
 '@

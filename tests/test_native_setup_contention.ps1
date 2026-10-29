@@ -124,7 +124,7 @@ public static class NativeSetupContentionWindows {
     }
     $Before = Get-PayloadSnapshot
     try {
-        $Wizard = Start-Known $Installer @('/SUPPRESSMSGBOXES','/NORESTART',"/DIR=`"$Target`"")
+        $Wizard = Start-Known $Installer @('/SP-','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=`"$Target`"")
         $Deadline = [DateTime]::UtcNow.AddSeconds(30)
         $Ready = $false
         do {
