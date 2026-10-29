@@ -1,4 +1,4 @@
-# Release candidata nativa0.66 — checklist atual
+# Release candidata nativa0.67 — checklist atual
 
 ## Implementações
 - [x] Motor Baresip/libre e OpenSSL fixados, registro/callbacks e comandos chamar/atender/encerrar no candidato.
@@ -87,3 +87,5 @@ Patch0.55.1: o relatório F2 mostra a disponibilidade atual de Chamar separada d
 - Candidate0.65.2: exigir injeção de falhas na rotina de registro da GUI sem exceção escapando, sem liberação de buffer ativo com senha e sem registro após preparação recusada. [Escopo](integration/GUI-CREDENTIAL-RECOVERY.md). Atualização entre conteúdos diferentes continua em [acompanhamento](integration/INSTALLER-UPGRADE-FOLLOWUP.md).
 
 - Candidate0.66: exigir limite/ordem/deduplicação dos recentes, invalidação de tokens/sessão, ausência de exportação, falhas de alocação, CHAMAR independente e teste de preenchimento Win32. [Escopo](integration/SESSION-RECENT-DESTINATIONS.md).
+
+- Candidate0.67: exigir retomada da mesma chamada, preservação de reconhecimento por chamada, cancelamento sem renderizadores sobrepostos, autorização independente e estado visível em mini. [Escopo](integration/INCOMING-RINGTONE-MUTE.md).

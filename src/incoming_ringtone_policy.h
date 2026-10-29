@@ -14,8 +14,9 @@ inline bool verified_incoming_call(const SipRuntimeObservation& call){
 class IncomingRingtonePolicy {
  std::uint64_t silenced_session_=0,silenced_call_=0;
 public:
- IncomingRingtoneRequest request(const SipRuntimeObservation& call,const std::wstring& id,bool preview_playing=false)const{
-  if(preview_playing || !verified_incoming_call(call) || !valid_ringtone_endpoint(id) ||
+ IncomingRingtoneRequest request(const SipRuntimeObservation& call,const std::wstring& id,bool preview_playing=false,bool sound_muted=false)const{
+  // A reversible sound preference, not an acknowledgment or a SIP action.
+  if(sound_muted || preview_playing || !verified_incoming_call(call) || !valid_ringtone_endpoint(id) ||
      (call.session==silenced_session_ && call.call_id==silenced_call_))return {};
   return {call.session,call.call_id,id};
  }

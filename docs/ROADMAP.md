@@ -91,3 +91,5 @@ Consulte a [matriz das funcionalidades restantes](integration/REMAINING-FUNCTION
 - [ ] Definir e testar atualização com aplicativo aberto antes de modificar seus arquivos. [Acompanhamento dos dois itens](integration/INSTALLER-UPGRADE-FOLLOWUP.md).
 
 - Candidate0.66: destinos recentes na memória da sessão, seleção para preencher/revisar e limpeza; dez itens, Ctrl+H e autorização de chamada independente. [Escopo](integration/SESSION-RECENT-DESTINATIONS.md).
+
+- Candidate0.67: silenciar/retomar toque recebido com botão e Ctrl+Shift+S, estado visível em mini e preferência somente na memória; chamadas e microfone independentes. [Escopo](integration/INCOMING-RINGTONE-MUTE.md).

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AXEVoiceDesktop VERSION 0.66.0 LANGUAGES CXX)
+project(AXEVoiceDesktop VERSION 0.67.0 LANGUAGES CXX)
 if(NOT WIN32)
   message(FATAL_ERROR "This bootstrap currently supports Windows only")
 endif()
@@ -242,6 +242,16 @@ if(BUILD_TESTING)
   target_compile_features(test_incoming_ringtone_policy PRIVATE cxx_std_17)
   add_test(NAME incoming_ringtone_policy COMMAND test_incoming_ringtone_policy)
   set_tests_properties(incoming_ringtone_policy PROPERTIES LABELS "unit")
+  foreach(ringmute_test IN ITEMS incoming_ringtone_mute incoming_ringtone_mute_authorization incoming_ringtone_mute_failures)
+    add_executable(test_${ringmute_test} tests/test_${ringmute_test}.cpp)
+    target_compile_features(test_${ringmute_test} PRIVATE cxx_std_17)
+    add_test(NAME ${ringmute_test} COMMAND test_${ringmute_test})
+  endforeach()
+  add_executable(test_incoming_ringtone_mute_player tests/test_incoming_ringtone_mute_player.cpp)
+  target_compile_features(test_incoming_ringtone_mute_player PRIVATE cxx_std_17)
+  target_link_libraries(test_incoming_ringtone_mute_player PRIVATE axv_incoming_ringtone)
+  add_test(NAME incoming_ringtone_mute_player COMMAND test_incoming_ringtone_mute_player)
+  set_tests_properties(incoming_ringtone_mute_player PROPERTIES TIMEOUT 20)
   add_executable(test_incoming_ringtone_player tests/test_incoming_ringtone_player.cpp)
   target_link_libraries(test_incoming_ringtone_player PRIVATE axv_incoming_ringtone)
   add_test(NAME incoming_ringtone_player COMMAND test_incoming_ringtone_player)
@@ -655,7 +665,7 @@ set_tests_properties(ui_smoke ui_blackbox PROPERTIES LABELS "blackbox")
 set_tests_properties(integration_sip_safety baresip_sdk_abi_probe windows_process security_process_resources sip_runtime_session_guard
   audio_inventory_async audio_inventory_shutdown audio_inventory_epochs audio_inventory_channels audio_inventory_failures
   audio_device_change_integration audio_endpoint_watcher
-  security_command_boundaries native_reactor_fault_status native_registration_win32 recent_destination_win32 recent_destinations_authorization
+  security_command_boundaries native_reactor_fault_status native_registration_win32 recent_destination_win32 recent_destinations_authorization incoming_ringtone_mute_player incoming_ringtone_mute_authorization
   baresip_sdk_provenance
   sip_event_projection baresip_event_mailbox baresip_callback_ingress
   baresip_callback_lifecycle baresip_sdk_event_adapter baresip_sdk_single_owner
