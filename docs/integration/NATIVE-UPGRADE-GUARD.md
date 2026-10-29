@@ -1,5 +1,22 @@
 # Native installation and startup guard
 
+## Integrated release and recorded evidence
+
+Candidate0.68 was merged in PR #154 at
+`68c7bf56d0e47bed8a490cb2b32fe9eb8d5aa8f8`. The exact tested head was
+`c35e0f8cdd4c9c8d3e346261fa80746fcfc1e180`.
+
+- [Windows CI40943593634](https://github.com/jeffaxe81/axe-voice-desktop/actions/runs/40943593634):115/115 passed.
+- [Native SDK40943593692](https://github.com/jeffaxe81/axe-voice-desktop/actions/runs/40943593692): both SDK profiles passed, including Inno compilation and installed held-marker, legacy sharing-conflict, live GUI, refusal with unchanged payload hashes, successful retry, reciprocal startup and uninstall checks.
+- Installer artifact ID: `12927568379`.
+
+The0.68.1 work is additional specialist validation in progress, not a passed
+release or a product version bump. Interactive postinstall `[Run]` handoff,
+actual global teardown, and current production-Inno races remain pending.
+These recorded automated results do not establish physical hardware, cross-session
+or cross-account acceptance, signing, Dígitro, or headset acceptance; the external
+acceptance work remains pending at the user's request.
+
 ## Contract
 
 The guarded native application and candidate installer cooperate to prevent
@@ -44,9 +61,9 @@ as permission to mutate installed files or start the native runtime.
 
 ## Lifetime and installer handoff
 
-The native guard is acquired at the beginning of `wWinMain`. Its global RAII
-holder precedes the native engine and runtime globals in declaration order, so
-its destructor runs after their destruction. Returning from the message loop or
+The native guard is acquired at the beginning of `wWinMain`. In0.68.1 its global holder selects process lifetime: its destructor retains the
+marker, and Windows closes the handle at actual process termination. Scoped
+RAII remains the default for reusable guard instances. Returning from the message loop or
 destroying the main window must not release protection before native SDK,
 reactor, and player teardown. Rejected startup releases any partial acquisition.
 
@@ -101,3 +118,7 @@ payload, or remove obsolete files from older installations. Obsolete-file
 cleanup remains separate pending work. It also does not protect arbitrary custom
 installation directories shared by different accounts, because its scope is the
 owner SID rather than the target path.
+
+## 0.68.1 additional coverage
+
+Six specialist fronts added independent process TokenUser name checks, malformed/reacquisition cases, production interactive postinstall and setup contention/cancellation fixtures, and a child-process blocked-inventory lifetime regression. The initial Windows regression failed as intended (run40944854547, code10). Final corrected Windows/SDK/installer gates must pass before promotion. No new physical acceptance is implied.

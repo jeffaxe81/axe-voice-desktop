@@ -88,8 +88,10 @@ Consulte a [matriz das funcionalidades restantes](integration/REMAINING-FUNCTION
 
 - Candidate0.65.2: preparação do registro sem leitura antecipada da senha, limpeza por escopo e contenção de exceções da GUI; quatro auditorias de segurança. [Escopo](integration/GUI-CREDENTIAL-RECOVERY.md).
 - [ ] Validar atualização A→B com arquivos removidos e implementar inventário seguro do conteúdo instalado, preservando arquivos do usuário.
-- [ ] Definir e testar atualização com aplicativo aberto antes de modificar seus arquivos. [Acompanhamento dos dois itens](integration/INSTALLER-UPGRADE-FOLLOWUP.md).
+- [x] 0.68: proteção de atualização/desinstalação com aplicativo nativo aberto e recusa recíproca de início durante setup; fallback conservador para versões antigas. A corrida de início de versões antigas permanece pendente. [Contrato e evidências](integration/NATIVE-UPGRADE-GUARD.md). [Pendências de atualização](integration/INSTALLER-UPGRADE-FOLLOWUP.md).
 
 - Candidate0.66: destinos recentes na memória da sessão, seleção para preencher/revisar e limpeza; dez itens, Ctrl+H e autorização de chamada independente. [Escopo](integration/SESSION-RECENT-DESTINATIONS.md).
 
 - Candidate0.67: silenciar/retomar toque recebido com botão e Ctrl+Shift+S, estado visível em mini e preferência somente na memória; chamadas e microfone independentes. [Escopo](integration/INCOMING-RINGTONE-MUTE.md).
+
+- Candidate0.68: guard nativo de instalação/início integrado no PR #154; Windows CI115/115, ambos os perfis SDK e instalador candidato verificados no head exato. Validação adicional0.68.1 em andamento, sem nova versão do produto ou resultado aprovado. [Escopo e limites](integration/NATIVE-UPGRADE-GUARD.md).

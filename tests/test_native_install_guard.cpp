@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <thread>
 #include <type_traits>
+#include <vector>
 
 namespace {
 using Result = axv::NativeInstallGuardResult;
@@ -13,6 +14,23 @@ struct Handle {
     HANDLE value = nullptr;
     ~Handle() { if (value) CloseHandle(value); }
 };
+// Query the OS independently, using its reported allocation size rather than
+// the production helper's fixed-size storage.
+bool token_user_sid(HANDLE token, std::wstring& result) {
+    DWORD bytes = 0;
+    if (GetTokenInformation(token, TokenUser, nullptr, 0, &bytes) ||
+        GetLastError() != ERROR_INSUFFICIENT_BUFFER || bytes < sizeof(TOKEN_USER))
+        return false;
+    std::vector<unsigned char> storage(bytes);
+    if (!GetTokenInformation(token, TokenUser, storage.data(), bytes, &bytes)) return false;
+    const auto* user = reinterpret_cast<const TOKEN_USER*>(storage.data());
+    if (!IsValidSid(user->User.Sid)) return false;
+    LPWSTR sid = nullptr;
+    if (!ConvertSidToStringSidW(user->User.Sid, &sid)) return false;
+    result = sid;
+    LocalFree(sid);
+    return true;
+}
 struct SetupReservation {
     HANDLE value = nullptr;
     ~SetupReservation() { release(); }
@@ -54,18 +72,35 @@ int fail(int code, const char* description) {
 
 int main() {
     static_assert(!std::is_copy_constructible<axv::NativeInstallGuard>::value);
+    Handle process_token;
+    std::wstring expected_sid;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &process_token.value) ||
+        !token_user_sid(process_token.value, expected_sid))
+        return fail(1, "independent process TokenUser query");
     const auto defaults = axv::native_install_guard_names();
-    if (!defaults || defaults->application.find(L"Global\\AXEVoiceNativeCandidate.Running.S-1-") != 0 ||
-        defaults->setup.find(L"Global\\AXEVoiceNativeCandidate.Setup.S-1-") != 0)
-        return fail(1, "production names must use global namespace and token SID");
-    if (defaults->application.substr(defaults->application.find(L"S-1-")) !=
-        defaults->setup.substr(defaults->setup.find(L"S-1-")))
-        return fail(2, "both markers must use the same SID");
+    const axv::NativeInstallGuardNames expected{
+        L"Global\\AXEVoiceNativeCandidate.Running." + expected_sid,
+        L"Global\\AXEVoiceNativeCandidate.Setup." + expected_sid};
+    if (!defaults || defaults->application != expected.application || defaults->setup != expected.setup)
+        return fail(2, "both production names must exactly contain the actual process TokenUser SID");
     const auto names = scoped_names(L"lifetime");
     axv::NativeInstallGuard first, second;
+    const axv::NativeInstallGuardNames malformed[] = {
+        {L"", names.setup}, {names.application, L""},
+        {L"", L""}, {names.application, names.application}
+    };
+    for (const auto& invalid : malformed) {
+        if (first.acquire(invalid) != Result::Failed ||
+            !absent(names.application) || !absent(names.setup))
+            return fail(28, "malformed names must fail without creating either marker");
+    }
     SetupReservation setup;
     if (first.acquire(names) != Result::Acquired || second.acquire(names) != Result::Acquired)
         return fail(3, "multiple application holders must be admitted");
+    const auto reacquire_names = scoped_names(L"reacquire");
+    if (first.acquire(reacquire_names) != Result::Failed ||
+        !absent(reacquire_names.application) || !absent(reacquire_names.setup))
+        return fail(29, "held guard must reject reacquisition without creating new markers");
     if (setup.acquire(names) != Result::Busy || !absent(names.setup))
         return fail(4, "setup must reject active application and release reservation");
     first.release();
