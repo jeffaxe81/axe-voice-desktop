@@ -92,6 +92,14 @@ try {
     Invoke-NativeUpgradeGuardChecks -Installer $Installer -Target $Target -Stage $Stage `
         -ApplicationMutexName "Global\AXEVoiceNativeCandidate.Running.$UserSid" `
         -SetupMutexName "Global\AXEVoiceNativeCandidate.Setup.$UserSid" -BusyExitCode 170
+    . (Join-Path $Root 'tests/test_native_setup_contention.ps1')
+    Invoke-NativeSetupContentionCheck -Installer $Installer -Target $Target `
+        -ApplicationMutexName "Global\AXEVoiceNativeCandidate.Running.$UserSid" `
+        -SetupMutexName "Global\AXEVoiceNativeCandidate.Setup.$UserSid"
+    . (Join-Path $Root 'tests/test_native_postinstall_launch.ps1')
+    Invoke-NativePostinstallLaunchCheck -Installer $Installer -Target $Target `
+        -ApplicationMutexName "Global\AXEVoiceNativeCandidate.Running.$UserSid" `
+        -SetupMutexName "Global\AXEVoiceNativeCandidate.Setup.$UserSid"
     & (Join-Path $Target 'AXE-Voice.exe') --native-ui-smoke
     if($LASTEXITCODE -ne 0) {throw 'Installed candidate GUI smoke failed'}
     foreach($File in (Get-ChildItem $Stage -Recurse -File)) {

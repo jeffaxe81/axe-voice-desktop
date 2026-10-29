@@ -1,5 +1,22 @@
 # Native installation and startup guard
 
+## Integrated release and recorded evidence
+
+Candidate0.68 was merged in PR #154 at
+`68c7bf56d0e47bed8a490cb2b32fe9eb8d5aa8f8`. The exact tested head was
+`c35e0f8cdd4c9c8d3e346261fa80746fcfc1e180`.
+
+- [Windows CI40943593634](https://github.com/jeffaxe81/axe-voice-desktop/actions/runs/40943593634):115/115 passed.
+- [Native SDK40943593692](https://github.com/jeffaxe81/axe-voice-desktop/actions/runs/40943593692): both SDK profiles passed, including Inno compilation and installed held-marker, legacy sharing-conflict, live GUI, refusal with unchanged payload hashes, successful retry, reciprocal startup and uninstall checks.
+- Installer artifact ID: `12927568379`.
+
+The0.68.1 work is additional specialist validation in progress, not a passed
+release or a product version bump. Interactive postinstall `[Run]` handoff,
+actual global teardown, and current production-Inno races remain pending.
+These recorded automated results do not establish physical hardware, cross-session
+or cross-account acceptance, signing, Dígitro, or headset acceptance; the external
+acceptance work remains pending at the user's request.
+
 ## Contract
 
 The guarded native application and candidate installer cooperate to prevent
