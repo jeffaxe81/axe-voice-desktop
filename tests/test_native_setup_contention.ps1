@@ -126,6 +126,7 @@ public static class NativeSetupContentionWindows {
                     $Buttons = [NativeSetupContentionWindows]::Buttons($Window)
                     $Decision = Get-NativeSetupCancelDecision -WindowClass $Class -Title $Title -Text $Contents -ButtonIds $Buttons
                     switch ($Decision) {
+                        'IgnoreWindow' { }
                         'ConfirmCancel' {
                             $Yes = [NativeSetupContentionWindows]::GetDlgItem($Window, 6)
                             $null = [NativeSetupContentionWindows]::PostMessage($Yes, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)

@@ -12,5 +12,9 @@ Assert-Decision 'UnexpectedDialog' '#32770' 'Exit Setup' 'Unexpected contents' @
 Assert-Decision 'UnexpectedDialog' 'TNewForm' 'Exit Setup' $Expected @(6,7)
 Assert-Decision 'UnexpectedDialog' '#32770' 'Exit Setup' $Expected @(6)
 Assert-Decision 'UnexpectedDialog' '#32770' 'Exit Setup' $Expected @(6,7,2)
+Assert-Decision 'IgnoreWindow' 'TApplication' '' '' @()
+Assert-Decision 'UnexpectedDialog' 'TApplication' 'Unexpected title' '' @()
+Assert-Decision 'UnexpectedDialog' 'TApplication' '' 'Unexpected contents' @()
+Assert-Decision 'UnexpectedDialog' 'TApplication' '' '' @(6,7)
 Assert-Decision 'CloseWindow' 'TWizardForm' 'AXE Setup' '' @(2)
 Write-Output 'Native setup cancellation policy passed'
