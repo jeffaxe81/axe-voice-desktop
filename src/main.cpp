@@ -72,6 +72,7 @@ constexpr int kCallDurationLabel = 2503;
 HWND g_call_duration_label = nullptr;
 axv::NativeCallDuration g_call_duration;
 axv::RecentDestinations g_recent_destinations;
+bool g_incoming_ringtone_muted=false; // Local preference for this execution only.
 
 #endif
 constexpr int kCallButton = 1001;
@@ -99,6 +100,7 @@ constexpr int kReadinessButton = 2008;
 constexpr int kCopyStatusButton = 2009;
 constexpr int kDtmfButton = 2010;
 constexpr int kRecentDestinationsButton = 2011;
+constexpr int kIncomingRingtoneMuteButton = 2012;
 constexpr int kInputAudioCombo = 2401;
 constexpr int kOutputAudioCombo = 2402;
 constexpr int kRingtoneAudioCombo = 2403;
@@ -675,7 +677,7 @@ bool can_preview_selected_ringtone(){
 void acknowledge_incoming_alert(){g_ring_policy.silence(g_displayed_sip);g_ring_player.stop();}
 void synchronize_incoming_alert(const axv::SipRuntimeObservation& observed){
     g_displayed_sip=observed;
-    const auto request=g_smoke_mode?axv::IncomingRingtoneRequest{}:g_ring_policy.request(observed,g_selected_ringtone_id,g_tone_preview.state()==axv::TonePreviewState::Playing);
+    const auto request=g_smoke_mode?axv::IncomingRingtoneRequest{}:g_ring_policy.request(observed,g_selected_ringtone_id,g_tone_preview.state()==axv::TonePreviewState::Playing,g_incoming_ringtone_muted);
     if(axv::verified_incoming_call(observed))g_tone_preview.request_stop();
     const bool accepted=g_ring_player.synchronize(request);
     const auto state=g_ring_player.snapshot();
@@ -894,9 +896,12 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     EnableWindow(GetDlgItem(GetParent(g_runtime_banner),kRecentDestinationsButton),g_recent_destinations.size()!=0);
     synchronize_incoming_alert(observed);
     const auto duration=g_call_duration.observe(observed,GetTickCount64());
-    const std::wstring duration_text=duration.active
+    std::wstring duration_text=duration.active
         ? L"DURACAO " + axv::format_call_duration(duration.elapsed_ms)
         : L"DURACAO --:--:--";
+    if(g_incoming_ringtone_muted)duration_text+=L" | TOQUE MUDO";
+    SetWindowTextW(GetDlgItem(GetParent(g_runtime_banner),kIncomingRingtoneMuteButton),
+                   g_incoming_ringtone_muted?L"TOQUE MUDO":L"TOQUE NORMAL");
     wchar_t previous_duration[80]{};
     GetWindowTextW(g_call_duration_label,previous_duration,80);
     if (std::wstring_view(previous_duration)!=duration_text)
@@ -929,7 +934,7 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     g_dtmf_mode.synchronize(media,observed);
     const HWND dtmf=GetDlgItem(GetParent(g_runtime_banner),kDtmfButton);
     EnableWindow(dtmf,axv::native_dtmf_controls_current(media,observed));
-    SetWindowTextW(dtmf,g_dtmf_mode.armed()?L"DTMF ON (SIP INFO)":L"DTMF OFF (SIP INFO)");
+    SetWindowTextW(dtmf,g_dtmf_mode.armed()?L"DTMF ON":L"DTMF OFF");
     const HWND mute=GetDlgItem(GetParent(g_runtime_banner),kMuteFuture);
     const HWND hold=GetDlgItem(GetParent(g_runtime_banner),kHoldFuture);
     EnableWindow(mute,controls);EnableWindow(hold,controls);
@@ -1042,7 +1047,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
 #ifdef AXV_ENABLE_NATIVE_SIP
         make_button(window,L"CHAMAR",kCallButton,39,651,170,51,0);
         make_button(window,L"TRANSFERIR",kTransferFuture,219,651,170,51,0);
-        make_button(window,L"DTMF OFF (SIP INFO)",kDtmfButton,39,750,350,36,0);
+        make_button(window,L"DTMF OFF",kDtmfButton,39,750,170,36,0);
+        make_button(window,L"TOQUE NORMAL",kIncomingRingtoneMuteButton,219,750,170,36,0);
         EnableWindow(GetDlgItem(window,kDtmfButton),FALSE);
 #else
         make_button(window, L"CHAMAR  •  SIP INDISPONÍVEL", kCallButton,
@@ -1263,6 +1269,16 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             }
 #ifdef AXV_ENABLE_NATIVE_SIP
             if(control==kRecentDestinationsButton){show_recent_destinations(window);return 0;}
+            if(control==kIncomingRingtoneMuteButton){
+                g_incoming_ringtone_muted=!g_incoming_ringtone_muted;
+                // Cancel promptly, without acknowledging or rejecting the call.
+                if(g_incoming_ringtone_muted)g_ring_player.stop();
+                refresh_runtime_banner(g_baresip_process.poll());
+                SetWindowTextW(g_status,g_incoming_ringtone_muted
+                    ?L"Som das chamadas recebidas silenciado. Aviso visual e ATENDER continuam disponiveis."
+                    :L"Toque recebido em modo normal. Chamadas ainda pendentes podem voltar a tocar.");
+                return 0;
+            }
             if(control==kDtmfButton){
                 const auto call=native_engine().observation();
                 if(!g_dtmf_mode.toggle(g_displayed_media,call))
@@ -1792,7 +1808,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0 || std::wcscmp(command_line,L"--native-ui-smoke")==0);
 #ifdef AXV_ENABLE_NATIVE_SIP
-    const wchar_t* title=L"AXE Voice | Candidato nativo 0.66";
+    const wchar_t* title=L"AXE Voice | Candidato nativo 0.67";
 #else
     const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
 #endif
@@ -1871,6 +1887,38 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         // Empty/synthetic commands never open a popup or create a dial request.
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kRecentDestinationsButton,BN_CLICKED),0);
         ok=ok && g_recent_destinations.size()==0 && !IsWindowEnabled(GetDlgItem(window,kCallButton));
+        const auto before_sound_mode=native_engine().observation();
+        const auto same_sound_observation=[&] {
+            const auto after=native_engine().observation();
+            return after.process==before_sound_mode.process && after.sip==before_sound_mode.sip &&
+                after.evidence==before_sound_mode.evidence && after.session==before_sound_mode.session &&
+                after.call_id==before_sound_mode.call_id && after.last_call_id==before_sound_mode.last_call_id;
+        };
+        const auto sound_badge=[] {
+            wchar_t text[80]{};GetWindowTextW(g_call_duration_label,text,80);
+            return std::wstring_view(text).find(L"TOQUE MUDO")!=std::wstring_view::npos;
+        };
+        HWND sound_button=GetDlgItem(window,kIncomingRingtoneMuteButton);
+        const auto sound_button_matches=[&] {
+            wchar_t text[40]{};GetWindowTextW(sound_button,text,40);
+            return std::wstring_view(text)==(g_incoming_ringtone_muted?L"TOQUE MUDO":L"TOQUE NORMAL");
+        };
+        RECT sound_bounds{},dtmf_pair_bounds{},sound_feedback_bounds{};
+        GetWindowRect(sound_button,&sound_bounds);GetWindowRect(GetDlgItem(window,kDtmfButton),&dtmf_pair_bounds);
+        GetWindowRect(g_status,&sound_feedback_bounds);
+        ok=ok && sound_button && IsWindowEnabled(sound_button) && sound_button_matches() && !g_incoming_ringtone_muted &&
+            dtmf_pair_bounds.right<=sound_bounds.left && dtmf_pair_bounds.top==sound_bounds.top &&
+            sound_bounds.bottom<=sound_feedback_bounds.top;
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kIncomingRingtoneMuteButton,BN_CLICKED),0);
+        ok=ok && g_incoming_ringtone_muted && sound_button_matches() && sound_badge() && same_sound_observation() &&
+            !g_ring_player.snapshot().request.active() && !IsWindowEnabled(GetDlgItem(window,kCallButton));
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),0);
+        ok=ok && g_compact && sound_badge() && duration_layout_clear() &&
+            (GetWindowLongPtrW(g_call_duration_label,GWL_STYLE)&WS_VISIBLE) && !(GetWindowLongPtrW(sound_button,GWL_STYLE)&WS_VISIBLE);
+        // Accelerator-style dispatch works even while the button is hidden.
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kIncomingRingtoneMuteButton,1),0);
+        ok=ok && !g_incoming_ringtone_muted && sound_button_matches() && !sound_badge() && same_sound_observation();
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),0);
         ok=ok && inactive_duration() && duration_layout_clear();
         RECT dtmf_bounds{},feedback_bounds{};
         GetWindowRect(GetDlgItem(window,kDtmfButton),&dtmf_bounds);GetWindowRect(g_status,&feedback_bounds);
@@ -2177,6 +2225,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         {FVIRTKEY | FCONTROL, L'R', kRefreshHeadsetsButton},
 #ifdef AXV_ENABLE_NATIVE_SIP
         {FVIRTKEY | FCONTROL, L'H', kRecentDestinationsButton},
+        {FVIRTKEY | FCONTROL | FSHIFT, L'S', kIncomingRingtoneMuteButton},
 #endif
         {FVIRTKEY, VK_ESCAPE, kShowDial},
         {FVIRTKEY, VK_F1, kHelpButton},
