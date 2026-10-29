@@ -86,6 +86,7 @@ public static class NativePostinstallWindows {
                 try { $Process = Get-Process -Id $Row.ProcessId -ErrorAction Stop }
                 catch [Microsoft.PowerShell.Commands.ProcessCommandException] { continue }
                 try {
+                    [void]$Process.Handle # retain the kernel identity across PID reuse
                     if (!(Test-NativePostinstallSameIdentity $Row.CreationDate $Process.StartTime)) { continue }
                     $IsApp = $Row.Name -eq 'AXE-Voice.exe' -and $Row.ExecutablePath -and
                         [string]::Equals($Row.ExecutablePath, $Exe, [StringComparison]::OrdinalIgnoreCase)
@@ -116,6 +117,7 @@ public static class NativePostinstallWindows {
     try {
         $Setup = Start-Process -FilePath $Installer -ArgumentList @(
             '/SP-', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$Target`"") -PassThru
+        [void]$Setup.Handle # keep bootstrap identity valid after its exit
         $Known[[uint32]$Setup.Id] = [pscustomobject]@{
             Process=$Setup; Id=[uint32]$Setup.Id; StartedAt=$Setup.StartTime.ToUniversalTime(); ExitedAt=$null; IsApp=$false
         }
