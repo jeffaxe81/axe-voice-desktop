@@ -7,7 +7,7 @@
 [Setup]
 AppId=AXEVoiceNativeCandidate
 AppName=AXE Voice Native Candidate
-AppVersion=0.67.0
+AppVersion=0.68.0
 AppPublisher=AXE Voice
 DefaultDirName={localappdata}\Programs\AXEVoiceNativeCandidate
 DefaultGroupName=AXE Voice Native Candidate
@@ -28,3 +28,6 @@ Source: "{#CandidateSource}\*"; DestDir: "{app}"; Flags: ignoreversion recursesu
 Name: "{group}\AXE Voice Native Candidate"; Filename: "{app}\AXE-Voice.exe"
 [Run]
 Filename: "{app}\AXE-Voice.exe"; Description: "Abrir AXE Voice candidato"; Flags: nowait postinstall skipifsilent
+
+[Code]
+#include "native-upgrade-guard.iss"

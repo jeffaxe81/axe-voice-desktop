@@ -31,6 +31,7 @@
 #include "audio_test_tone_win32.h"
 #include "incoming_ringtone_policy.h"
 #ifdef AXV_ENABLE_NATIVE_SIP
+#include "native_install_guard.h"
 #include "incoming_ringtone_player.h"
 #include "native_registration_ui.h"
 #include "recent_destination_ui.h"
@@ -65,6 +66,8 @@
 
 namespace {
 #ifdef AXV_ENABLE_NATIVE_SIP
+// Declared before runtime/audio globals so the Running marker outlives teardown.
+axv::NativeInstallGuard g_native_install_guard;
 constexpr int kPasswordEdit=1016,kCaEdit=1017,kAnswerNative=1018;
 HWND g_password=nullptr,g_ca_file=nullptr;
 axv::NativeCallMediaState g_displayed_media;
@@ -1795,6 +1798,24 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
 }
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show) {
+    g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
+                                      std::wcscmp(command_line, L"--ui-blackbox") == 0 || std::wcscmp(command_line,L"--native-ui-smoke")==0);
+#ifdef AXV_ENABLE_NATIVE_SIP
+    const auto guard_names = axv::native_install_guard_names();
+    const auto guard_result = guard_names
+        ? g_native_install_guard.acquire(*guard_names)
+        : axv::NativeInstallGuardResult::Failed;
+    if (guard_result != axv::NativeInstallGuardResult::Acquired) {
+        const bool busy = guard_result == axv::NativeInstallGuardResult::Busy;
+        if (!g_smoke_mode) {
+            MessageBoxW(nullptr,
+                busy ? L"O instalador do AXE Voice está em execução. Aguarde sua conclusão e tente novamente."
+                     : L"Não foi possível verificar a proteção de instalação do AXE Voice. O aplicativo não será iniciado.",
+                L"AXE Voice", MB_OK | MB_ICONWARNING);
+        }
+        return busy ? ERROR_BUSY : ERROR_ACCESS_DENIED;
+    }
+#endif
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     g_dpi=axv::normalized_dpi(GetDpiForSystem());
     const wchar_t* className = L"AXEVoiceDesktopWindow";
@@ -1805,10 +1826,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
-    g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
-                                      std::wcscmp(command_line, L"--ui-blackbox") == 0 || std::wcscmp(command_line,L"--native-ui-smoke")==0);
 #ifdef AXV_ENABLE_NATIVE_SIP
-    const wchar_t* title=L"AXE Voice | Candidato nativo 0.67";
+    const wchar_t* title=L"AXE Voice | Candidato nativo 0.68";
 #else
     const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
 #endif
