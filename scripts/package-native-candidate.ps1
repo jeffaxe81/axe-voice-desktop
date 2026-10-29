@@ -96,6 +96,7 @@ try {
     Invoke-NativeSetupContentionCheck -Installer $Installer -Target $Target `
         -ApplicationMutexName "Global\AXEVoiceNativeCandidate.Running.$UserSid" `
         -SetupMutexName "Global\AXEVoiceNativeCandidate.Setup.$UserSid"
+    & (Join-Path $Root 'tests/test_native_postinstall_identity.ps1')
     . (Join-Path $Root 'tests/test_native_postinstall_launch.ps1')
     Invoke-NativePostinstallLaunchCheck -Installer $Installer -Target $Target `
         -ApplicationMutexName "Global\AXEVoiceNativeCandidate.Running.$UserSid" `
