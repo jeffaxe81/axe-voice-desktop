@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AXEVoiceDesktop VERSION 0.68.1 LANGUAGES CXX)
+project(AXEVoiceDesktop VERSION 0.68.2 LANGUAGES CXX)
 if(NOT WIN32)
   message(FATAL_ERROR "This bootstrap currently supports Windows only")
 endif()
@@ -248,6 +248,11 @@ if(BUILD_TESTING)
 endif()
 
 if(BUILD_TESTING)
+  add_executable(test_incoming_ringtone_worker_failures tests/test_incoming_ringtone_worker_failures.cpp)
+  target_compile_features(test_incoming_ringtone_worker_failures PRIVATE cxx_std_17)
+  target_link_libraries(test_incoming_ringtone_worker_failures PRIVATE axv_incoming_ringtone)
+  add_test(NAME incoming_ringtone_worker_failures COMMAND test_incoming_ringtone_worker_failures)
+  set_tests_properties(incoming_ringtone_worker_failures PROPERTIES TIMEOUT 15)
   add_executable(test_incoming_ringtone_policy tests/test_incoming_ringtone_policy.cpp)
   target_compile_features(test_incoming_ringtone_policy PRIVATE cxx_std_17)
   add_test(NAME incoming_ringtone_policy COMMAND test_incoming_ringtone_policy)
@@ -672,7 +677,7 @@ foreach(axv_test IN LISTS axv_registered_tests)
   set_tests_properties("${axv_test}" PROPERTIES LABELS "unit")
 endforeach()
 set_tests_properties(ui_smoke ui_blackbox PROPERTIES LABELS "blackbox")
-set_tests_properties(native_install_guard native_install_guard_process integration_sip_safety baresip_sdk_abi_probe windows_process security_process_resources sip_runtime_session_guard
+set_tests_properties(incoming_ringtone_worker_failures native_install_guard native_install_guard_process integration_sip_safety baresip_sdk_abi_probe windows_process security_process_resources sip_runtime_session_guard
   audio_inventory_async audio_inventory_shutdown audio_inventory_epochs audio_inventory_channels audio_inventory_failures
   audio_device_change_integration audio_endpoint_watcher
   security_command_boundaries native_reactor_fault_status native_registration_win32 recent_destination_win32 recent_destinations_authorization incoming_ringtone_mute_player incoming_ringtone_mute_authorization

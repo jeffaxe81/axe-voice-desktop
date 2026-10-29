@@ -66,9 +66,11 @@ namespace {
 struct Engine {
     bool configure_ok=true,register_ok=true,throw_configure=false,throw_register=false;
     unsigned configurations=0,registrations=0;
-    bool configure_authenticated(const axv::SipAccount&,const std::wstring&,std::string password,unsigned,const axv::NativeAudioRoute&){
+    unsigned short configured_port=0;
+    bool configure_authenticated(const axv::SipAccount& account,const std::wstring&,std::string password,unsigned,const axv::NativeAudioRoute&){
         struct Guard{std::string& value;~Guard(){SecureZeroMemory(value.data(),value.size());}} guard{password};
         ++configurations;
+        configured_port=account.port;
         if(password!=credential)throw 99;
         if(throw_configure)throw std::bad_alloc();
         return configure_ok;
@@ -102,6 +104,15 @@ int main(){
     using R=axv::NativeRegistrationResult;
     {Fixture f;Engine e;check(run(f,e)==R::Requested,"valid registration failed");check(e.registrations==1,"registration missing");}
     {Fixture f;Engine e;f.server.text.clear();check(run(f,e)==R::InvalidAccount,"invalid account result");check(e.registrations==0,"invalid account registered");check(f.password.reads==0,"invalid account read password");check(!f.password.text.empty(),"invalid account discarded password");}
+    for(const auto& port: {std::wstring(L"000000000005060x"),std::wstring(L"000000000005060")+std::wstring(112,L'0')+L"x",std::wstring(123,L'0')+L"5060x",std::wstring(123,L'0')+L"65536"}){
+        Fixture f;Engine e;f.port.text=port;
+        check(run(f,e)==R::InvalidAccount,"full invalid port was truncated before validation");
+        check(e.configurations==0 && e.registrations==0,"invalid full port reached engine");
+        check(f.password.reads==0 && !f.password.text.empty(),"invalid full port consumed password");
+    }
+    {Fixture f;Engine e;f.port.text=std::wstring(124,L'0')+L"5060";
+        check(run(f,e)==R::Requested,"valid 128-character zero-padded port rejected");
+        check(e.configurations==1 && e.registrations==1 && e.configured_port==5060,"valid full port did not reach engine intact");}
     {Fixture f;Engine e;f.password.text.clear();check(run(f,e)==R::Refused,"empty password result");check(e.configurations==0 && e.registrations==0,"empty password reached engine");}
     {Fixture f;Engine e;e.configure_ok=false;check(run(f,e)==R::Refused,"configuration refusal result");check(e.registrations==0,"configuration refusal registered");}
     {Fixture f;Engine e;e.register_ok=false;check(run(f,e)==R::Refused,"registration refusal result");}

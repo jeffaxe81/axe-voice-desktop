@@ -7,7 +7,7 @@
 [Setup]
 AppId=AXEVoiceNativeCandidate
 AppName=AXE Voice Native Candidate
-AppVersion=0.68.1
+AppVersion=0.68.2
 AppPublisher=AXE Voice
 DefaultDirName={localappdata}\Programs\AXEVoiceNativeCandidate
 DefaultGroupName=AXE Voice Native Candidate

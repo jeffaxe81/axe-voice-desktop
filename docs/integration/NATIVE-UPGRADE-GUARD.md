@@ -3,19 +3,21 @@
 ## Integrated release and recorded evidence
 
 Candidate0.68 was merged in PR #154 at
-`68c7bf56d0e47bed8a490cb2b32fe9eb8d5aa8f8`. The exact tested head was
-`c35e0f8cdd4c9c8d3e346261fa80746fcfc1e180`.
+`68c7bf56d0e47bed8a490cb2b32fe9eb8d5aa8f8`. Candidate0.68.1 was then
+merged in PR #155 at `d09b830995e87496de9aece97a32da94461422cf`.
+The exact tested0.68.1 head was `61c3bfbc1eebb69efbd6704fb6d282abc45ad4db`.
 
-- [Windows CI40943593634](https://github.com/jeffaxe81/axe-voice-desktop/actions/runs/40943593634):115/115 passed.
-- [Native SDK40943593692](https://github.com/jeffaxe81/axe-voice-desktop/actions/runs/40943593692): both SDK profiles passed, including Inno compilation and installed held-marker, legacy sharing-conflict, live GUI, refusal with unchanged payload hashes, successful retry, reciprocal startup and uninstall checks.
-- Installer artifact ID: `12927568379`.
+- [Windows CI40946064306](https://github.com/jeffaxe81/axe-voice-desktop/actions/runs/40946064306):116/116 passed (70 unit,2 black-box,44 integration).
+- [Native SDK40946064092](https://github.com/jeffaxe81/axe-voice-desktop/actions/runs/40946064092): both SDK profiles passed, including guard, unchanged-payload hashes, retry and uninstall checks, actual setup contention, graceful cancellation, interactive postinstall `[Run]`, and identity contracts.
+- Installer artifact ID: `12930030761`.
 
-The0.68.1 work is additional specialist validation in progress, not a passed
-release or a product version bump. Interactive postinstall `[Run]` handoff,
-actual global teardown, and current production-Inno races remain pending.
-These recorded automated results do not establish physical hardware, cross-session
-or cross-account acceptance, signing, Dígitro, or headset acceptance; the external
-acceptance work remains pending at the user's request.
+Candidate0.68.1 includes the process-lifetime guard fix and additional validation.
+Current0.68.2 audits and test hardening are not yet validated. The passed0.68.1
+automation does not establish physical global GUI/driver teardown, a simultaneous
+startup race against production Inno (sequential contention is distinct),
+cross-session or cross-account acceptance, physical hardware, signing, Dígitro,
+or headset acceptance. Those checks remain pending; external acceptance remains
+pending at the user's request.
 
 ## Contract
 
@@ -62,7 +64,8 @@ as permission to mutate installed files or start the native runtime.
 ## Lifetime and installer handoff
 
 The native guard is acquired at the beginning of `wWinMain`. In0.68.1 its global holder selects process lifetime: its destructor retains the
-marker, and Windows closes the handle at actual process termination. Scoped
+Running marker until Windows closes the handle at actual process termination,
+including while detached inventory work remains alive. Scoped
 RAII remains the default for reusable guard instances. Returning from the message loop or
 destroying the main window must not release protection before native SDK,
 reactor, and player teardown. Rejected startup releases any partial acquisition.
@@ -121,4 +124,13 @@ owner SID rather than the target path.
 
 ## 0.68.1 additional coverage
 
-Six specialist fronts added independent process TokenUser name checks, malformed/reacquisition cases, production interactive postinstall and setup contention/cancellation fixtures, and a child-process blocked-inventory lifetime regression. The initial Windows regression failed as intended (run40944854547, code10). Final corrected Windows/SDK/installer gates must pass before promotion. No new physical acceptance is implied.
+Six specialist fronts added independent process TokenUser name checks,
+malformed/reacquisition cases, production interactive postinstall and setup
+contention/cancellation fixtures, and a child-process blocked-inventory lifetime
+regression. The initial Windows child-process regression failed as intended
+([run40944854547](https://github.com/jeffaxe81/axe-voice-desktop/actions/runs/40944854547),
+code10); the corrected process-lifetime implementation passed in the final
+Windows run40946064306. Together with SDK run40946064092, these are the recorded
+passing gates for the exact0.68.1 head above. They do not establish physical
+global GUI/driver teardown or simultaneous production-Inno startup-race coverage.
+Current0.68.2 audits and test hardening remain unvalidated.

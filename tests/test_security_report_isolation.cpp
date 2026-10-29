@@ -51,7 +51,7 @@ bool check_report(unsigned r,unsigned s) {
     // Exact full-line whitelist: no raw value or diagnostic suffix may be
     // appended to otherwise valid prose. Version is intentionally fixed here.
     const std::vector<std::wstring> expected{
-        L"AXE Voice candidate 0.68.1",L"AXE VOICE - PRONTIDAO DE CHAMADAS",L"",
+        L"AXE Voice candidate 0.68.2",L"AXE VOICE - PRONTIDAO DE CHAMADAS",L"",
         bit(r,0)?L"[OK] Destino: sintaxe valida":L"[PENDENTE] Destino: corrigir ou informar destino",
         bit(r,1)?L"[OK] Conta: sintaxe local valida":L"[PENDENTE] Conta: revisar servidor, usuario e porta",
         bit(r,2)?L"[OK] Motor nativo: adaptador disponivel":L"[PENDENTE] Motor nativo: adaptador Baresip nao integrado",
