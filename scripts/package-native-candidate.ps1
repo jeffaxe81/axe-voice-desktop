@@ -87,9 +87,11 @@ $Target=Join-Path $Root 'build/native-candidate-install-check'
 $Install=Start-Process -FilePath $Installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=`"$Target`"") -Wait -PassThru
 if($Install.ExitCode -ne 0) {throw 'Candidate silent installation failed'}
 try {
-    # Reinstall into the same per-user location to exercise the upgrade path.
-    $Upgrade=Start-Process -FilePath $Installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=`"$Target`"") -Wait -PassThru
-    if($Upgrade.ExitCode -ne 0) {throw 'Candidate silent upgrade failed'}
+    . (Join-Path $Root 'tests/test_native_upgrade_guard.ps1')
+    $UserSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    Invoke-NativeUpgradeGuardChecks -Installer $Installer -Target $Target -Stage $Stage `
+        -ApplicationMutexName "Global\AXEVoiceNativeCandidate.Running.$UserSid" `
+        -SetupMutexName "Global\AXEVoiceNativeCandidate.Setup.$UserSid" -BusyExitCode 170
     & (Join-Path $Target 'AXE-Voice.exe') --native-ui-smoke
     if($LASTEXITCODE -ne 0) {throw 'Installed candidate GUI smoke failed'}
     foreach($File in (Get-ChildItem $Stage -Recurse -File)) {
