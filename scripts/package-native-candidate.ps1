@@ -86,12 +86,19 @@ $Installer=Join-Path $Output 'AXE-Voice-Native-Candidate-Setup.exe'
 $Target=Join-Path $Root 'build/native-candidate-install-check'
 $Install=Start-Process -FilePath $Installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=`"$Target`"") -Wait -PassThru
 if($Install.ExitCode -ne 0) {throw 'Candidate silent installation failed'}
-try {
+. (Join-Path $Root 'tests/native_package_cleanup.ps1')
+Invoke-NativePackageAcceptance -Acceptance {
+    & (Join-Path $Root 'tests/test_native_setup_cancel_policy.ps1')
+    & (Join-Path $Root 'tests/test_native_package_cleanup.ps1')
     . (Join-Path $Root 'tests/test_native_upgrade_guard.ps1')
     $UserSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
     Invoke-NativeUpgradeGuardChecks -Installer $Installer -Target $Target -Stage $Stage `
         -ApplicationMutexName "Global\AXEVoiceNativeCandidate.Running.$UserSid" `
         -SetupMutexName "Global\AXEVoiceNativeCandidate.Setup.$UserSid" -BusyExitCode 170
+    . (Join-Path $Root 'tests/test_native_setup_errors.ps1')
+    Invoke-NativeSetupErrorChecks -Installer $Installer -Target $Target `
+        -ApplicationMutexName "Global\AXEVoiceNativeCandidate.Running.$UserSid" `
+        -SetupMutexName "Global\AXEVoiceNativeCandidate.Setup.$UserSid"
     . (Join-Path $Root 'tests/test_native_setup_contention.ps1')
     Invoke-NativeSetupContentionCheck -Installer $Installer -Target $Target `
         -ApplicationMutexName "Global\AXEVoiceNativeCandidate.Running.$UserSid" `
@@ -107,7 +114,7 @@ try {
         $Installed=Join-Path $Target $File.FullName.Substring($Stage.Length+1)
         if((Get-FileHash -LiteralPath $File.FullName).Hash -ne (Get-FileHash -LiteralPath $Installed).Hash) {throw "Installed file differs: $($File.Name)"}
     }
-} finally {
+} -Cleanup {
     $Uninstall=Start-Process -FilePath (Join-Path $Target 'unins000.exe') -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -Wait -PassThru
     if($Uninstall.ExitCode -ne 0) {throw 'Candidate silent uninstall failed'}
 }

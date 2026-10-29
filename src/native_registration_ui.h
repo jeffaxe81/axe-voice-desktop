@@ -37,9 +37,11 @@ NativeRegistrationResult register_native_account_ui(Engine& engine,const NativeR
     std::string password;
     registration_ui_detail::SecretScope secrets{secret,password};
     try {
-        wchar_t server[256]{},user[129]{},port[16]{},ca[260]{};
+        // Account edits allow 128 characters; validate the complete visible port,
+        // including zero padding or invalid suffixes, before reading the secret.
+        wchar_t server[256]{},user[129]{},port[129]{},ca[260]{};
         GetWindowTextW(controls.server,server,256);GetWindowTextW(controls.user,user,129);
-        GetWindowTextW(controls.port,port,16);GetWindowTextW(controls.ca,ca,260);
+        GetWindowTextW(controls.port,port,129);GetWindowTextW(controls.ca,ca,260);
         const auto feedback=evaluate_account_form(server,user,port);
         if(!feedback.valid())return NativeRegistrationResult::InvalidAccount;
         const SipAccount account{server,user,feedback.port,SendMessageW(controls.tls,BM_GETCHECK,0,0)==BST_CHECKED};

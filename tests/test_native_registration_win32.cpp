@@ -41,6 +41,24 @@ int main(){
     if(!SetWindowTextW(server.handle,L"") || !SetWindowTextW(password.handle,L"preserve-until-form-valid"))return 7;
     if(axv::register_native_account_ui(engine,controls,L"capture",L"playback")!=R::InvalidAccount)return 8;
     if(engine.configurations!=1 || engine.registrations!=1 || GetWindowTextLengthW(password.handle)==0)return 9;
+    // Match the native account edit limit and exercise real EDIT text retrieval.
+    SetWindowTextW(server.handle,L"pbx.example");
+    SendMessageW(port.handle,EM_LIMITTEXT,128,0);
+    for(const auto& text: {std::wstring(L"000000000005060x"),
+                          std::wstring(L"000000000005060")+std::wstring(112,L'0')+L"x",
+                          std::wstring(123,L'0')+L"5060x",
+                          std::wstring(123,L'0')+L"65536"}){
+        if(!SetWindowTextW(port.handle,text.c_str()))return 10;
+        if(axv::register_native_account_ui(engine,controls,L"capture",L"playback")!=R::InvalidAccount)return 11;
+        if(engine.configurations!=1 || engine.registrations!=1)return 12;
+        wchar_t retained[64]{};
+        GetWindowTextW(password.handle,retained,64);
+        if(std::wstring(retained)!=L"preserve-until-form-valid")return 13;
+    }
+    if(!SetWindowTextW(port.handle,(std::wstring(124,L'0')+L"5061").c_str()) ||
+       !SetWindowTextW(password.handle,L"teste-\u00e7-\U0001f512"))return 14;
+    if(axv::register_native_account_ui(engine,controls,L"capture",L"playback")!=R::Requested)return 15;
+    if(!engine.matched || engine.configurations!=2 || engine.registrations!=2 || GetWindowTextLengthW(password.handle)!=0)return 16;
     SetWindowTextW(password.handle,L"");
     return 0;
 }

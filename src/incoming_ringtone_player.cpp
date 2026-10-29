@@ -40,7 +40,16 @@ void IncomingRingtonePlayer::run()noexcept{
  while(!closed_){
   changed_.wait(lock,[this]{return closed_ || state_.request.active();});
   if(closed_)break;
-  const auto request=state_.request;const auto generation=generation_;
+  const auto generation=generation_;
+  IncomingRingtoneRequest request;
+  try{request=state_.request;}
+  catch(...){
+   // Keep the call identity so the UI can report this failed attempt. Retry
+   // with the usual gap; cancellation or a replacement generation wakes us.
+   state_.result=TonePreviewState::Failed;
+   changed_.wait_for(lock,gap_,[this,generation]{return closed_ || generation!=generation_;});
+   continue;
+  }
   cancel_.store(false);rendering_=true;
   lock.unlock();
   TonePreviewState result=TonePreviewState::Failed;

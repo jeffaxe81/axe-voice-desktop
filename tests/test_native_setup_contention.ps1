@@ -1,5 +1,6 @@
 # Windows acceptance fixture: exercise the production Inno wizard reservation.
 # Dot-source this file after installing the candidate into the isolated Target.
+. (Join-Path $PSScriptRoot 'native_setup_cancel_policy.ps1')
 function Invoke-NativeSetupContentionCheck {
     [CmdletBinding()]
     param(
@@ -15,6 +16,7 @@ function Invoke-NativeSetupContentionCheck {
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Text;
 public static class NativeSetupContentionWindows {
     private delegate bool EnumProc(IntPtr window, IntPtr parameter);
     [DllImport("user32.dll")] private static extern bool EnumWindows(EnumProc callback, IntPtr parameter);
@@ -22,6 +24,22 @@ public static class NativeSetupContentionWindows {
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
     [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr window, int id);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder value, int count);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern int GetWindowText(IntPtr window, StringBuilder value, int count);
+    [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr window, EnumProc callback, IntPtr parameter);
+    [DllImport("user32.dll")] private static extern int GetDlgCtrlID(IntPtr window);
+    public static string Class(IntPtr window) { var s = new StringBuilder(256); GetClassName(window,s,s.Capacity); return s.ToString(); }
+    public static string Text(IntPtr window) { var s = new StringBuilder(8192); GetWindowText(window,s,s.Capacity); return s.ToString(); }
+    public static string Contents(IntPtr window) {
+        var texts = new List<string>();
+        EnumChildWindows(window, (child, parameter) => { if (Class(child) == "Static" && Text(child).Length > 0) texts.Add(Text(child)); return true; }, IntPtr.Zero);
+        return String.Join("\r\n", texts);
+    }
+    public static int[] Buttons(IntPtr window) {
+        var ids = new List<int>();
+        EnumChildWindows(window, (child, parameter) => { if (Class(child) == "Button") ids.Add(GetDlgCtrlID(child)); return true; }, IntPtr.Zero);
+        return ids.ToArray();
+    }
     public static IntPtr[] Windows(int pid) {
         var windows = new List<IntPtr>();
         EnumWindows((window, parameter) => {
@@ -52,6 +70,8 @@ public static class NativeSetupContentionWindows {
     $Identities = @{}
     function Add-KnownProcess([Diagnostics.Process]$Process) {
         try {
+            # Force a retained kernel handle before observing identity or windows.
+            $null = $Process.Handle
             $Stamp = $Process.StartTime.ToUniversalTime().Ticks
             if (!$Identities.ContainsKey($Process.Id)) {
                 $Identities[$Process.Id] = $Stamp
@@ -96,15 +116,25 @@ public static class NativeSetupContentionWindows {
                 $Process.Refresh()
                 if ($Process.HasExited) { continue }
                 $Alive = $true
-                # Every window comes from the recorded process ID, never a
-                # title match that could close an unrelated installer.
-                $null = $Process.CloseMainWindow()
+                if ($Process.StartTime.ToUniversalTime().Ticks -ne $Identities[$Process.Id]) {
+                    throw 'Tracked process creation identity changed during cleanup'
+                }
                 foreach ($Window in [NativeSetupContentionWindows]::Windows($Process.Id)) {
-                    $Yes = [NativeSetupContentionWindows]::GetDlgItem($Window, 6)
-                    if ($Yes -ne [IntPtr]::Zero) {
-                        $null = [NativeSetupContentionWindows]::PostMessage($Yes, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
-                    } else {
-                        $null = [NativeSetupContentionWindows]::PostMessage($Window, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+                    $Class = [NativeSetupContentionWindows]::Class($Window)
+                    $Title = [NativeSetupContentionWindows]::Text($Window)
+                    $Contents = [NativeSetupContentionWindows]::Contents($Window)
+                    $Buttons = [NativeSetupContentionWindows]::Buttons($Window)
+                    $Decision = Get-NativeSetupCancelDecision -WindowClass $Class -Title $Title -Text $Contents -ButtonIds $Buttons
+                    switch ($Decision) {
+                        'IgnoreWindow' { }
+                        'ConfirmCancel' {
+                            $Yes = [NativeSetupContentionWindows]::GetDlgItem($Window, 6)
+                            $null = [NativeSetupContentionWindows]::PostMessage($Yes, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
+                        }
+                        'CloseWindow' {
+                            $null = [NativeSetupContentionWindows]::PostMessage($Window, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+                        }
+                        default { throw "Unexpected tracked installer window during cancellation: class='$Class', title='$Title', text='$Contents', buttons='$($Buttons -join ',')'" }
                     }
                 }
             }
