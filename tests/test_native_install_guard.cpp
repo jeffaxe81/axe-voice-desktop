@@ -1,5 +1,7 @@
 // Exercises real Windows named-object lifetimes, including simultaneous admission.
 #include "../src/native_install_guard.h"
+#include <windows.h>
+#include <sddl.h>
 #include <atomic>
 #include <cstdio>
 #include <thread>
@@ -102,6 +104,27 @@ int main() {
         if (!event.value || first.acquire(names) != Result::Failed || !absent(names.application))
             return fail(14, "incompatible setup object must fail closed without leaked app marker");
     }
+    // Retain the original full-access handle while denying subsequent opens.
+    // Closing it removes this isolated object, so no restrictive object remains.
+    {
+        Handle denied_setup{CreateMutexW(nullptr, FALSE, names.setup.c_str())};
+        PSECURITY_DESCRIPTOR descriptor = nullptr;
+        if (!denied_setup.value ||
+            !ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                L"D:P(D;;GA;;;WD)", SDDL_REVISION_1, &descriptor, nullptr))
+            return fail(23, "access-denied test security descriptor creation");
+        const BOOL secured = SetKernelObjectSecurity(
+            denied_setup.value, DACL_SECURITY_INFORMATION, descriptor);
+        LocalFree(descriptor);
+        if (!secured) return fail(24, "access-denied test DACL application unsupported or failed");
+        Handle probe{OpenMutexW(SYNCHRONIZE, FALSE, names.setup.c_str())};
+        const DWORD probe_error = GetLastError();
+        if (probe.value || probe_error != ERROR_ACCESS_DENIED)
+            return fail(27, "restricted setup object must produce actual access denied");
+        if (first.acquire(names) != Result::Failed || !absent(names.application))
+            return fail(25, "access-denied setup probe must fail closed without app marker");
+    }
+    if (!absent(names.setup)) return fail(26, "restricted setup object must disappear on close");
     // Event barriers release both real participants together; a second barrier keeps
     // admitted markers alive until both outcomes have been observed.
     for (unsigned iteration = 0; iteration != 200; ++iteration) {

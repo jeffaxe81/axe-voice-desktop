@@ -71,6 +71,23 @@ function Invoke-NativeUpgradeGuardChecks {
     }
     Assert-UpgradeSucceeds
 
+    # Legacy builds do not publish a Running marker. A read handle that allows
+    # only other readers models an existing EXE whose sharing denies writes.
+    # This must be rejected by the conservative file probe alone.
+    if (Test-ApplicationMarker) { throw 'Application marker exists before legacy sharing regression' }
+    $LegacyExe = Join-Path $Target 'AXE-Voice.exe'
+    $LegacyStream = [IO.File]::Open($LegacyExe, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+    try {
+        Assert-RejectedUpgrade 'Legacy EXE sharing regression'
+        Assert-RejectedUninstall 'Legacy EXE sharing regression'
+    } finally {
+        $LegacyStream.Dispose()
+    }
+    # Prove the test released its file handle before retrying the installer.
+    $UnlockedStream = [IO.File]::Open($LegacyExe, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::None)
+    try { } finally { $UnlockedStream.Dispose() }
+    Assert-UpgradeSucceeds
+
     # Exercise the installed GUI itself, including its lifetime ownership and
     # continued operation after setup rejects the upgrade.
     $App = Start-Process -FilePath (Join-Path $Target 'AXE-Voice.exe') -PassThru
@@ -114,5 +131,5 @@ function Invoke-NativeUpgradeGuardChecks {
     } finally {
         $SetupGuard.Dispose()
     }
-    Write-Output 'Candidate guard rejects unlocked and live-GUI upgrades/uninstalls without terminating the app; reciprocal launch guard passed'
+    Write-Output 'Candidate guard rejects unlocked, legacy EXE sharing, and live-GUI upgrades/uninstalls without terminating the app; reciprocal launch guard passed'
 }

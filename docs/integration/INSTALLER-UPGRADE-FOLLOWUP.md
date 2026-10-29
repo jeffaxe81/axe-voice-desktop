@@ -36,13 +36,33 @@ exclusão por wildcard nem apagar recursivamente diretórios arbitrários do app
 
 ## Atualização com o aplicativo aberto
 
-`CloseApplications=no` está configurado e não foi encontrado um `AppMutex`
-correspondente na aplicação. O teste atual só inicia a GUI depois de instalar.
-Executar uma prova comportamental em Windows com o app aberto, inclusive durante
-uma chamada, registrando bloqueios de arquivos, cancelamento, códigos de saída e
-eventual necessidade de reinicialização. Avaliar fechamento coordenado ou recusa
-antes de modificar arquivos; não encerrar chamadas à força como solução padrão.
+O contrato do candidato usa marcadores recíprocos `Running` e `Setup`, no
+namespace `Global`, com o SID de `TokenUser` do processo. Cada participante
+publica seu marcador antes de consultar o outro e falha de forma fechada em
+erros; só `ERROR_FILE_NOT_FOUND` comprova ausência. Múltiplas instâncias do app
+continuam permitidas: o último handle de `Running` mantém a proteção até depois
+da destruição dos runtimes nativos. O mesmo SID deve cooperar entre sessões;
+outros SIDs têm escopo distinto. O `AppMutex` nativo do Inno sozinho não fecha
+a corrida entre a consulta do app e a reserva do setup.
+
+Para versões antigas sem o protocolo, a sondagem conservadora abre somente o
+`AXE-Voice.exe` já existente no destino, com acesso de escrita, compartilhamento
+zero e `OPEN_EXISTING`, antes de modificar a instalação ou admitir a
+desinstalação. Não cria, trunca nem escreve no arquivo. Executável bloqueado ou
+erro de sondagem deve causar recusa sem alterar o payload instalado e sem
+encerrar o aplicativo. O handle é fechado após a sondagem: versões antigas não
+respeitam a reserva e ainda podem abrir depois dela. Não há garantia contra
+essa corrida de abertura do legado.
+
+As regressões propostas cobrem marcador com arquivos desbloqueados, conflito de
+compartilhamento do EXE sem marcador, GUI instalada aberta, hashes preservados
+na recusa e nova tentativa após liberar a proteção. A presença desses testes
+não comprova execução bem-sucedida. Executar a prova comportamental em Windows,
+inclusive durante uma chamada, registrando cancelamento, códigos de saída e
+eventual necessidade de reinicialização. Não encerrar chamadas à força.
 
 Estas constatações vêm da inspeção do código. Ainda não há prova executada em
 Windows desta atualização A→B nem exploração demonstrada por carregamento de DLL
-remanescente.
+remanescente. Homologação física, sessões e usuários reais distintos, assinatura
+e validação Dígitro/headset continuam pendentes sem evidência separada. O contrato
+detalhado e os limites estão em [NATIVE-UPGRADE-GUARD.md](NATIVE-UPGRADE-GUARD.md).

@@ -10,8 +10,10 @@ holds its reservation refuses startup before creating the GUI or starting SIP.
 Multiple native application instances remain supported.
 
 This protocol applies to the native SDK build. The SDK-free laboratory GUI does
-not participate. Historical application versions without this guard cannot be
-detected by this protocol and must be closed before upgrading or uninstalling.
+not participate. Historical application versions without this guard do not
+publish these markers. A conservative file probe supplements the protocol for
+those versions, as described below; they must still be closed before upgrading
+or uninstalling.
 
 ## Named-object protocol
 
@@ -28,6 +30,10 @@ setup marker, rejecting an existing setup marker, then probes for the running
 marker. A marker's existence is what matters; mutex ownership is not used to
 make the application single-instance. Every accepted app retains its own handle,
 so setup remains blocked until the final participating app releases its handle.
+
+Inno Setup's built-in `AppMutex` check alone is insufficient: checking for an
+application before publishing the setup reservation leaves a startup race.
+The reciprocal publication order is part of the contract.
 
 Creation precedes the reciprocal probe on both sides. Consequently simultaneous
 startup cannot admit both sides: either one is refused or both are refused.
@@ -51,6 +57,22 @@ new app would reject the installer's own launch. Deinitialization cleanup is
 idempotent and handles early rejection, cancellation, and failure. Uninstall
 retains its reservation through removal and releases it during deinitialization.
 
+## Conservative legacy fallback
+
+Before installation mutations in `PrepareToInstall`, and before admitting
+uninstallation in `InitializeUninstall`, setup probes the existing target
+`AXE-Voice.exe` with `CreateFileW`, writable access, zero sharing, and
+`OPEN_EXISTING`. This probes an existing file without creating or truncating it
+and without writing any bytes. A locked executable or another probe failure
+refuses the operation before installed payload changes. An absent executable
+must be distinguished from an access or sharing error.
+
+The successful probe handle is closed; it is not a reservation that old apps
+honor. A legacy app can start after the probe, so this fallback does not guarantee
+race protection for historical versions. Only cooperating apps participate in
+the reciprocal startup protocol. A lock refusal must leave the installed payload
+unchanged and must not terminate the app or its calls.
+
 ## Validation and limits
 
 Validation must cover multiple running holders, simultaneous app/setup startup,
@@ -60,11 +82,19 @@ must also verify silent operation, uninstall refusal, cancellation, and the
 postinstall launch handoff. Test presence alone is not evidence that these checks
 have passed; record actual commands and results with the change.
 
+The legacy regression holds the target executable open for reading with sharing
+that denies writes, without publishing a Running marker. Upgrade and uninstall
+must refuse with unchanged payload hashes, then an upgrade must succeed after
+the handle closes. This models a sharing conflict; it does not establish the
+behavior of every historical executable or close its startup race.
+
 Physical Windows checks across sessions and user accounts remain pending unless
 separately recorded with evidence. They must confirm same-SID cross-session
 blocking and different-SID isolation, including the relevant token and ACL
 behavior. Native SDK behavior and active-call preservation require their own
 runtime evidence; an SDK-free helper does not establish them.
+Signing, physical Windows hardware, and Dígitro/headset acceptance remain pending
+unless separately recorded with evidence.
 
 The guard does not make an upgrade atomic, implement rollback, validate the
 payload, or remove obsolete files from older installations. Obsolete-file
