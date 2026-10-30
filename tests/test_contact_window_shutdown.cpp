@@ -50,5 +50,10 @@ int main(){
  CHECK(timer_ran&&!freed_during_close);
  CHECK(!IsWindow(contacts)&&!IsWindow(owner));
  CHECK(!axv::state);
+ axv::ContactBook current,untouched;axv::ContactStore store;
+ CHECK(untouched.add({L"Keep",L"1003",false})==axv::ContactResult::Ok);
+ CHECK(axv::import_contacts(owner,current,untouched,store).status==axv::ContactTransferStatus::Cancelled);
+ CHECK(untouched.items().size()==1&&untouched.items()[0].destination==L"1003");
+ CHECK(axv::export_contacts(owner,current).status==axv::ContactTransferStatus::Cancelled);
  std::puts("Contact window state survived nested owner shutdown; modal action cancelled safely");
 }

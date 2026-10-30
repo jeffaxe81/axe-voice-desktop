@@ -42,6 +42,7 @@ bool read_import(const wchar_t* path, std::string& bytes) {
 ContactTransferResult import_contacts(HWND owner, const ContactBook& current,
                                     ContactBook& output, ContactStore& store) noexcept {
  try {
+  if(!IsWindow(owner))return {ContactTransferStatus::Cancelled};
   wchar_t path[32768]{};
   OPENFILENAMEW dialog{};
   dialog.lStructSize = sizeof(dialog);
@@ -52,7 +53,9 @@ ContactTransferResult import_contacts(HWND owner, const ContactBook& current,
   dialog.lpstrTitle = L"Importar contatos";
   dialog.lpstrDefExt = L"json";
   dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER;
-  if (!GetOpenFileNameW(&dialog))
+  const BOOL selected=GetOpenFileNameW(&dialog);
+  if(!IsWindow(owner))return {ContactTransferStatus::Cancelled};
+  if (!selected)
    return {CommDlgExtendedError() ? ContactTransferStatus::Error : ContactTransferStatus::Cancelled};
   std::string bytes;
   if (!read_import(path, bytes)) return {ContactTransferStatus::Error};
@@ -70,6 +73,7 @@ ContactTransferResult import_contacts(HWND owner, const ContactBook& current,
       L"\nDuplicados ignorados: " + std::to_wstring(skipped) + L"\n\nConfirmar importação?";
   const int choice = MessageBoxW(owner, preview.c_str(), L"Importar contatos",
       MB_OKCANCEL | MB_ICONQUESTION | MB_DEFBUTTON2);
+  if(!IsWindow(owner))return {ContactTransferStatus::Cancelled};
   if (choice != IDOK) return {choice == 0 ? ContactTransferStatus::Error : ContactTransferStatus::Cancelled};
   if (added != 0) {
    const auto saved = store.save(candidate);

@@ -36,6 +36,7 @@ bool export_destination_allowed(const std::wstring& path) noexcept {
 ContactTransferResult export_contacts(HWND owner,const ContactBook& book) noexcept {
  const ContactTransferResult error{ContactTransferStatus::Error};
  try {
+  if(!IsWindow(owner))return {ContactTransferStatus::Cancelled};
   auto bytes=encode_contact_backup(book);
   if(!bytes||bytes->size()>contact_backup_limit)return error;
   std::vector<wchar_t> filename(32768,L'\0');
@@ -51,7 +52,9 @@ ContactTransferResult export_contacts(HWND owner,const ContactBook& book) noexce
   dialog.lpstrDefExt=L"json";
   dialog.lpstrTitle=L"Exportar contatos";
   dialog.Flags=OFN_OVERWRITEPROMPT|OFN_PATHMUSTEXIST|OFN_NOCHANGEDIR;
-  if(!GetSaveFileNameW(&dialog))return CommDlgExtendedError()==0?
+  const BOOL selected=GetSaveFileNameW(&dialog);
+  if(!IsWindow(owner))return {ContactTransferStatus::Cancelled};
+  if(!selected)return CommDlgExtendedError()==0?
    ContactTransferResult{ContactTransferStatus::Cancelled}:error;
   const std::wstring destination(filename.data());
   const auto separator=destination.find_last_of(L"\\/");

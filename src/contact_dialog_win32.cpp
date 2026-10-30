@@ -38,7 +38,7 @@ struct Window {
   bool dirty = false, updating = false, loaded = false;
   UINT dpi = 96;
 };
-std::unique_ptr<Window> state;
+std::shared_ptr<Window> state;
 HWND child(Window &w, int id) { return GetDlgItem(w.hwnd, id); }
 void status(Window &w, const wchar_t *s) {
   SetWindowTextW(child(w, Status), s);
@@ -50,10 +50,14 @@ std::wstring value(HWND h) {
   s.resize(n);
   return s;
 }
+bool live(const Window& w) noexcept {
+  return w.hwnd && IsWindow(w.hwnd) && IsWindow(w.owner);
+}
 bool discard(Window &w) {
-  return !w.dirty ||
-         MessageBoxW(w.hwnd, L"Descartar as alterações não salvas?",
-                     L"Contatos", MB_YESNO | MB_ICONQUESTION) == IDYES;
+  if(!live(w))return false;
+  if(!w.dirty)return true;
+  const int result=MessageBoxW(w.hwnd,L"Descartar as alterações não salvas?",L"Contatos",MB_YESNO|MB_ICONQUESTION);
+  return live(w) && result==IDYES;
 }
 void fill(Window &w, std::uint64_t id) {
   w.updating = true;
@@ -65,6 +69,7 @@ void fill(Window &w, std::uint64_t id) {
   w.dirty = false;
 }
 void refresh(Window &w) {
+  if(!live(w))return;
   w.updating = true;
   w.rows = find_contacts(w.book, value(child(w, Search)),
                          SendMessageW(child(w, Only), BM_GETCHECK, 0, 0) ==
@@ -134,6 +139,7 @@ void layout(Window &w) {
   place(w, Status, 12, y + 150, inner, 70);
 }
 void command(Window &w, int id, int code) {
+  if(!live(w))return;
   if ((id == Name || id == Destination) && code == EN_CHANGE) {
     if (!w.updating)
       w.dirty = true;
@@ -265,6 +271,7 @@ void command(Window &w, int id, int code) {
         MessageBoxW(w.hwnd, L"Excluir o contato selecionado?", L"Contatos",
                     MB_YESNO | MB_ICONQUESTION) != IDYES)
       return;
+    if(!live(w))return;
     ContactBook next = w.book;
     auto result = id == Delete ? next.remove(c->id)
                                : toggle_contact_favorite(next, c->id);
@@ -275,6 +282,9 @@ void command(Window &w, int id, int code) {
   }
 }
 LRESULT CALLBACK proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+  // A modal picker/confirmation pumps main-window shutdown messages. Retain
+  // this dispatch's original state even when close_contact_book clears globals.
+  std::shared_ptr<Window> dispatch_lifetime;
   try {
     auto *w = reinterpret_cast<Window *>(GetWindowLongPtrW(h, GWLP_USERDATA));
     if (msg == WM_NCCREATE) {
@@ -283,6 +293,7 @@ LRESULT CALLBACK proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
       w->hwnd = h;
       SetWindowLongPtrW(h, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(w));
     }
+    if(state && state.get()==w)dispatch_lifetime=state;
     if (!w)
       return DefWindowProcW(h, msg, wp, lp);
     switch (msg) {
@@ -395,8 +406,8 @@ LRESULT CALLBACK proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     }
     return DefWindowProcW(h, msg, wp, lp);
   } catch (...) {
-    if (state && state->hwnd)
-      status(*state, L"Não foi possível concluir a operação. Os dados "
+    if (dispatch_lifetime && dispatch_lifetime->hwnd)
+      status(*dispatch_lifetime, L"Não foi possível concluir a operação. Os dados "
                      L"existentes foram preservados.");
     return msg == WM_NCCREATE ? FALSE : 0;
   }
@@ -416,7 +427,7 @@ void show_contact_book(HWND owner, HWND destination_edit) noexcept {
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
     RegisterClassW(&wc);
-    state = std::make_unique<Window>();
+    state = std::make_shared<Window>();
     state->owner = owner;
     state->edit = destination_edit;
     HWND h = CreateWindowExW(WS_EX_CONTROLPARENT, wc.lpszClassName,
