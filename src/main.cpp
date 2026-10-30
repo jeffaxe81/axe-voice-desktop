@@ -32,6 +32,8 @@
 #include "incoming_ringtone_policy.h"
 #ifdef AXV_ENABLE_NATIVE_SIP
 #include "native_install_guard.h"
+#include "contact_dialog.h"
+#include "contact_ui_actions.h"
 #include "incoming_ringtone_player.h"
 #include "native_registration_ui.h"
 #include "recent_destination_ui.h"
@@ -104,6 +106,7 @@ constexpr int kCopyStatusButton = 2009;
 constexpr int kDtmfButton = 2010;
 constexpr int kRecentDestinationsButton = 2011;
 constexpr int kIncomingRingtoneMuteButton = 2012;
+constexpr int kContactsButton = 2013;
 constexpr int kInputAudioCombo = 2401;
 constexpr int kOutputAudioCombo = 2402;
 constexpr int kRingtoneAudioCombo = 2403;
@@ -1000,6 +1003,12 @@ void begin_shutdown(HWND window) {
 
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
+#ifdef AXV_ENABLE_NATIVE_SIP
+    case axv::contact_dialer_review_message:
+        if(g_compact){g_compact=false;apply_compact_layout(window);save_ui_preferences();}
+        show_page(window,0);
+        return 0;
+#endif
     case WM_CREATE: {
         g_dpi=axv::normalized_dpi(GetDpiForWindow(window));
         load_ui_preferences();
@@ -1028,7 +1037,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                                           42, 190, 347, 20, -1, g_font_small, kCallDurationLabel);
 #endif
 
+#ifdef AXV_ENABLE_NATIVE_SIP
+        make_label(window, L"DISCAGEM", 39, 220, 100, 23, 0, g_font_small);
+        make_button(window,L"CONTATOS",kContactsButton,154,216,108,28,0);
+#else
         make_label(window, L"DISCAGEM", 39, 220, 200, 23, 0, g_font_small);
+#endif
 #ifdef AXV_ENABLE_NATIVE_SIP
         make_button(window,L"RECENTES",kRecentDestinationsButton,270,216,119,28,0);
         EnableWindow(GetDlgItem(window,kRecentDestinationsButton),FALSE);
@@ -1271,6 +1285,11 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 return 0;
             }
 #ifdef AXV_ENABLE_NATIVE_SIP
+            if(control==kContactsButton){
+                if(g_compact){g_compact=false;apply_compact_layout(window);save_ui_preferences();}
+                show_page(window,0);
+                axv::show_contact_book(window,g_number);return 0;
+            }
             if(control==kRecentDestinationsButton){show_recent_destinations(window);return 0;}
             if(control==kIncomingRingtoneMuteButton){
                 g_incoming_ringtone_muted=!g_incoming_ringtone_muted;
@@ -1768,6 +1787,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         DestroyWindow(window);
         return 0;
     case WM_DESTROY:
+#ifdef AXV_ENABLE_NATIVE_SIP
+        axv::close_contact_book();
+#endif
         g_audio_endpoint_watcher.stop();
         g_audio_worker.close();
         g_settings_audio_worker.close();
@@ -1827,7 +1849,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
 #ifdef AXV_ENABLE_NATIVE_SIP
-    const wchar_t* title=L"AXE Voice | Candidato nativo 0.68.2";
+    const wchar_t* title=L"AXE Voice | Candidato nativo 0.69";
 #else
     const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
 #endif
@@ -1903,6 +1925,25 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         ok=ok && GetDlgItem(window,kRecentDestinationsButton) &&
             !IsWindowEnabled(GetDlgItem(window,kRecentDestinationsButton)) &&
             recents_bounds.bottom<=number_label_bounds.top;
+        RECT contact_bounds{};
+        GetWindowRect(GetDlgItem(window,kContactsButton),&contact_bounds);
+        ok=ok && GetDlgItem(window,kContactsButton) && IsWindowEnabled(GetDlgItem(window,kContactsButton)) &&
+            contact_bounds.right<=recents_bounds.left && contact_bounds.bottom<=number_label_bounds.top;
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kContactsButton,BN_CLICKED),0);
+        HWND contacts=FindWindowW(L"AXVContactBookV1",nullptr);
+        ok=ok && contacts && IsWindowEnabled(window) && GetDlgItem(contacts,101) && GetDlgItem(contacts,103) &&
+            GetDlgItem(contacts,104) && GetDlgItem(contacts,105) && GetDlgItem(contacts,113);
+        MSG contact_key{};contact_key.hwnd=GetDlgItem(contacts,101);contact_key.message=WM_KEYDOWN;contact_key.wParam='A';
+        ok=ok && axv::contacts_owns_message(contact_key) && !IsWindowEnabled(GetDlgItem(window,kCallButton));
+        show_page(window,1);
+        const auto before_contact=native_engine().observation();
+        ok=ok && axv::use_contact_destination(g_number,{99,L"Contato",L"1002",false}) && g_page==0;
+        const auto after_contact=native_engine().observation();
+        ok=ok && before_contact.session==after_contact.session && before_contact.call_id==after_contact.call_id &&
+            before_contact.sip==after_contact.sip && !IsWindowEnabled(GetDlgItem(window,kCallButton));
+        SetWindowTextW(g_number,L"");
+        axv::close_contact_book();
+        ok=ok && !FindWindowW(L"AXVContactBookV1",nullptr);
         // Empty/synthetic commands never open a popup or create a dial request.
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kRecentDestinationsButton,BN_CLICKED),0);
         ok=ok && g_recent_destinations.size()==0 && !IsWindowEnabled(GetDlgItem(window,kCallButton));
@@ -2243,6 +2284,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         {FVIRTKEY | FCONTROL, L'3', kShowAudio},
         {FVIRTKEY | FCONTROL, L'R', kRefreshHeadsetsButton},
 #ifdef AXV_ENABLE_NATIVE_SIP
+        {FVIRTKEY | FCONTROL, L'J', kContactsButton},
         {FVIRTKEY | FCONTROL, L'H', kRecentDestinationsButton},
         {FVIRTKEY | FCONTROL | FSHIFT, L'S', kIncomingRingtoneMuteButton},
 #endif
@@ -2255,8 +2297,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         const_cast<ACCEL*>(shortcuts), static_cast<int>(sizeof(shortcuts)/sizeof(shortcuts[0])));
     MSG msg = {};
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
+#ifdef AXV_ENABLE_NATIVE_SIP
+        const bool contact_message=axv::contacts_owns_message(msg);
+        if(contact_message && axv::translate_contacts_message(msg))continue;
+        if (!contact_message && accelerator && TranslateAcceleratorW(window, accelerator, &msg)) continue;
+        if (!contact_message && IsDialogMessageW(window, &msg)) continue;
+#else
         if (accelerator && TranslateAcceleratorW(window, accelerator, &msg)) continue;
-        if (IsDialogMessageW(window, &msg)) continue; // Tab / Shift+Tab among Win32 controls.
+        if (IsDialogMessageW(window, &msg)) continue;
+#endif
+
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
