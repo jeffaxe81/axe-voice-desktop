@@ -34,6 +34,8 @@ inline constexpr const wchar_t* frontend_help_text() {
         L"Em Ajustes, informe servidor, usuario, porta e senha da sessao.\n"
         L"Para TLS, selecione TLS e informe um arquivo CA PEM confiavel.\n"
         L"Clique REGISTRAR e aguarde SIP REGISTRADO.\n"
+        L"CONTATOS ou Ctrl+J: agenda local, busca, favoritos e backup JSON.\n"
+        L"Usar contato preenche o discador; revise antes de CHAMAR.\n"
         L"RECENTES ou Ctrl+H: ultimos10 destinos solicitados nesta sessao.\n"
         L"Escolher preenche o campo; revise e use CHAMAR para discar.\n"
         L"LIMPAR RECENTES apaga a lista; parar ou trocar sessao tambem limpa.\n"
