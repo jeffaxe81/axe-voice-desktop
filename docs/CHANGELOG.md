@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.71.0 — diagnóstico efêmero de microfone no Windows (candidata)
+- Botão **MICROFONE** na aba ÁUDIO, disponível apenas com dispositivo verificado no inventário e acionado manualmente.
+- Captura WASAPI em memória por ~850 ms, indicador de presença/ausência de sinal e acesso/privacidade; nenhuma gravação ou transmissão.
+- Intertravamento com prévias de voz/toque, chamadas/alertas e troca de páginas; seleção explícita desconectada nunca usa fallback.
+- Testes determinísticos para seleção, formatos de amostra, buffers inválidos, NaN e smoke visual. Evidência em `docs/integration/LOCAL-MICROPHONE-TEST.md`.
+- Não comprova mídia SIP/RTP bidirecional nem homologação em headset físico ou central Dígitro.
+
 ## v0.70.0 — teste local independente da saída de voz (candidata)
 - Botão **TESTAR VOZ** na aba Áudio, separado de **TESTAR TOQUE**, com sinal de 250 ms enviado ao dispositivo de conversação escolhido via WASAPI.
 - O padrão de comunicação do Windows é resolvido pelo inventário atual; saída escolhida e desconectada bloqueia a reprodução sem fallback silencioso.
