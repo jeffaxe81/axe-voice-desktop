@@ -64,6 +64,51 @@ int main() {
         CHECK(!service.start("invalid"));
         CHECK(service.start(std::string(token)));
         CHECK(service.active());
+        // Read-only CTI endpoints deny unauthenticated/browser requests.
+        CHECK(code(request("GET /v1/calls/current","",{}),401));
+        CHECK(code(request("GET /v1/events","",{}),401));
+        CHECK(code(request("GET /v1/events?after=garbage","",token),400));
+        CHECK(code(request("GET /v1/events?after=18446744073709551616","",token),400));
+        CHECK(code(request("GET /v1/calls/current","",token,
+                           "Origin: https://crm.example.org\r\n"),403));
+        CHECK(code(request("GET /v1/events","",token,
+                           "Referer: https://crm.example.org\r\n"),403));
+        CHECK(code(request("GET /v1/calls/current","",token,
+                           "Content-Length: 0\r\n"),400));
+        auto first_status=request("GET /v1/calls/current","",token);
+        CHECK(code(first_status,200) &&
+              first_status.find("\"phase\":\"offline\"")!=std::string::npos);
+        axv::SipRuntimeObservation observed{};
+        observed.process=axv::RuntimeProcess::Running;
+        observed.sip=axv::SipStatus::Registered;
+        observed.session=1;
+        service.observe(observed);
+        const auto unverified=request("GET /v1/calls/current","",token);
+        CHECK(code(unverified,200) &&
+              unverified.find("\"phase\":\"unverified\"")!=std::string::npos);
+        observed.evidence=axv::SipEvidence::VerifiedNativeApi;
+        service.observe(observed);
+        const auto registered=request("GET /v1/calls/current","",token);
+        CHECK(code(registered,200) &&
+              registered.find("\"registered\":true")!=std::string::npos &&
+              registered.find("\"active_call\":false")!=std::string::npos);
+        observed.sip=axv::SipStatus::InCall;
+        observed.call_id=88;
+        observed.last_call_id=88;
+        service.observe(observed);
+        const auto active=request("GET /v1/calls/current","",token);
+        CHECK(code(active,200) &&
+              active.find("\"phase\":\"in_call\"")!=std::string::npos &&
+              active.find("\"active_call\":true")!=std::string::npos &&
+              active.find("88")==std::string::npos);
+        const auto events=request("GET /v1/events?after=2","",token);
+        CHECK(code(events,200) &&
+              events.find("\"phase\":\"in_call\"")!=std::string::npos &&
+              events.find("\"sequence\":3")!=std::string::npos &&
+              events.find("\"sequence\":1") ==std::string::npos);
+        const auto nothing=request("GET /v1/events?after=3","",token);
+        CHECK(code(nothing,200) &&
+              nothing.find("\"events\":[]")!=std::string::npos);
         CHECK(code(request("GET /v1/status","",token),200));
         CHECK(code(request("GET /v1/status","",{}),401));
         CHECK(code(request("POST /v1/calls",R"({"destination":"1001"})",{}),401));
