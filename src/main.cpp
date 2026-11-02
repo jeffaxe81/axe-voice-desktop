@@ -28,6 +28,7 @@
 #include "audio_selection_feedback.h"
 #include "native_audio_routes.h"
 #include "audio_routing_preview.h"
+#include "audio_output_preview.h"
 #include "audio_test_tone_win32.h"
 #include "incoming_ringtone_policy.h"
 #ifdef AXV_ENABLE_NATIVE_SIP
@@ -91,6 +92,7 @@ constexpr int kProbeButton = 1008;
 constexpr int kAudioDevicesButton = 1009;
 constexpr int kRefreshHeadsetsButton = 1013;
 constexpr int kTestRingtoneButton = 1014;
+constexpr int kTestConversationButton = 1015;
 constexpr int kStartBaresipButton = 1010;
 constexpr int kStopBaresipButton = 1011;
 constexpr UINT_PTR kProcessTimer = 1012;
@@ -171,6 +173,7 @@ axv::AudioInventoryAsync g_settings_audio_worker{axv::inspect_windows_audio_devi
 axv::AudioInventoryRetry g_settings_audio_retry;
 axv::TonePreviewPlayer g_tone_preview;
 axv::TonePreviewState g_last_tone_state = axv::TonePreviewState::Idle;
+bool g_preview_is_conversation = false;
 #ifdef AXV_ENABLE_NATIVE_SIP
 axv::IncomingRingtonePolicy g_ring_policy;
 axv::NativeDtmfMode g_dtmf_mode;
@@ -679,6 +682,29 @@ bool can_preview_selected_ringtone(){
     return !g_selected_ringtone_id.empty() && std::any_of(g_audio_outputs.begin(),g_audio_outputs.end(),[](const auto& device){return device.id==g_selected_ringtone_id;});
 #endif
 }
+// The selected conversation endpoint can be tested without starting SIP/RTP.
+// Refuse to overlap a call or the incoming alert on a shared output.
+bool can_preview_selected_conversation() {
+    if (g_smoke_mode || !g_audio_inventory_current ||
+        g_tone_preview.state() == axv::TonePreviewState::Playing) return false;
+#ifdef AXV_ENABLE_NATIVE_SIP
+    if (g_ring_player.busy() || native_engine().observation().call_id != 0)
+        return false;
+    return axv::audio_output_preview_endpoint(
+        g_audio_outputs,g_selected_output_id,true,
+        axv::AudioOutputPreviewRole::Conversation).has_value();
+#else
+    return axv::audio_output_preview_endpoint(
+        g_audio_outputs,g_selected_output_id,false,
+        axv::AudioOutputPreviewRole::Conversation).has_value();
+#endif
+}
+void refresh_audio_test_actions(HWND window) {
+    EnableWindow(GetDlgItem(window,kTestRingtoneButton),
+                 can_preview_selected_ringtone());
+    EnableWindow(GetDlgItem(window,kTestConversationButton),
+                 can_preview_selected_conversation());
+}
 #ifdef AXV_ENABLE_NATIVE_SIP
 void acknowledge_incoming_alert(){g_ring_policy.silence(g_displayed_sip);g_ring_player.stop();}
 void synchronize_incoming_alert(const axv::SipRuntimeObservation& observed){
@@ -696,7 +722,7 @@ void synchronize_incoming_alert(const axv::SipRuntimeObservation& observed){
         if(std::wstring_view(previous)!=message)SetWindowTextW(g_status,message);
         g_ring_error_visible=true;
     }else if(g_ring_error_visible){g_ring_error_visible=false;refresh_destination_feedback();}
-    EnableWindow(GetDlgItem(GetParent(g_runtime_banner),kTestRingtoneButton),can_preview_selected_ringtone());
+    refresh_audio_test_actions(GetParent(g_runtime_banner));
 }
 #endif
 // Native capture/playback selections are applied at registration; ringtone is an independent incoming-call alert.
@@ -745,6 +771,7 @@ void apply_audio_inventory(const axv::AudioInventory& inventory) {
         EnableWindow(g_output_audio_combo,FALSE);
         EnableWindow(g_ringtone_audio_combo,FALSE);
         EnableWindow(GetDlgItem(GetParent(g_ringtone_audio_combo), kTestRingtoneButton), FALSE);
+        EnableWindow(GetDlgItem(GetParent(g_ringtone_audio_combo), kTestConversationButton), FALSE);
         SetWindowTextW(g_headset_status, L"Falha ao consultar os dispositivos do Windows.");
         return;
     }
@@ -756,8 +783,7 @@ void apply_audio_inventory(const axv::AudioInventory& inventory) {
         g_output_audio_combo, g_audio_outputs, g_selected_output_id,false,fixed_routes,native_routes);
     const auto ringtone = fill_audio_combo(
         g_ringtone_audio_combo, g_audio_outputs, g_selected_ringtone_id, true,false,native_routes);
-    EnableWindow(GetDlgItem(GetParent(g_ringtone_audio_combo), kTestRingtoneButton),
-        can_preview_selected_ringtone());
+    refresh_audio_test_actions(GetParent(g_ringtone_audio_combo));
     SetWindowTextW(g_headset_status,
         axv::audio_routing_preview_feedback({microphone, speaker, ringtone}));
 #ifdef AXV_ENABLE_NATIVE_SIP
@@ -777,6 +803,7 @@ void request_audio_panel() {
     EnableWindow(g_output_audio_combo,FALSE);
     EnableWindow(g_ringtone_audio_combo,FALSE);
     EnableWindow(GetDlgItem(GetParent(g_ringtone_audio_combo),kTestRingtoneButton),FALSE);
+    EnableWindow(GetDlgItem(GetParent(g_ringtone_audio_combo),kTestConversationButton),FALSE);
     SetWindowTextW(g_headset_status,L"Consultando dispositivos de audio...");
 }
 bool audio_dropdown_open() {
@@ -1145,9 +1172,11 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
             39, 435, 350, 200, kRingtoneAudioCombo, 2);
         make_button(window, L"ATUALIZAR", kRefreshHeadsetsButton,
-                    39, 507, 169, 43, 2);
+                    39, 507, 105, 43, 2);
         make_button(window, L"TESTAR TOQUE", kTestRingtoneButton,
-                    219, 507, 170, 43, 2);
+                    150, 507, 114, 43, 2);
+        make_button(window, L"TESTAR VOZ", kTestConversationButton,
+                    270, 507, 119, 43, 2);
 #ifdef AXV_ENABLE_NATIVE_SIP
         make_label(window,L"Microfone e voz aplicados ao registrar. Pare o motor para alterar. Toque: chamada recebida.",39,566,350,40,2,g_font_small);
 #else
@@ -1167,6 +1196,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         EnableWindow(g_output_audio_combo, FALSE);
         EnableWindow(g_ringtone_audio_combo, FALSE);
         EnableWindow(GetDlgItem(window, kTestRingtoneButton), FALSE);
+        EnableWindow(GetDlgItem(window, kTestConversationButton), FALSE);
         // A clear disabled affordance: no real SIP engine has been connected yet.
         for (int id : {kCallButton, kMuteFuture, kHoldFuture,
                        kTransferFuture, kHangupFuture}) {
@@ -1464,7 +1494,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 if(index==0){
                     selected.clear();
                     SetWindowTextW(g_headset_status,id==kRingtoneAudioCombo?L"Toque segue o padrao multimedia do Windows.":L"Padrao de comunicacao sera aplicado ao registrar.");
-                    EnableWindow(GetDlgItem(window,kTestRingtoneButton),can_preview_selected_ringtone());return 0;
+                    refresh_audio_test_actions(window);return 0;
                 }
                 --index;
 #endif
@@ -1479,8 +1509,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                     SetWindowTextW(g_headset_status,
                         axv::audio_routing_preview_feedback(routing));
 #endif
-                    EnableWindow(GetDlgItem(window, kTestRingtoneButton),
-                        can_preview_selected_ringtone());
+                    refresh_audio_test_actions(window);
                 }
                 return 0;
             }
@@ -1496,9 +1525,33 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 const bool multimedia_default=false;
 #endif
                 if(g_tone_preview.start(g_selected_ringtone_id,multimedia_default)){
+                    g_preview_is_conversation=false;
                     g_last_tone_state=axv::TonePreviewState::Playing;
                     SetWindowTextW(g_headset_status,axv::tone_preview_feedback(g_last_tone_state));
-                    EnableWindow(GetDlgItem(window,kTestRingtoneButton),FALSE);
+                    refresh_audio_test_actions(window);
+                }
+            }
+            return 0;
+        }
+        if (LOWORD(wparam) == kTestConversationButton && HIWORD(wparam) == BN_CLICKED) {
+            if (!can_preview_selected_conversation()) {
+                SetWindowTextW(g_headset_status,
+                    L"Teste de voz indisponivel: confira a saida e encerre chamadas ativas.");
+            } else {
+#ifdef AXV_ENABLE_NATIVE_SIP
+                constexpr bool follow_default = true;
+#else
+                constexpr bool follow_default = false;
+#endif
+                const auto endpoint = axv::audio_output_preview_endpoint(
+                    g_audio_outputs,g_selected_output_id,follow_default,
+                    axv::AudioOutputPreviewRole::Conversation);
+                if (endpoint && g_tone_preview.start(*endpoint,false)) {
+                    g_preview_is_conversation=true;
+                    g_last_tone_state=axv::TonePreviewState::Playing;
+                    SetWindowTextW(g_headset_status,
+                        L"Testando a saida de conversa no Windows; sem chamada SIP.");
+                    refresh_audio_test_actions(window);
                 }
             }
             return 0;
@@ -1725,9 +1778,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 g_last_tone_state = tone_state;
                 if (g_headset_status && g_page == 2)
                     SetWindowTextW(g_headset_status,
-                        axv::tone_preview_feedback(tone_state));
-                EnableWindow(GetDlgItem(window, kTestRingtoneButton),
-                    can_preview_selected_ringtone());
+                        g_preview_is_conversation && tone_state==axv::TonePreviewState::Played
+                            ? L"Teste de voz enviado a saida selecionada. Sem chamada SIP."
+                            : axv::tone_preview_feedback(tone_state));
+                refresh_audio_test_actions(window);
             }
             refresh_runtime_banner(g_baresip_process.poll());
             if (g_shutdown.pending()) {
@@ -1849,7 +1903,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
 #ifdef AXV_ENABLE_NATIVE_SIP
-    const wchar_t* title=L"AXE Voice | Candidato nativo 0.69";
+    const wchar_t* title=L"AXE Voice | Candidato nativo 0.70";
 #else
     const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
 #endif
@@ -2164,9 +2218,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             (GetWindowLongW(g_output_audio_combo, GWL_STYLE) & WS_VISIBLE) &&
             (GetWindowLongW(g_ringtone_audio_combo, GWL_STYLE) & WS_VISIBLE) &&
             (GetWindowLongW(GetDlgItem(window, kTestRingtoneButton), GWL_STYLE) & WS_VISIBLE) &&
+            (GetWindowLongW(GetDlgItem(window, kTestConversationButton), GWL_STYLE) & WS_VISIBLE) &&
             !IsWindowEnabled(GetDlgItem(window, kCallButton)) &&
             !IsWindowEnabled(g_input_audio_combo) &&
             !IsWindowEnabled(GetDlgItem(window, kTestRingtoneButton)) &&
+            !IsWindowEnabled(GetDlgItem(window, kTestConversationButton)) &&
             !IsWindowEnabled(g_ringtone_audio_combo); // No hardware inspected in smoke.
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(kReadinessButton, 1), 0);
         const bool readiness_ok = g_readiness_requested_smoke &&
