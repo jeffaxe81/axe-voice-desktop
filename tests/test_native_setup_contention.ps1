@@ -109,6 +109,10 @@ public static class NativeSetupContentionWindows {
     }
     function Close-KnownProcesses {
         $Deadline = [DateTime]::UtcNow.AddSeconds(30)
+        # A posted WM_CLOSE is asynchronous. Reposting it on every 100 ms
+        # poll can create multiple cancellation dialogs before IDYES runs.
+        # Keep exactly one request per known wizard window.
+        $ClosePosted = [Collections.Generic.HashSet[string]]::new()
         do {
             Update-KnownChildren
             $Alive = $false
@@ -128,11 +132,23 @@ public static class NativeSetupContentionWindows {
                     switch ($Decision) {
                         'IgnoreWindow' { }
                         'ConfirmCancel' {
-                            $Yes = [NativeSetupContentionWindows]::GetDlgItem($Window, 6)
-                            $null = [NativeSetupContentionWindows]::PostMessage($Yes, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
+                            # Only after the policy matches the exact Inno
+                            # "Exit Setup?" dialogue with [Yes=6, No=7].
+                            # Deliver IDYES to the dialog owner, not an
+                            # asynchronous BM_CLICK to a child button.
+                            if (![NativeSetupContentionWindows]::PostMessage(
+                                $Window, 0x0111, [IntPtr]::new(6), [IntPtr]::Zero)) {
+                                throw 'Could not confirm the verified Inno cancellation dialog'
+                            }
                         }
                         'CloseWindow' {
-                            $null = [NativeSetupContentionWindows]::PostMessage($Window, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+                            $Identity = "$($Process.Id):$($Window.ToInt64())"
+                            if ($ClosePosted.Add($Identity)) {
+                                if (![NativeSetupContentionWindows]::PostMessage(
+                                    $Window, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)) {
+                                    throw 'Could not request cancellation of the tracked Inno wizard'
+                                }
+                            }
                         }
                         default { throw "Unexpected tracked installer window during cancellation: class='$Class', title='$Title', text='$Contents', buttons='$($Buttons -join ',')'" }
                     }
@@ -141,7 +157,17 @@ public static class NativeSetupContentionWindows {
             if (!$Alive) { return }
             Start-Sleep -Milliseconds 100
         } while ([DateTime]::UtcNow -lt $Deadline)
-        throw 'Known contention fixture processes did not close gracefully within 30 seconds; no process was killed'
+        # Report which *known* processes/windows survive, without copying
+        # arbitrary dialog text or ever killing an unowned process.
+        $Survivors = @()
+        foreach ($Process in $Started) {
+            $Process.Refresh()
+            if ($Process.HasExited) { continue }
+            $Classes = @([NativeSetupContentionWindows]::Windows($Process.Id) |
+                ForEach-Object { [NativeSetupContentionWindows]::Class($_) })
+            $Survivors += "PID=$($Process.Id), visible=$($Classes -join ',')"
+        }
+        throw "Known contention fixture processes did not close gracefully within 30 seconds; no process was killed. Survivors: $($Survivors -join '; ')"
     }
     $Target = (Resolve-Path -LiteralPath $Target).Path.TrimEnd('\')
     $Exe = Join-Path $Target 'AXE-Voice.exe'
