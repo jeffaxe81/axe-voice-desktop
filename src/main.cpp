@@ -12,6 +12,8 @@
 #include "sip_event_projection.h"
 #include "sip_runtime_session_guard.h"
 #include "dial_authorization.h"
+#include "call_command_authorization.h"
+#include "local_cti_server_win32.h"
 #include "call_policy.h"
 #include "sip_diagnostics.h"
 #include "sip_registration_policy.h"
@@ -81,6 +83,7 @@ HWND g_call_duration_label = nullptr;
 axv::NativeCallDuration g_call_duration;
 axv::RecentDestinations g_recent_destinations;
 bool g_incoming_ringtone_muted=false; // Local preference for this execution only.
+axv::LocalCtiServer g_cti_server;
 
 #endif
 constexpr int kCallButton = 1001;
@@ -951,6 +954,10 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     // Bind native event lifetime to actual process lifetime, not to a timer tick.
     const auto observed=current_sip_observation(state);
 #ifdef AXV_ENABLE_NATIVE_SIP
+    g_cti_server.set_ready(
+        observed.call_id == 0 &&
+        axv::authorize_call_command(observed,observed.session,g_sip_selection,
+            axv::CallAction::Dial,0,L"1000").allowed());
     if(observed.call_id!=0)g_microphone_test.request_stop();
     g_recent_destinations.synchronize(observed);
     EnableWindow(GetDlgItem(GetParent(g_runtime_banner),kRecentDestinationsButton),g_recent_destinations.size()!=0);
@@ -1844,6 +1851,25 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 refresh_audio_test_actions(window);
             }
             refresh_runtime_banner(g_baresip_process.poll());
+#ifdef AXV_ENABLE_NATIVE_SIP
+            if (const auto cti_destination=g_cti_server.take()) {
+                // The HTTP thread only queues; the UI owns all call actions.
+                // An accepted HTTP 202 is not proof that SIP originated.
+                const auto observed=current_sip_observation(g_baresip_process.poll());
+                const auto grant=axv::authorize_call_command(
+                    observed,observed.session,g_sip_selection,
+                    axv::CallAction::Dial,0,*cti_destination);
+                if (!grant.allowed() || g_shutdown.pending()) {
+                    SetWindowTextW(g_status,L"CTI: pedido recusado; confirme registro e sessao SIP.");
+                } else {
+                    show_page(window,0);
+                    SetWindowTextW(g_number,grant.destination.c_str());
+                    // Reuse the exact manual button path and its fresh SIP gate.
+                    SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCallButton,BN_CLICKED),
+                                 reinterpret_cast<LPARAM>(GetDlgItem(window,kCallButton)));
+                }
+            }
+#endif
             if (g_shutdown.pending()) {
                 const auto state = g_baresip_process.poll();
                 if (state == axv::ProcessStatus::Exited) {
@@ -1910,6 +1936,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_tone_preview.request_stop();
         g_microphone_test.request_stop();
 #ifdef AXV_ENABLE_NATIVE_SIP
+        g_cti_server.stop();
         g_ring_player.stop();
         native_engine().stop();
         (void)g_ring_player.shutdown();
@@ -1976,6 +2003,23 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         nullptr, nullptr, instance, nullptr);
     if (!window) return 2;
     if (!g_smoke_mode) (void)g_audio_endpoint_watcher.start();
+#ifdef AXV_ENABLE_NATIVE_SIP
+    // Enable only by explicit per-process configuration. Never print tokens.
+    // The HTTP server binds loopback; a Windows browser cannot use CORS.
+    if (!g_smoke_mode) {
+        char token[129]{};
+        const DWORD count=GetEnvironmentVariableA(
+            "AXV_LOCAL_API_TOKEN",token,static_cast<DWORD>(sizeof(token)));
+        if (count) {
+            if (count < sizeof(token) && g_cti_server.start(std::string(token,count))) {
+                SetWindowTextW(g_status,L"CTI local habilitada (127.0.0.1:27652).");
+            } else {
+                SetWindowTextW(g_status,L"CTI desabilitada: token invalido ou porta ocupada.");
+            }
+            SecureZeroMemory(token,sizeof(token));
+        }
+    }
+#endif
     if (g_smoke_mode) {
         if(g_compact){g_compact=false;apply_compact_layout(window);}
         for(int pass=0;pass<2;++pass) {
