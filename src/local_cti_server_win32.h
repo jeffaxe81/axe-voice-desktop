@@ -1,4 +1,5 @@
 #pragma once
+#include "local_cti_events.h"
 #include <atomic>
 #include <cstdint>
 #include <mutex>
@@ -22,6 +23,7 @@ public:
     void stop();
     bool active() const { return running_.load(); }
     void set_ready(bool ready) { ready_.store(ready); }
+    void observe(const SipRuntimeObservation& state) { journal_.observe(state); }
     std::optional<std::wstring> take();
 private:
     void run();
@@ -32,6 +34,7 @@ private:
     std::atomic<bool> stopping_{false};
     std::atomic<bool> running_{false};
     std::atomic<bool> ready_{false};
+    CtiEventJournal journal_;
     std::mutex queue_mutex_;
     std::optional<std::wstring> queued_;
 };
