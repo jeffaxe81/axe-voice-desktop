@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <cstdint>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -26,6 +27,7 @@ private:
     void run();
     void handle_client(std::uintptr_t client);
     std::string token_;
+    std::uintptr_t listener_ = ~static_cast<std::uintptr_t>(0);
     std::thread worker_;
     std::atomic<bool> stopping_{false};
     std::atomic<bool> running_{false};
