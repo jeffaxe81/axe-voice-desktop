@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.72.0 — Click-to-Call e API CTI local (candidata)
+- Link `axvoice://call?destination=...` registrado pelo instalador do candidato nativo. O link é validado, redirecionado à janela existente e exige confirmação explícita do operador antes de discar.
+- API HTTP com token, opt-in, restrita a `127.0.0.1:27652`: `GET /v1/status` e `POST /v1/calls`.
+- Solicitações CTI entram em fila de uma posição e são novamente autorizadas no thread da GUI pelo mesmo controle do botão CHAMAR; nenhum bypass de SIP.
+- Sem CORS ou acesso remoto; HTTP não deve ser chamado diretamente por JS em páginas de CRM. Contrato: `docs/integration/LOCAL-CTI-CLICK-TO-CALL.md`.
+- Testes de parsing, segurança HTTP, autenticação e fila local. Homologação em central real, browser e headset ainda pendente.
+
 ## v0.71.0 — diagnóstico efêmero de microfone no Windows (candidata)
 - Botão **MICROFONE** na aba ÁUDIO, disponível apenas com dispositivo verificado no inventário e acionado manualmente.
 - Captura WASAPI em memória por ~850 ms, indicador de presença/ausência de sinal e acesso/privacidade; nenhuma gravação ou transmissão.
