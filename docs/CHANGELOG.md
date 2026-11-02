@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.70.0 — teste local independente da saída de voz (candidata)
+- Botão **TESTAR VOZ** na aba Áudio, separado de **TESTAR TOQUE**, com sinal de 250 ms enviado ao dispositivo de conversação escolhido via WASAPI.
+- O padrão de comunicação do Windows é resolvido pelo inventário atual; saída escolhida e desconectada bloqueia a reprodução sem fallback silencioso.
+- Um único player evita sobreposição; teste indisponível durante chamada ativa, toque recebido, inventário pendente ou ausência de saída.
+- Novo teste determinístico da seleção de dispositivos e atualização do teste de interface. **Não comprova voz bidirecional**, PABX ou headset físico.
+- Procedimento e limitações: `docs/integration/CONVERSATION-OUTPUT-TEST.md`.
+
+
 ## v0.51.0 — watchdog de comandos SIP pendentes (laboratório)
 - `SipCommandExecutor` exige relógio monotônico e bloqueia novas operações após 10 segundos sem confirmação de mudança de estado.
 - `watchdog()` permite detectar timeout mesmo quando o usuário não envia novos comandos; falha de prova SIP e retrocesso do relógio também invalidam a sessão.
