@@ -963,6 +963,7 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
         observed.call_id == 0 &&
         axv::authorize_call_command(observed,observed.session,g_sip_selection,
             axv::CallAction::Dial,0,L"1000").allowed());
+    g_cti_server.observe(observed);
     if(observed.call_id!=0)g_microphone_test.request_stop();
     g_recent_destinations.synchronize(observed);
     EnableWindow(GetDlgItem(GetParent(g_runtime_banner),kRecentDestinationsButton),g_recent_destinations.size()!=0);
