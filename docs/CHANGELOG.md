@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.73.0 — acompanhamento CTI de chamadas (candidata)
+- API local acrescenta `GET /v1/calls/current` e `GET /v1/events?after=N` com autenticação existente.
+- Estado derivado somente de observação SIP nativa verificada; estados não comprovados aparecem como `unverified`.
+- Histórico de até 32 transições em memória, com números sequenciais e indicador de eventos perdidos (`gap`), sem destinos, credenciais ou IDs nativos expostos.
+- Testes de políticas de sessão, regressão HTTP, transições, paginação, privacidade e autorização.
+- Escopo detalhado em `docs/integration/LOCAL-CTI-STATUS-EVENTS.md`. Sem webhooks e sem homologação em central/headset real.
+
 ## v0.72.0 — Click-to-Call e API CTI local (candidata)
 - Link `axvoice://call?destination=...` registrado pelo instalador do candidato nativo. O link é validado, redirecionado à janela existente e exige confirmação explícita do operador antes de discar.
 - API HTTP com token, opt-in, restrita a `127.0.0.1:27652`: `GET /v1/status` e `POST /v1/calls`.

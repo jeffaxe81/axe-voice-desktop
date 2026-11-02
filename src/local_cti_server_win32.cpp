@@ -169,7 +169,25 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
     const auto request_line=header.substr(0,first_line);
     const bool status=request_line=="GET /v1/status HTTP/1.1";
     const bool call=request_line=="POST /v1/calls HTTP/1.1";
-    if (!status && !call) {
+    const bool current_call=request_line=="GET /v1/calls/current HTTP/1.1";
+    const bool all_events=request_line=="GET /v1/events HTTP/1.1";
+    constexpr std::string_view event_prefix="GET /v1/events?after=";
+    constexpr std::string_view http_suffix=" HTTP/1.1";
+    std::uint64_t event_cursor=0;
+    bool events=all_events;
+    if(!events && request_line.compare(0,event_prefix.size(),event_prefix)==0 &&
+       request_line.size()>event_prefix.size()+http_suffix.size() &&
+       request_line.compare(request_line.size()-http_suffix.size(),
+                            http_suffix.size(),http_suffix)==0) {
+        const std::string cursor=request_line.substr(event_prefix.size(),
+            request_line.size()-event_prefix.size()-http_suffix.size());
+        if(!parse_cti_event_cursor(cursor,event_cursor)) {
+            reply(client,400,"Bad Request",R"({"error":"invalid_cursor"})");
+            return;
+        }
+        events=true;
+    }
+    if (!status && !call && !current_call && !events) {
         reply(client,404,"Not Found",R"({"error":"not_found"})");
         return;
     }
@@ -207,11 +225,21 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
         reply(client,401,"Unauthorized",R"({"error":"unauthorized"})");
         return;
     }
-    if(status) {
-        if(packet.size()!=delimiter+4) {
-            reply(client,400,"Bad Request",R"({"error":"bad_request"})");return;
+    if(status || current_call || events) {
+        if(packet.size()!=delimiter+4 || fields.count("content-length")) {
+            reply(client,400,"Bad Request",R"({"error":"bad_request"})");
+            return;
         }
-        reply(client,200,"OK",ready_.load()?R"({"ready":true})":R"({"ready":false})");
+        if(status) {
+            reply(client,200,"OK",
+                  ready_.load()?R"({"ready":true})":R"({"ready":false})");
+        } else if(current_call) {
+            const auto json=cti_snapshot_json(journal_.snapshot());
+            reply(client,200,"OK",json);
+        } else {
+            const auto json=cti_events_json(journal_.after(event_cursor));
+            reply(client,200,"OK",json);
+        }
         return;
     }
     if(fields["content-type"]!="application/json" &&
