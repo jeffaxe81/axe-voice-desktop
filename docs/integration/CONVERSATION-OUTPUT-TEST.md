@@ -26,3 +26,17 @@ Bluetooth e alterações durante chamadas exige homologação manual.
 Esta entrega não altera o roteamento nativo de uma chamada, não instala
 Baresip, não valida codecs, SRTP ou negociações de áudio e não representa
 homologação com central Dígitro.
+
+## Fechamento seguro do teste de instalador
+
+A validação do candidato também testa a concorrência entre instâncias do
+assistente Inno Setup, a aplicação e o desinstalador. O fixture foi reforçado
+para postar WM_CLOSE apenas uma vez por janela de assistente identificada,
+esperar a caixa **Exit Setup** validada por título, texto e botões e
+confirmá-la pelo WM_COMMAND/IDYES. Diálogos diferentes continuam recusados.
+
+Nenhum processo é encerrado à força nem se reduz a exigência de que a
+instalação recusada preserve o pacote existente. Em timeout, o teste informa
+somente os PIDs conhecidos e classes de janelas visíveis, sem coletar
+conteúdo arbitrário nem dados da conta. O gate ainda exige aprovação Windows
+em todo o commit final da PR.
