@@ -12,6 +12,9 @@
 #include "sip_event_projection.h"
 #include "sip_runtime_session_guard.h"
 #include "dial_authorization.h"
+#include "call_command_authorization.h"
+#include "local_cti_server_win32.h"
+#include "local_cti_contract.h"
 #include "call_policy.h"
 #include "sip_diagnostics.h"
 #include "sip_registration_policy.h"
@@ -67,6 +70,7 @@
 #include <initializer_list>
 #include <cwchar>
 #include <iterator>
+#include <optional>
 
 
 namespace {
@@ -81,6 +85,7 @@ HWND g_call_duration_label = nullptr;
 axv::NativeCallDuration g_call_duration;
 axv::RecentDestinations g_recent_destinations;
 bool g_incoming_ringtone_muted=false; // Local preference for this execution only.
+axv::LocalCtiServer g_cti_server;
 
 #endif
 constexpr int kCallButton = 1001;
@@ -209,6 +214,9 @@ axv::UiSystemColors g_system_colors{};
 bool g_pinned = false;
 bool g_compact = false;
 bool g_smoke_mode = false;
+constexpr UINT kExternalClickToCallMessage=WM_APP+42;
+constexpr ULONG_PTR kExternalClickDataId=0x41585643;
+std::optional<std::wstring> g_external_click_uri;
 bool g_help_requested_smoke = false;
 bool g_readiness_requested_smoke = false;
 bool g_copy_requested_smoke = false;
@@ -951,6 +959,10 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     // Bind native event lifetime to actual process lifetime, not to a timer tick.
     const auto observed=current_sip_observation(state);
 #ifdef AXV_ENABLE_NATIVE_SIP
+    g_cti_server.set_ready(
+        observed.call_id == 0 &&
+        axv::authorize_call_command(observed,observed.session,g_sip_selection,
+            axv::CallAction::Dial,0,L"1000").allowed());
     if(observed.call_id!=0)g_microphone_test.request_stop();
     g_recent_destinations.synchronize(observed);
     EnableWindow(GetDlgItem(GetParent(g_runtime_banner),kRecentDestinationsButton),g_recent_destinations.size()!=0);
@@ -1057,6 +1069,58 @@ void begin_shutdown(HWND window) {
 
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
+    case WM_COPYDATA: {
+        // Another AXE Voice instance may forward a Windows protocol click.
+        // No WM_COPYDATA message is trusted without explicit confirmation.
+        const auto* data=reinterpret_cast<const COPYDATASTRUCT*>(lparam);
+        if(!data || data->dwData!=kExternalClickDataId || !data->lpData ||
+           data->cbData<sizeof(wchar_t)*2 ||
+           data->cbData>sizeof(wchar_t)*513 ||
+           data->cbData%sizeof(wchar_t) || g_external_click_uri) return FALSE;
+        const auto* value=static_cast<const wchar_t*>(data->lpData);
+        const auto count=static_cast<std::size_t>(data->cbData/sizeof(wchar_t));
+        if(value[count-1]!=L'\0')return FALSE;
+        const std::wstring_view uri(value,count-1);
+        if(uri.find(L'\0')!=std::wstring_view::npos ||
+           !axv::parse_axvoice_click_to_call_uri(uri)) return FALSE;
+        g_external_click_uri=std::wstring(uri);
+        if(!PostMessageW(window,kExternalClickToCallMessage,0,0)){
+            g_external_click_uri.reset();
+            return FALSE;
+        }
+        return TRUE;
+    }
+    case kExternalClickToCallMessage: {
+        if(!g_external_click_uri)return 0;
+        auto uri=std::move(*g_external_click_uri);
+        g_external_click_uri.reset();
+        const auto destination=axv::parse_axvoice_click_to_call_uri(uri);
+        if(!destination)return 0;
+        if(g_compact){g_compact=false;apply_compact_layout(window);save_ui_preferences();}
+        show_page(window,0);
+        SetWindowTextW(g_number,destination->c_str());
+        ShowWindow(window,SW_RESTORE);
+        SetForegroundWindow(window);
+        const auto observed=current_sip_observation(g_baresip_process.poll());
+        const auto permission=axv::authorize_call_command(
+            observed,observed.session,g_sip_selection,axv::CallAction::Dial,0,*destination);
+        if(!permission.allowed()){
+            SetWindowTextW(g_status,
+                L"Click-to-call: destino preenchido. Registre o ramal e confirme CHAMAR.");
+            return 0;
+        }
+        // URLs can be invoked by untrusted websites: always confirm in-app.
+        const std::wstring prompt=L"Sistema externo solicita ligar para:\n" +
+            permission.destination + L"\n\nDeseja iniciar a chamada?";
+        if(MessageBoxW(window,prompt.c_str(),L"Confirmar Click-to-Call",
+                       MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2)==IDYES) {
+            SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCallButton,BN_CLICKED),
+                         reinterpret_cast<LPARAM>(GetDlgItem(window,kCallButton)));
+        } else {
+            SetWindowTextW(g_status,L"Click-to-call cancelado; nenhuma chamada solicitada.");
+        }
+        return 0;
+    }
 #ifdef AXV_ENABLE_NATIVE_SIP
     case axv::contact_dialer_review_message:
         if(g_compact){g_compact=false;apply_compact_layout(window);save_ui_preferences();}
@@ -1844,6 +1908,25 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 refresh_audio_test_actions(window);
             }
             refresh_runtime_banner(g_baresip_process.poll());
+#ifdef AXV_ENABLE_NATIVE_SIP
+            if (const auto cti_destination=g_cti_server.take()) {
+                // The HTTP thread only queues; the UI owns all call actions.
+                // An accepted HTTP 202 is not proof that SIP originated.
+                const auto observed=current_sip_observation(g_baresip_process.poll());
+                const auto grant=axv::authorize_call_command(
+                    observed,observed.session,g_sip_selection,
+                    axv::CallAction::Dial,0,*cti_destination);
+                if (!grant.allowed() || g_shutdown.pending()) {
+                    SetWindowTextW(g_status,L"CTI: pedido recusado; confirme registro e sessao SIP.");
+                } else {
+                    show_page(window,0);
+                    SetWindowTextW(g_number,grant.destination.c_str());
+                    // Reuse the exact manual button path and its fresh SIP gate.
+                    SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCallButton,BN_CLICKED),
+                                 reinterpret_cast<LPARAM>(GetDlgItem(window,kCallButton)));
+                }
+            }
+#endif
             if (g_shutdown.pending()) {
                 const auto state = g_baresip_process.poll();
                 if (state == axv::ProcessStatus::Exited) {
@@ -1910,6 +1993,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_tone_preview.request_stop();
         g_microphone_test.request_stop();
 #ifdef AXV_ENABLE_NATIVE_SIP
+        g_cti_server.stop();
         g_ring_player.stop();
         native_engine().stop();
         (void)g_ring_player.shutdown();
@@ -1953,6 +2037,31 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         return busy ? ERROR_BUSY : ERROR_ACCESS_DENIED;
     }
 #endif
+    // Windows URL protocol routes browser clicks to a single running GUI.
+    // A second instance forwards only a validated URI, never a SIP command.
+    if (!g_smoke_mode && command_line && *command_line) {
+        int argc=0;
+        LPWSTR* argv=CommandLineToArgvW(GetCommandLineW(),&argc);
+        if(argv) {
+            if(argc==2 && axv::parse_axvoice_click_to_call_uri(argv[1])) {
+                const std::wstring uri=argv[1];
+                if(HWND existing=FindWindowW(L"AXEVoiceDesktopWindow",nullptr)) {
+                    COPYDATASTRUCT data{};
+                    data.dwData=kExternalClickDataId;
+                    data.cbData=static_cast<DWORD>((uri.size()+1)*sizeof(wchar_t));
+                    data.lpData=const_cast<wchar_t*>(uri.c_str());
+                    DWORD_PTR received=0;
+                    const auto ok=SendMessageTimeoutW(existing,WM_COPYDATA,0,
+                        reinterpret_cast<LPARAM>(&data),SMTO_ABORTIFHUNG|SMTO_BLOCK,
+                        2000,&received);
+                    LocalFree(argv);
+                    return ok && received==TRUE ? 0 : ERROR_BUSY;
+                }
+                g_external_click_uri=uri;
+            }
+            LocalFree(argv);
+        }
+    }
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     g_dpi=axv::normalized_dpi(GetDpiForSystem());
     const wchar_t* className = L"AXEVoiceDesktopWindow";
@@ -1964,7 +2073,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
 #ifdef AXV_ENABLE_NATIVE_SIP
-    const wchar_t* title=L"AXE Voice | Candidato nativo 0.71";
+    const wchar_t* title=L"AXE Voice | Candidato nativo 0.72";
 #else
     const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
 #endif
@@ -1976,6 +2085,25 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         nullptr, nullptr, instance, nullptr);
     if (!window) return 2;
     if (!g_smoke_mode) (void)g_audio_endpoint_watcher.start();
+    if (!g_smoke_mode && g_external_click_uri)
+        PostMessageW(window,kExternalClickToCallMessage,0,0);
+#ifdef AXV_ENABLE_NATIVE_SIP
+    // Enable only by explicit per-process configuration. Never print tokens.
+    // The HTTP server binds loopback; a Windows browser cannot use CORS.
+    if (!g_smoke_mode) {
+        char token[129]{};
+        const DWORD count=GetEnvironmentVariableA(
+            "AXV_LOCAL_API_TOKEN",token,static_cast<DWORD>(sizeof(token)));
+        if (count) {
+            if (count < sizeof(token) && g_cti_server.start(std::string(token,count))) {
+                SetWindowTextW(g_status,L"CTI local habilitada (127.0.0.1:27652).");
+            } else {
+                SetWindowTextW(g_status,L"CTI desabilitada: token invalido ou porta ocupada.");
+            }
+            SecureZeroMemory(token,sizeof(token));
+        }
+    }
+#endif
     if (g_smoke_mode) {
         if(g_compact){g_compact=false;apply_compact_layout(window);}
         for(int pass=0;pass<2;++pass) {

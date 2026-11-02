@@ -1,0 +1,91 @@
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include "../src/local_cti_server_win32.h"
+#include <cstdio>
+#include <string>
+#include <string_view>
+#define CHECK(x) do {if(!(x)){std::fprintf(stderr,"CTI HTTP check %d: %s\n",__LINE__,#x);return 1;}} while(false)
+
+std::string http_request(std::string_view request) {
+    SOCKET socket_fd=socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
+    if(socket_fd==INVALID_SOCKET)return {};
+    sockaddr_in endpoint{};
+    endpoint.sin_family=AF_INET;
+    endpoint.sin_addr.s_addr=htonl(INADDR_LOOPBACK);
+    endpoint.sin_port=htons(axv::LocalCtiServer::port);
+    DWORD timeout=3000;
+    setsockopt(socket_fd,SOL_SOCKET,SO_RCVTIMEO,
+        reinterpret_cast<const char*>(&timeout),sizeof(timeout));
+    if(connect(socket_fd,reinterpret_cast<const sockaddr*>(&endpoint),sizeof(endpoint))!=0){
+        closesocket(socket_fd);return {};
+    }
+    const std::string wire(request);
+    std::size_t sent=0;
+    while(sent<wire.size()){
+        const int n=send(socket_fd,wire.data()+sent,
+                         static_cast<int>(wire.size()-sent),0);
+        if(n<=0){closesocket(socket_fd);return {};}
+        sent+=static_cast<std::size_t>(n);
+    }
+    std::string answer;
+    char bytes[1024];
+    while(answer.size()<8192){
+        const int got=recv(socket_fd,bytes,sizeof(bytes),0);
+        if(got<=0)break;
+        answer.append(bytes,static_cast<std::size_t>(got));
+    }
+    closesocket(socket_fd);
+    return answer;
+}
+std::string request(std::string_view method_and_path,std::string_view body,
+                    std::string_view token,std::string_view extra_headers={}) {
+    std::string text(method_and_path);
+    text+=" HTTP/1.1\r\nHost: 127.0.0.1:27652\r\n";
+    if(!token.empty())text+="Authorization: Bearer "+std::string(token)+"\r\n";
+    text+=extra_headers;
+    if(method_and_path.substr(0,4)=="POST")
+        text+="Content-Type: application/json\r\nContent-Length: "+
+              std::to_string(body.size())+"\r\n";
+    text+="\r\n";
+    text+=body;
+    return http_request(text);
+}
+bool code(std::string_view response,int number){
+    return response.find("HTTP/1.1 "+std::to_string(number)+" ")==0;
+}
+int main() {
+    constexpr std::string_view token="ABCDEFGHIJKLMNOPQRSTUVWXYZ123456";
+    WSADATA startup{};
+    CHECK(WSAStartup(MAKEWORD(2,2),&startup)==0);
+    {
+        axv::LocalCtiServer service;
+        CHECK(!service.start("invalid"));
+        CHECK(service.start(std::string(token)));
+        CHECK(service.active());
+        CHECK(code(request("GET /v1/status","",token),200));
+        CHECK(code(request("GET /v1/status","",{}),401));
+        CHECK(code(request("POST /v1/calls",R"({"destination":"1001"})",{}),401));
+        CHECK(code(request("POST /v1/calls",R"({"destination":"1001"})",token,
+                           "Origin: https://crm.example.org\r\n"),403));
+        CHECK(code(request("POST /v1/calls",R"({"destination":"1001"})",token,
+                           "Transfer-Encoding: chunked\r\n"),403));
+        CHECK(code(request("POST /v1/calls",R"({"destination":"1001"})",token),409));
+        service.set_ready(true);
+        CHECK(code(request("POST /v1/calls",R"({"destination":"abc"})",token),422));
+        CHECK(code(request("POST /v1/calls",R"({"destination":"1001"})",token),202));
+        CHECK(code(request("POST /v1/calls",R"({"destination":"1002"})",token),429));
+        auto call=service.take();
+        CHECK(call && *call==L"1001");
+        CHECK(!service.take());
+        CHECK(code(request("POST /v1/calls",R"({"destination":"1002"})",token),202));
+        call=service.take();
+        CHECK(call && *call==L"1002");
+        service.stop();
+        CHECK(!service.active());
+        CHECK(!service.take());
+    }
+    WSACleanup();
+    return 0;
+}
