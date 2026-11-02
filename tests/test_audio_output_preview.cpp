@@ -1,5 +1,6 @@
 #include "../src/audio_output_preview.h"
-#include <cassert>
+#include <cstdio>
+#define CHECK(expr) do { if (!(expr)) { std::fprintf(stderr,"preview check failed on line %d: %s\n",__LINE__,#expr); return 1; } } while (false)
 #include <vector>
 int main() {
     using namespace axv;
@@ -12,28 +13,28 @@ int main() {
     };
     const auto voice=AudioOutputPreviewRole::Conversation;
     const auto ring=AudioOutputPreviewRole::Ringtone;
-    assert(endpoint(L"",true,voice)==std::optional<std::wstring>{L"headset"});
-    assert(endpoint(L"",true,ring)==std::optional<std::wstring>{L"speakers"});
-    assert(endpoint(L"speakers",true,voice)==std::optional<std::wstring>{L"speakers"});
-    assert(endpoint(L"headset",true,ring)==std::optional<std::wstring>{L"headset"});
-    assert(!endpoint(L"disconnected",true,voice));
-    assert(!endpoint(L"disconnected",true,ring));
-    assert(!endpoint(L"",false,voice));
-    assert(!endpoint(L"",false,ring));
-    assert(!audio_output_preview_endpoint({},L"",true,voice));
-    assert(!audio_output_preview_endpoint({},L"speakers",false,voice));
+    CHECK(endpoint(L"",true,voice)==std::optional<std::wstring>{L"headset"});
+    CHECK(endpoint(L"",true,ring)==std::optional<std::wstring>{L"speakers"});
+    CHECK(endpoint(L"speakers",true,voice)==std::optional<std::wstring>{L"speakers"});
+    CHECK(endpoint(L"headset",true,ring)==std::optional<std::wstring>{L"headset"});
+    CHECK(!endpoint(L"disconnected",true,voice));
+    CHECK(!endpoint(L"disconnected",true,ring));
+    CHECK(!endpoint(L"",false,voice));
+    CHECK(!endpoint(L"",false,ring));
+    CHECK(!audio_output_preview_endpoint({},L"",true,voice));
+    CHECK(!audio_output_preview_endpoint({},L"speakers",false,voice));
     const std::vector<AudioEndpoint> no_multimedia{
         {L"headset",L"USB Headset",true,false}
     };
-    assert(!audio_output_preview_endpoint(no_multimedia,L"",true,ring));
-    assert(audio_output_preview_endpoint(no_multimedia,L"",true,voice));
+    CHECK(!audio_output_preview_endpoint(no_multimedia,L"",true,ring));
+    CHECK(audio_output_preview_endpoint(no_multimedia,L"",true,voice));
     const std::vector<AudioEndpoint> no_communications{
         {L"speakers",L"PC Speakers",false,true}
     };
-    assert(!audio_output_preview_endpoint(no_communications,L"",true,voice));
-    assert(audio_output_preview_endpoint(no_communications,L"",true,ring));
+    CHECK(!audio_output_preview_endpoint(no_communications,L"",true,voice));
+    CHECK(audio_output_preview_endpoint(no_communications,L"",true,ring));
     const std::vector<AudioEndpoint> nameless{{L"",L"Unavailable",true,true}};
-    assert(!audio_output_preview_endpoint(nameless,L"",true,voice));
-    assert(!audio_output_preview_endpoint(nameless,L"",true,ring));
+    CHECK(!audio_output_preview_endpoint(nameless,L"",true,voice));
+    CHECK(!audio_output_preview_endpoint(nameless,L"",true,ring));
     return 0;
 }
