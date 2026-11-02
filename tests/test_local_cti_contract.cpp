@@ -33,5 +33,23 @@ int main() {
     CHECK(!parse_cti_call_json(R"({"destination":""})"));
     CHECK(!parse_cti_call_json(R"({"to":"1001"})"));
     CHECK(!parse_cti_call_json(std::string(600,'A')));
+
+    CHECK(parse_axvoice_click_to_call_uri(L"axvoice://call?destination=1001") ==
+        std::optional<std::wstring>{L"1001"});
+    CHECK(parse_axvoice_click_to_call_uri(L"axvoice://call?destination=%2B554899999999") ==
+        std::optional<std::wstring>{L"+554899999999"});
+    CHECK(parse_axvoice_click_to_call_uri(L"axvoice://call?destination=sip%3A1001%40pbx.example.org") ==
+        std::optional<std::wstring>{L"sip:1001@pbx.example.org"});
+    CHECK(parse_axvoice_click_to_call_uri(L"axvoice://call?destination=1001%23") ==
+        std::optional<std::wstring>{L"1001#"});
+    CHECK(!parse_axvoice_click_to_call_uri(L"axvoice://call?destination="));
+    CHECK(!parse_axvoice_click_to_call_uri(L"axvoice://call?destination=abc"));
+    CHECK(!parse_axvoice_click_to_call_uri(L"axvoice://call?destination=1001&force=1"));
+    CHECK(!parse_axvoice_click_to_call_uri(L"axvoice://call?destination=1001#fragment"));
+    CHECK(!parse_axvoice_click_to_call_uri(L"axvoice://call?destination=1001%0a"));
+    CHECK(!parse_axvoice_click_to_call_uri(L"axvoice://call?destination=1001%ZZ"));
+    CHECK(!parse_axvoice_click_to_call_uri(L"axvoice://call?to=1001"));
+    CHECK(!parse_axvoice_click_to_call_uri(L"javascript:alert(1)"));
+    CHECK(!parse_axvoice_click_to_call_uri(L"axvoice://call?destination=1001%3Fforce"));
     return 0;
 }
