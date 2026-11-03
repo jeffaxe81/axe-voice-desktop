@@ -1,6 +1,7 @@
 #include "../src/baresip_native_libre_reactor.h"
 #include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <condition_variable>
 #include <deque>
 #include <mutex>
@@ -114,6 +115,27 @@ extern "C" int re_main(re_signal_h*) {
     return break_main?14:0;
 }
 
+template <class Predicate>
+static bool observed_within(Predicate ready,std::chrono::milliseconds timeout=1000ms) {
+    const auto deadline=std::chrono::steady_clock::now()+timeout;
+    do {
+        if(ready())return true;
+        std::this_thread::sleep_for(1ms);
+    } while(std::chrono::steady_clock::now()<deadline);
+    return ready();
+}
+
+static int fail_with_diagnostics(int code) {
+    std::fprintf(stderr,
+        "libre_owner_reactor failure code=%d starts=%d closes=%d allocations=%d "
+        "frees=%d wrong_thread=%d init=%d alloc=%d push=%d main=%d\n",
+        code,starts.load(),closes.load(),allocations.load(),frees.load(),
+        static_cast<int>(wrong_thread.load()),static_cast<int>(fail_init.load()),
+        static_cast<int>(fail_alloc.load()),static_cast<int>(fail_push.load()),
+        static_cast<int>(break_main.load()));
+    return code;
+}
+
 int main() {
     using axv::BaresipNativeLibreReactor;
     using axv::LibreReactorFault;
@@ -126,54 +148,63 @@ int main() {
         },
         [&]{first_owner=std::this_thread::get_id();++start_hooks;},
         [&]{first_stop=std::this_thread::get_id();++stop_hooks;},5ms);
-    if(!loop.start() || loop.start() || !loop.wake()) return 1;
+    if(!loop.start() || loop.start() || !loop.wake()) return fail_with_diagnostics(1);
     std::thread gui([&] {for(int i=0;i<8;++i) if(!loop.wake()) wrong_thread=true;});
     gui.join();
-    std::this_thread::sleep_for(30ms);
-    if(!loop.stop() || loop.wake()) return 2;
+    // Wait for an observed owner-thread callback rather than assuming the
+    // Windows CI scheduler always runs a timer within 30 milliseconds.
+    const bool tick_seen=observed_within([&] {
+        return ticks.load()>=1 && loop.snapshot().ticks>=1;
+    });
+    if(!loop.stop() || loop.wake()) return fail_with_diagnostics(2);
     auto snapshot=loop.snapshot();
-    if(snapshot.running || snapshot.generation!=1 || snapshot.ticks<1 ||
+    if(!tick_seen || snapshot.running || snapshot.generation!=1 || snapshot.ticks<1 ||
        snapshot.fault!=LibreReactorFault::None || ticks<1 ||
        start_hooks!=1 || stop_hooks!=1 || first_owner!=first_stop ||
        wrong_thread || allocations!=1 || frees!=1 || closes!=1)
-       return 3;
+       return fail_with_diagnostics(3);
 
     // After a full join a fresh native queue and timer may be created.
-    if(!loop.start() || loop.snapshot().generation!=2) return 4;
+    if(!loop.start() || loop.snapshot().generation!=2) return fail_with_diagnostics(4);
     fail_push=true; // Stop message cannot enqueue: periodic timer is fallback.
-    if(!loop.stop()) return 5;
+    if(!loop.stop()) return fail_with_diagnostics(5);
     fail_push=false;
     if(loop.snapshot().running || allocations!=2 || frees!=2 ||
-       closes!=2 || start_hooks!=2 || stop_hooks!=2) return 6;
+       closes!=2 || start_hooks!=2 || stop_hooks!=2) return fail_with_diagnostics(6);
 
     fail_alloc=true;
     if(loop.start() || loop.snapshot().fault!=LibreReactorFault::QueueRejected)
-        return 7;
-    if(!loop.stop() || closes!=3) return 8;
+        return fail_with_diagnostics(7);
+    if(!loop.stop() || closes!=3) return fail_with_diagnostics(8);
     fail_alloc=false;
 
     fail_init=true;
     if(loop.start() || loop.snapshot().fault!=LibreReactorFault::InitRejected)
-        return 9;
-    if(!loop.stop() || closes!=3) return 10;
+        return fail_with_diagnostics(9);
+    if(!loop.stop() || closes!=3) return fail_with_diagnostics(10);
     fail_init=false;
 
     BaresipNativeLibreReactor throwing([] {throw std::runtime_error("test-only");},
                                       {},{},5ms);
-    if(!throwing.start()) return 11;
-    std::this_thread::sleep_for(20ms);
-    if(!throwing.stop() ||
+    if(!throwing.start()) return fail_with_diagnostics(11);
+    // Require an actual reported hook fault before stopping. Fixed sleeps
+    // made the assertion depend on runner thread scheduling, not behavior.
+    const bool fault_seen=observed_within([&] {
+        return throwing.snapshot().fault==LibreReactorFault::HookFailed;
+    });
+    const bool throwing_stopped=throwing.stop();
+    if(!fault_seen || !throwing_stopped ||
        throwing.snapshot().fault!=LibreReactorFault::HookFailed ||
        throwing.snapshot().running || wrong_thread)
-        return 12;
+        return fail_with_diagnostics(12);
 
     break_main=true;
     BaresipNativeLibreReactor failing_loop([]{}, {},{},5ms);
-    if(!failing_loop.start()) return 13;
+    if(!failing_loop.start()) return fail_with_diagnostics(13);
     if(!failing_loop.stop() ||
        failing_loop.snapshot().fault!=LibreReactorFault::MainLoopFailed)
-        return 14;
+        return fail_with_diagnostics(14);
     break_main=false;
-    if(allocations!=frees) return 15;
+    if(allocations!=frees) return fail_with_diagnostics(15);
     return 0;
 }

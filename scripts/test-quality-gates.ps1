@@ -22,6 +22,13 @@ foreach($group in $groups) {
     if ($matching.Count -eq 0) { throw "Gate '$group' sem testes." }
     & ctest --test-dir $buildDir -C $Configuration --output-on-failure -L "^$group$"
     if ($LASTEXITCODE -ne 0) { throw "Gate '$group' FALHOU." }
+    if ($group -eq 'integration') {
+        # Exercise the real owner-thread lifecycle repeatedly.
+        Write-Host '=== AXE VOICE REACTOR STABILITY GATE: 10 repetitions ==='
+        & ctest --test-dir $buildDir -C $Configuration --output-on-failure -R '^libre_owner_reactor$' --repeat until-fail:10
+        if ($LASTEXITCODE -ne 0) { throw 'Gate libre_owner_reactor stability FALHOU.' }
+        Write-Host 'Reactor stability gate APROVADO: 10/10'
+    }
     $summary[$group]=$matching.Count
     Write-Host "GATE $group APROVADO: $($matching.Count)/$($matching.Count)"
 }
