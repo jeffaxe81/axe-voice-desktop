@@ -165,10 +165,16 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
     const bool call=request_line=="POST /v1/calls HTTP/1.1";
     const bool current_call=request_line=="GET /v1/calls/current HTTP/1.1";
     constexpr std::string_view request_prefix="GET /v1/requests/";
+    constexpr std::string_view cancel_prefix="DELETE /v1/requests/";
     constexpr std::string_view http_suffix=" HTTP/1.1";
     const bool request_result=
         request_line.compare(0,request_prefix.size(),request_prefix)==0 &&
         request_line.size()>request_prefix.size()+http_suffix.size() &&
+        request_line.compare(request_line.size()-http_suffix.size(),
+                             http_suffix.size(),http_suffix)==0;
+    const bool cancel_request=
+        request_line.compare(0,cancel_prefix.size(),cancel_prefix)==0 &&
+        request_line.size()>cancel_prefix.size()+http_suffix.size() &&
         request_line.compare(request_line.size()-http_suffix.size(),
                              http_suffix.size(),http_suffix)==0;
     const bool all_events=request_line=="GET /v1/events HTTP/1.1";
@@ -187,7 +193,7 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
         }
         events=true;
     }
-    if (!status && !call && !current_call && !events && !request_result) {
+    if (!status && !call && !current_call && !events && !request_result && !cancel_request) {
         reply(client,404,"Not Found",R"({"error":"not_found"})");
         return;
     }
@@ -225,7 +231,7 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
         reply(client,401,"Unauthorized",R"({"error":"unauthorized"})");
         return;
     }
-    if(status || current_call || events || request_result) {
+    if(status || current_call || events || request_result || cancel_request) {
         if(packet.size()!=delimiter+4 || fields.count("content-length")) {
             reply(client,400,"Bad Request",R"({"error":"bad_request"})");
             return;
@@ -240,20 +246,32 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
             const auto json=cti_events_json(journal_.after(event_cursor));
             reply(client,200,"OK",json);
         } else {
+            const auto used_prefix=cancel_request?cancel_prefix:request_prefix;
             const auto value=request_line.substr(
-                request_prefix.size(),request_line.size()-request_prefix.size()-http_suffix.size());
+                used_prefix.size(),request_line.size()-used_prefix.size()-http_suffix.size());
             std::uint64_t id=0;
             if(!parse_cti_event_cursor(value,id) || id==0) {
                 reply(client,400,"Bad Request",R"({"error":"invalid_request_id"})");
                 return;
             }
-            const auto record=requests_.get(id);
-            if(!record) {
-                reply(client,404,"Not Found",R"({"error":"unknown_request"})");
-                return;
+            if(cancel_request) {
+                const auto outcome=requests_.cancel(id);
+                if(outcome==CtiCancelOutcome::NotFound) {
+                    reply(client,404,"Not Found",R"({"error":"unknown_request"})");
+                } else if(outcome==CtiCancelOutcome::TooLate) {
+                    reply(client,409,"Conflict",R"({"error":"already_dispatching"})");
+                } else {
+                    reply(client,200,"OK",cti_request_json({id,CtiRequestState::Cancelled}));
+                }
+            } else {
+                const auto record=requests_.get(id);
+                if(!record) {
+                    reply(client,404,"Not Found",R"({"error":"unknown_request"})");
+                    return;
+                }
+                const auto json=cti_request_json(*record);
+                reply(client,200,"OK",json);
             }
-            const auto json=cti_request_json(*record);
-            reply(client,200,"OK",json);
         }
         return;
     }
