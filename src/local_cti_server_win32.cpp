@@ -102,20 +102,14 @@ void LocalCtiServer::stop() {
         listener_=static_cast<std::uintptr_t>(INVALID_SOCKET);
         WSACleanup();
     }
-    {
-        std::lock_guard<std::mutex> lock(queue_mutex_);
-        queued_.reset();
-    }
+    requests_.clear();
     token_.assign(token_.size(),'\0');
     token_.clear();
     running_.store(false);
 }
 
-std::optional<std::wstring> LocalCtiServer::take() {
-    std::lock_guard<std::mutex> lock(queue_mutex_);
-    auto next=std::move(queued_);
-    queued_.reset();
-    return next;
+std::optional<CtiPendingRequest> LocalCtiServer::take() {
+    return requests_.take();
 }
 
 void LocalCtiServer::run() {
@@ -170,9 +164,15 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
     const bool status=request_line=="GET /v1/status HTTP/1.1";
     const bool call=request_line=="POST /v1/calls HTTP/1.1";
     const bool current_call=request_line=="GET /v1/calls/current HTTP/1.1";
+    constexpr std::string_view request_prefix="GET /v1/requests/";
+    constexpr std::string_view http_suffix=" HTTP/1.1";
+    const bool request_result=
+        request_line.compare(0,request_prefix.size(),request_prefix)==0 &&
+        request_line.size()>request_prefix.size()+http_suffix.size() &&
+        request_line.compare(request_line.size()-http_suffix.size(),
+                             http_suffix.size(),http_suffix)==0;
     const bool all_events=request_line=="GET /v1/events HTTP/1.1";
     constexpr std::string_view event_prefix="GET /v1/events?after=";
-    constexpr std::string_view http_suffix=" HTTP/1.1";
     std::uint64_t event_cursor=0;
     bool events=all_events;
     if(!events && request_line.compare(0,event_prefix.size(),event_prefix)==0 &&
@@ -187,7 +187,7 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
         }
         events=true;
     }
-    if (!status && !call && !current_call && !events) {
+    if (!status && !call && !current_call && !events && !request_result) {
         reply(client,404,"Not Found",R"({"error":"not_found"})");
         return;
     }
@@ -225,7 +225,7 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
         reply(client,401,"Unauthorized",R"({"error":"unauthorized"})");
         return;
     }
-    if(status || current_call || events) {
+    if(status || current_call || events || request_result) {
         if(packet.size()!=delimiter+4 || fields.count("content-length")) {
             reply(client,400,"Bad Request",R"({"error":"bad_request"})");
             return;
@@ -236,8 +236,23 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
         } else if(current_call) {
             const auto json=cti_snapshot_json(journal_.snapshot());
             reply(client,200,"OK",json);
-        } else {
+        } else if(events) {
             const auto json=cti_events_json(journal_.after(event_cursor));
+            reply(client,200,"OK",json);
+        } else {
+            const auto value=request_line.substr(
+                request_prefix.size(),request_line.size()-request_prefix.size()-http_suffix.size());
+            std::uint64_t id=0;
+            if(!parse_cti_event_cursor(value,id) || id==0) {
+                reply(client,400,"Bad Request",R"({"error":"invalid_request_id"})");
+                return;
+            }
+            const auto record=requests_.get(id);
+            if(!record) {
+                reply(client,404,"Not Found",R"({"error":"unknown_request"})");
+                return;
+            }
+            const auto json=cti_request_json(*record);
             reply(client,200,"OK",json);
         }
         return;
@@ -283,14 +298,11 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
         reply(client,409,"Conflict",R"({"error":"sip_not_ready"})");
         return;
     }
-    {
-        std::lock_guard<std::mutex> lock(queue_mutex_);
-        if(queued_) {
-            reply(client,429,"Too Many Requests",R"({"error":"busy"})");
-            return;
-        }
-        queued_=*parsed;
+    const auto id=requests_.submit(*parsed);
+    if(!id) {
+        reply(client,429,"Too Many Requests",R"({"error":"busy"})");
+        return;
     }
-    reply(client,202,"Accepted",R"({"status":"queued"})");
+    reply(client,202,"Accepted",cti_request_json({*id,CtiRequestState::Queued}));
 }
 } // namespace axv

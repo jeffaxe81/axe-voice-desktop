@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.74.0 — rastreamento de solicitações CTI (candidata)
+- `POST /v1/calls` retorna um `request_id` efêmero com o status `queued`.
+- `GET /v1/requests/{id}` permite consultar a tramitação: `queued`, `dispatching`, `submitted` ou `rejected`.
+- Fila CTI continua exclusiva até a confirmação de envio ao motor SIP; não libera o slot quando a GUI apenas retira o pedido da fila.
+- Rotina de envio SIP compartilhada com o botão CHAMAR. `submitted` indica apenas retorno do motor, nunca chamada conectada.
+- No máximo 32 resultados transitórios, sem telefones ou identificadores internos no retorno.
+- Adicionados testes unitários e HTTP de privacidade, autorização, fila e resultados. Ver `docs/integration/LOCAL-CTI-REQUEST-TRACKING.md`.
+
 ## v0.73.0 — acompanhamento CTI de chamadas (candidata)
 - API local acrescenta `GET /v1/calls/current` e `GET /v1/events?after=N` com autenticação existente.
 - Estado derivado somente de observação SIP nativa verificada; estados não comprovados aparecem como `unverified`.
