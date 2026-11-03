@@ -264,14 +264,22 @@ int main() {
         call=service.take();
         CHECK(call && call->id==4 && call->destination==L"1004");
         service.set_ready(false);
-        const auto repeat_inflight=request("POST /v1/calls",
+        const auto conflict_inflight=request("POST /v1/calls",
             R"({"destination":"9999"})",token,retry_header);
+        CHECK(code(conflict_inflight,409) &&
+              conflict_inflight.find(R"("error":"idempotency_key_conflict")")!=std::string::npos &&
+              conflict_inflight.find("1004")==std::string::npos);
+        const auto repeat_inflight=request("POST /v1/calls",
+            R"({"destination":"1004"})",token,retry_header);
         CHECK(code(repeat_inflight,200) &&
               repeat_inflight.find(R"("status":"dispatching")")!=std::string::npos);
         CHECK(!service.take());
         CHECK(service.complete(4,true));
-        const auto repeat_submitted=request("POST /v1/calls",
+        const auto conflict_submitted=request("POST /v1/calls",
             R"({"destination":"9999"})",token,retry_header);
+        CHECK(code(conflict_submitted,409));
+        const auto repeat_submitted=request("POST /v1/calls",
+            R"({"destination":"1004"})",token,retry_header);
         CHECK(code(repeat_submitted,200) &&
               repeat_submitted.find(R"("status":"submitted")")!=std::string::npos);
         CHECK(!service.take());
