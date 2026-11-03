@@ -5,6 +5,7 @@
 - Intenção original do pedido vinculada à chave **apenas na memória privada** e removida pelo limite de 32 resultados ou ao reiniciar.
 - Novo teste de estresse C++ com **1.400 cenários determinísticos** (7 domínios × 200), incluindo **800 threads** de disputa, privacidade, histórico e eventos nativos simulados.
 - Loopback HTTP com **120 transações adversariais** adicionais para rotas, Bearer e Origin. A matriz é executada mais 3 vezes no gate, para 4.200 cenários de repetição.
+- Novo gate de **oito ciclos de toda a suíte CTest**, cobrindo todos os módulos do AXE Voice; com 129 testes, são 1.032 execuções CTest e o script exige ao menos 1.000 para aprovar.
 - CI nativa e de interface preservada; não representa 1.400 chamadas reais, cobertura total de código nem homologação física SIP/áudio.
 - Guia: `docs/quality/CTI-1400-STRESS-MATRIX.md`, contrato atualizado em `docs/integration/LOCAL-CTI-IDEMPOTENCY.md`.
 
