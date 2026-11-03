@@ -8,7 +8,7 @@ namespace axv {
 // Document implemented API behavior, not a particular SIP account or call.
 // Keep this independent of dynamic sessions to avoid leaking call metadata.
 inline std::string local_cti_capabilities_json() {
-    return std::string(R"({"api_version":"1","transport":"http_loopback_ipv4","requires_bearer_token":true,"cors":false,"features":{"click_to_call":true,"request_tracking":true,"request_events":true,"scoped_request_events":true,"cancel_queued_request":true,"idempotency_key":true,"idempotency_key_destination_bound":true,"sip_request_correlation":false,"call_completion_confirmation":false,"remote_webhooks":false,"sip_call_control_api":false},"limits":{"inflight_requests":1,"request_history":)")
+    return std::string(R"({"api_version":"1","transport":"http_loopback_ipv4","requires_bearer_token":true,"cors":false,"features":{"click_to_call":true,"request_tracking":true,"request_events":true,"scoped_request_events":true,"cancel_queued_request":true,"idempotency_key":true,"idempotency_key_destination_bound":true,"readiness_loss_rejects_queued":true,"sip_request_correlation":false,"call_completion_confirmation":false,"remote_webhooks":false,"sip_call_control_api":false},"limits":{"inflight_requests":1,"request_history":)")
         + std::to_string(CtiRequestQueue::capacity)
         + ",\"request_event_history\":" + std::to_string(CtiRequestQueue::event_capacity)
         + ",\"sip_event_history\":" + std::to_string(CtiEventJournal::capacity)
