@@ -14,6 +14,7 @@ int main() {
     CHECK(json.find(R"("scoped_request_events":true)")!=std::string::npos);
     CHECK(json.find(R"("cancel_queued_request":true)")!=std::string::npos);
     CHECK(json.find(R"("idempotency_key":true)")!=std::string::npos);
+    CHECK(json.find(R"("idempotency_key_destination_bound":true)")!=std::string::npos);
     CHECK(json.find(R"("sip_request_correlation":false)")!=std::string::npos);
     CHECK(json.find(R"("call_completion_confirmation":false)")!=std::string::npos);
     CHECK(json.find(R"("remote_webhooks":false)")!=std::string::npos);
