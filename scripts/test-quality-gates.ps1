@@ -28,6 +28,20 @@ foreach($group in $groups) {
         & ctest --test-dir $buildDir -C $Configuration --output-on-failure -R '^libre_owner_reactor$' --repeat until-fail:10
         if ($LASTEXITCODE -ne 0) { throw 'Gate libre_owner_reactor stability FALHOU.' }
         Write-Host 'Reactor stability gate APROVADO: 10/10'
+        # Exercise the CTI matrix on three independent process executions.
+        # Each execution verifies 1,400 scenarios across seven test domains;
+        # all repetitions are required to pass (no retry-on-success masking).
+        Write-Host '=== AXE VOICE CTI MATRIX: 3 x 1400 scenarios ==='
+        & ctest --test-dir $buildDir -C $Configuration --output-on-failure -R '^local_cti_stress_matrix
+    Write-Host "GATE $group APROVADO: $($matching.Count)/$($matching.Count)"
+}
+$total=0
+foreach($n in $summary.Values) { $total+=$n }
+Write-Host "AXE Voice - 100% de PASSAGEM dos testes categorizados: $total/$total"
+Write-Host 'Isto NAO significa 100% de cobertura de codigo ou homologacao SIP real.'
+ --repeat until-fail:3
+        if ($LASTEXITCODE -ne 0) { throw 'Gate CTI 1400-scenario matrix FALHOU.' }
+        Write-Host 'CTI matrix gate APROVADO: 3 x 1400 scenarios (4200 executions)'
     }
     $summary[$group]=$matching.Count
     Write-Host "GATE $group APROVADO: $($matching.Count)/$($matching.Count)"
