@@ -32,9 +32,13 @@ $events.events
 Para cancelar **somente se ainda estiver na fila**:
 `Stop-AXVCtiQueuedRequest -RequestId $req.request_id`.
 
-O módulo não oculta erros HTTP; código 409 indica que uma ação
-não é mais permitida no estado corrente. O estado `submitted`
-não significa que a chamada foi conectada ou atendida.
+O módulo não oculta erros HTTP. Na v0.82, código 409
+`idempotency_key_conflict` significa que a chave de repetição
+foi usada com destino diferente: **não houve uma nova discagem**.
+Outros códigos 409 podem indicar conflito com o estado SIP.
+Ao repetir após timeout, reutilize a mesma chave **somente com o
+mesmo destino**. O estado `submitted` não significa que a chamada
+foi conectada ou atendida.
 
 ## Limites
 
