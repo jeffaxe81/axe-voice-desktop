@@ -23,7 +23,10 @@ public:
     bool start(std::string token);
     void stop();
     bool active() const { return running_.load(); }
-    void set_ready(bool ready) { ready_.store(ready); }
+    void set_ready(bool ready) {
+        ready_.store(ready,std::memory_order_release);
+        if(!ready) requests_.reject_pending();
+    }
     void observe(const SipRuntimeObservation& state) { journal_.observe(state); }
     std::optional<CtiPendingRequest> take();
     bool complete(std::uint64_t id,bool submitted) { return requests_.complete(id,submitted); }
