@@ -64,6 +64,25 @@ int main() {
         CHECK(!service.start("invalid"));
         CHECK(service.start(std::string(token)));
         CHECK(service.active());
+        // Capability discovery uses exactly the same loopback/Bearer policy.
+        CHECK(code(request("GET /v1/capabilities","",{}),401));
+        CHECK(code(request("GET /v1/capabilities","",token,
+                           "Origin: https://crm.example.org\r\n"),403));
+        CHECK(code(request("GET /v1/capabilities","",token,
+                           "Referer: https://crm.example.org\r\n"),403));
+        CHECK(code(request("GET /v1/capabilities","",token,
+                           "Content-Length: 0\r\n"),400));
+        CHECK(code(request("GET /v1/capabilities","",token,
+                           "Transfer-Encoding: chunked\r\n"),403));
+        CHECK(code(request("GET /v1/capabilities?secret=1","",token),404));
+        const auto cap=request("GET /v1/capabilities","",token);
+        CHECK(code(cap,200) &&
+              cap.find(R"("api_version":"1")")!=std::string::npos &&
+              cap.find(R"("request_history":32)")!=std::string::npos &&
+              cap.find(R"("request_event_history":64)")!=std::string::npos &&
+              cap.find(R"("sip_request_correlation":false)")!=std::string::npos &&
+              cap.find(R"("call_completion_confirmation":false)")!=std::string::npos &&
+              cap.find("ABCDEFGHIJKLMNOPQRSTUVWXYZ123456")==std::string::npos);
         // Read-only CTI endpoints deny unauthenticated/browser requests.
         CHECK(code(request("GET /v1/calls/current","",{}),401));
         CHECK(code(request("GET /v1/events","",{}),401));
