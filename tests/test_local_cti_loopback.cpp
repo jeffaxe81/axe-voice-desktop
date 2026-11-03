@@ -83,6 +83,7 @@ int main() {
               cap.find(R"("sip_request_correlation":false)")!=std::string::npos &&
               cap.find(R"("call_completion_confirmation":false)")!=std::string::npos &&
               cap.find(R"("idempotency_key_destination_bound":true)")!=std::string::npos &&
+              cap.find(R"("readiness_loss_rejects_queued":true)")!=std::string::npos &&
               cap.find("ABCDEFGHIJKLMNOPQRSTUVWXYZ123456")==std::string::npos);
         // 120 actual HTTP transactions challenge routing, Bearer auth and
         // browser-origin blocking; never mutate queue/engine state.
@@ -301,7 +302,42 @@ int main() {
         const auto no_extra_events=request("GET /v1/request-events?after=11","",token);
         CHECK(code(no_extra_events,200) &&
               no_extra_events.find(R"("events":[])")!=std::string::npos);
-        CHECK(code(request("POST /v1/calls",R"({"destination":"1005"})",token),409));
+        // Queue acceptance is not permission to dial after SIP readiness loss.
+        service.set_ready(true);
+        constexpr std::string_view lost_header=
+            "Idempotency-Key: readiness_loss_0123456789\r\n";
+        const auto before_loss=request("POST /v1/calls",
+            R"({"destination":"1005"})",token,lost_header);
+        CHECK(code(before_loss,202) &&
+              before_loss.find(R"("request_id":5)")!=std::string::npos);
+        service.set_ready(false);
+        CHECK(!service.take());
+        const auto loss_state=request("GET /v1/requests/5","",token);
+        CHECK(code(loss_state,200) &&
+              loss_state.find(R"("status":"rejected")")!=std::string::npos);
+        const auto loss_events=request("GET /v1/requests/5/events?after=0","",token);
+        CHECK(code(loss_events,200) &&
+              loss_events.find(R"("status":"rejected")")!=std::string::npos &&
+              loss_events.find("1005")==std::string::npos);
+        const auto replay_loss=request("POST /v1/calls",
+            R"({"destination":"1005"})",token,lost_header);
+        CHECK(code(replay_loss,200) &&
+              replay_loss.find(R"("replayed":true)")!=std::string::npos &&
+              replay_loss.find(R"("status":"rejected")")!=std::string::npos);
+        service.set_ready(true);
+        CHECK(!service.take());
+        CHECK(code(request("POST /v1/calls",R"({"destination":"1005"})",
+                           token,lost_header),200));
+        const auto fresh=request("POST /v1/calls",
+            R"({"destination":"1006"})",token,
+            "Idempotency-Key: recovered_request_0123456789\r\n");
+        CHECK(code(fresh,202) &&
+              fresh.find(R"("request_id":6)")!=std::string::npos);
+        call=service.take();
+        CHECK(call && call->id==6 && call->destination==L"1006");
+        CHECK(service.complete(6,true));
+        service.set_ready(false);
+        CHECK(code(request("POST /v1/calls",R"({"destination":"1007"})",token),409));
         service.stop();
         CHECK(!service.active());
         CHECK(!service.take());
