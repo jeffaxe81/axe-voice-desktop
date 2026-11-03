@@ -87,7 +87,9 @@ $Target=Join-Path $Root 'build/native-candidate-install-check'
 $Install=Start-Process -FilePath $Installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=`"$Target`"") -Wait -PassThru
 if($Install.ExitCode -ne 0) {throw 'Candidate silent installation failed'}
 . (Join-Path $Root 'tests/native_package_cleanup.ps1')
+. (Join-Path $Root 'tests/native_uninstall_readiness.ps1')
 Invoke-NativePackageAcceptance -Acceptance {
+    & (Join-Path $Root 'tests/test_native_uninstall_readiness.ps1')
     & (Join-Path $Root 'tests/test_native_setup_cancel_policy.ps1')
     & (Join-Path $Root 'tests/test_native_package_cleanup.ps1')
     . (Join-Path $Root 'tests/test_native_upgrade_guard.ps1')
@@ -115,8 +117,33 @@ Invoke-NativePackageAcceptance -Acceptance {
         if((Get-FileHash -LiteralPath $File.FullName).Hash -ne (Get-FileHash -LiteralPath $Installed).Hash) {throw "Installed file differs: $($File.Name)"}
     }
 } -Cleanup {
-    $Uninstall=Start-Process -FilePath (Join-Path $Target 'unins000.exe') -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -Wait -PassThru
-    if($Uninstall.ExitCode -ne 0) {throw 'Candidate silent uninstall failed'}
+    # Postinstall GUI exit is asynchronous on Windows. Before invoking the
+    # production uninstaller, require both guards to disappear AND the real
+    # installed executable to be exclusively readable. Never kill processes
+    # or ignore nonzero exit codes; fail closed on timeout/access denial.
+    $Sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $AppMarker = "Global\AXEVoiceNativeCandidate.Running.$Sid"
+    $SetupMarker = "Global\AXEVoiceNativeCandidate.Setup.$Sid"
+    $CandidateExe = Join-Path $Target 'AXE-Voice.exe'
+    [void](Wait-NativeUninstallReadiness -Executable $CandidateExe -ApplicationMutexName $AppMarker -SetupMutexName $SetupMarker -TimeoutSeconds 15)
+    Write-Output 'Uninstall preflight passed: no AXE markers and exclusive EXE access'
+    $UninstallLog = Join-Path $Output 'native-candidate-uninstall.log'
+    if (Test-Path -LiteralPath $UninstallLog) { Remove-Item -LiteralPath $UninstallLog -Force }
+    $Uninstall = Start-Process -FilePath (Join-Path $Target 'unins000.exe') -ArgumentList @(
+        '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/LOG=`"$UninstallLog`""
+    ) -Wait -PassThru
+    if($Uninstall.ExitCode -ne 0) {
+        # Keep the original fail-closed gate, but include actionable evidence.
+        # Logs are generated locally by Inno and have no SIP tokens.
+        Write-Output "Candidate silent uninstall failure: exit code $($Uninstall.ExitCode)"
+        if (Test-Path -LiteralPath $UninstallLog) {
+            Write-Output 'Inno uninstall diagnostic log (last 40 lines):'
+            Get-Content -LiteralPath $UninstallLog -Tail 40 | Write-Output
+        } else {
+            Write-Output 'No Inno uninstall log file was produced'
+        }
+        throw "Candidate silent uninstall failed (exit code $($Uninstall.ExitCode))"
+    }
 }
 foreach($File in (Get-ChildItem $Stage -Recurse -File)) {
     $Installed=Join-Path $Target $File.FullName.Substring($Stage.Length+1)
