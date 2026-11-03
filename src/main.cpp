@@ -2080,7 +2080,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
 #ifdef AXV_ENABLE_NATIVE_SIP
-    const wchar_t* title=L"AXE Voice | Candidato nativo 0.78";
+    const wchar_t* title=L"AXE Voice | Candidato nativo 0.79";
 #else
     const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
 #endif
