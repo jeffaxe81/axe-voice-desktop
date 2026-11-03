@@ -1068,6 +1068,28 @@ void begin_shutdown(HWND window) {
         : L"Não foi possível agendar /quit; encerramento forçado ao atingir o prazo.");
 }
 
+bool try_dial_from_ui(HWND window,const std::wstring& typed_destination) {
+    // Same fresh authorization for manual CHAMAR and authenticated local CTI.
+    // A successful start_call() means "submitted", never "connected".
+    const auto observed=current_sip_observation(g_baresip_process.poll());
+    const auto permission=axv::authorize_dial(
+        observed,observed.session,g_sip_selection,typed_destination);
+    if(!permission.allowed()) {
+        SetWindowTextW(g_status,axv::dial_denial_text(permission.reason));
+        return false;
+    }
+    g_microphone_test.request_stop();
+    if(!g_sip_selection.engine->start_call(permission.normalized_destination)) {
+        SetWindowTextW(g_status,g_sip_selection.engine->diagnostic().c_str());
+        return false;
+    }
+#ifdef AXV_ENABLE_NATIVE_SIP
+    (void)g_recent_destinations.remember(observed,typed_destination,true);
+    EnableWindow(GetDlgItem(window,kRecentDestinationsButton),g_recent_destinations.size()!=0);
+#endif
+    return true;
+}
+
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
     case WM_COPYDATA: {
@@ -1702,26 +1724,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             return 0;
         }
         if (LOWORD(wparam) == kCallButton && HIWORD(wparam) == BN_CLICKED) {
-            // Never trust a previously enabled button. Re-poll process and
-            // provenance on every user action, including synthetic WM_COMMAND.
+            // Re-check the active native SIP session on every click.
             wchar_t number[256] = {};
-            GetWindowTextW(g_number, number, 256);
-            const std::wstring typed_destination(number); // Prepare before the engine accepts any request.
-            const auto observed=current_sip_observation(g_baresip_process.poll());
-            const auto permission = axv::authorize_dial(
-                observed, observed.session, g_sip_selection, typed_destination);
-            if (permission.allowed()) g_microphone_test.request_stop();
-            if (!permission.allowed()) {
-                SetWindowTextW(g_status, axv::dial_denial_text(permission.reason));
-            } else if (!g_sip_selection.engine->start_call(permission.normalized_destination)) {
-                SetWindowTextW(g_status, g_sip_selection.engine->diagnostic().c_str());
-            } else {
-#ifdef AXV_ENABLE_NATIVE_SIP
-                // An accepted local request does not establish a completed call.
-                (void)g_recent_destinations.remember(observed,typed_destination,true);
-                EnableWindow(GetDlgItem(window,kRecentDestinationsButton),g_recent_destinations.size()!=0);
-#endif
-            }
+            GetWindowTextW(g_number,number,256);
+            (void)try_dial_from_ui(window,std::wstring(number));
             return 0;
         }
         break;
@@ -1910,22 +1916,22 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             }
             refresh_runtime_banner(g_baresip_process.poll());
 #ifdef AXV_ENABLE_NATIVE_SIP
-            if (const auto cti_destination=g_cti_server.take()) {
-                // The HTTP thread only queues; the UI owns all call actions.
-                // An accepted HTTP 202 is not proof that SIP originated.
+            if (const auto cti_request=g_cti_server.take()) {
+                // HTTP 202 is merely queued; only the GUI thread can submit SIP.
                 const auto observed=current_sip_observation(g_baresip_process.poll());
                 const auto grant=axv::authorize_call_command(
                     observed,observed.session,g_sip_selection,
-                    axv::CallAction::Dial,0,*cti_destination);
+                    axv::CallAction::Dial,0,cti_request->destination);
+                bool submitted=false;
                 if (!grant.allowed() || g_shutdown.pending()) {
-                    SetWindowTextW(g_status,L"CTI: pedido recusado; confirme registro e sessao SIP.");
+                    SetWindowTextW(g_status,L"CTI: pedido recusado; confira o registro SIP.");
                 } else {
                     show_page(window,0);
                     SetWindowTextW(g_number,grant.destination.c_str());
-                    // Reuse the exact manual button path and its fresh SIP gate.
-                    SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCallButton,BN_CLICKED),
-                                 reinterpret_cast<LPARAM>(GetDlgItem(window,kCallButton)));
+                    // Shared with the manual button: revalidate again at dispatch.
+                    submitted=try_dial_from_ui(window,grant.destination);
                 }
+                (void)g_cti_server.complete(cti_request->id,submitted);
             }
 #endif
             if (g_shutdown.pending()) {
