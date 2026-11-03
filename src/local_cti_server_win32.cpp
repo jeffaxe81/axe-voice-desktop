@@ -193,7 +193,29 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
         }
         events=true;
     }
-    if (!status && !call && !current_call && !events && !request_result && !cancel_request) {
+    // Separate route from /v1/events: this is a request lifecycle feed,
+    // not a list of established SIP calls or RTP media events.
+    const bool all_request_events=
+        request_line=="GET /v1/request-events HTTP/1.1";
+    constexpr std::string_view request_events_prefix=
+        "GET /v1/request-events?after=";
+    std::uint64_t request_events_cursor=0;
+    bool request_events=all_request_events;
+    if(!request_events &&
+       request_line.compare(0,request_events_prefix.size(),request_events_prefix)==0 &&
+       request_line.size()>request_events_prefix.size()+http_suffix.size() &&
+       request_line.compare(request_line.size()-http_suffix.size(),
+                            http_suffix.size(),http_suffix)==0) {
+        const auto value=request_line.substr(request_events_prefix.size(),
+            request_line.size()-request_events_prefix.size()-http_suffix.size());
+        if(!parse_cti_event_cursor(value,request_events_cursor)) {
+            reply(client,400,"Bad Request",R"({"error":"invalid_cursor"})");
+            return;
+        }
+        request_events=true;
+    }
+    if (!status && !call && !current_call && !events && !request_events &&
+        !request_result && !cancel_request) {
         reply(client,404,"Not Found",R"({"error":"not_found"})");
         return;
     }
@@ -231,7 +253,8 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
         reply(client,401,"Unauthorized",R"({"error":"unauthorized"})");
         return;
     }
-    if(status || current_call || events || request_result || cancel_request) {
+    if(status || current_call || events || request_events ||
+       request_result || cancel_request) {
         if(packet.size()!=delimiter+4 || fields.count("content-length")) {
             reply(client,400,"Bad Request",R"({"error":"bad_request"})");
             return;
@@ -244,6 +267,10 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
             reply(client,200,"OK",json);
         } else if(events) {
             const auto json=cti_events_json(journal_.after(event_cursor));
+            reply(client,200,"OK",json);
+        } else if(request_events) {
+            const auto json=cti_request_events_json(
+                requests_.events_after(request_events_cursor));
             reply(client,200,"OK",json);
         } else {
             const auto used_prefix=cancel_request?cancel_prefix:request_prefix;
