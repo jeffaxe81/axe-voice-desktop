@@ -14,6 +14,7 @@ int main() {
     CHECK(json.find(R"("scoped_request_events":true)")!=std::string::npos);
     CHECK(json.find(R"("cancel_queued_request":true)")!=std::string::npos);
     CHECK(json.find(R"("idempotency_key":true)")!=std::string::npos);
+    CHECK(json.find(R"("idempotency_key_destination_bound":true)")!=std::string::npos);
     CHECK(json.find(R"("sip_request_correlation":false)")!=std::string::npos);
     CHECK(json.find(R"("call_completion_confirmation":false)")!=std::string::npos);
     CHECK(json.find(R"("remote_webhooks":false)")!=std::string::npos);
@@ -25,7 +26,11 @@ int main() {
     CHECK(json.find(R"("idempotency_key_max_length":64)")!=std::string::npos);
     CHECK(json.find(R"("submitted":"engine_accepted_not_connected")")!=std::string::npos);
     CHECK(json.find("password")==std::string::npos);
-    CHECK(json.find("destination")==std::string::npos);
+    // A feature name may contain 'destination', but no dial target
+    // property or sensitive value may be returned by this endpoint.
+    CHECK(json.find(R"("destination":)") == std::string::npos);
+    CHECK(json.find(R"("original_destination":)") == std::string::npos);
+    CHECK(json.find("sip:1001@")==std::string::npos);
     CHECK(json.find("call_id")==std::string::npos);
     CHECK(json.find("bearer_token")==std::string::npos || json.find(R"("requires_bearer_token":true)")!=std::string::npos);
     CHECK(json.size()<2048);

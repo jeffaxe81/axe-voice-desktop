@@ -82,7 +82,18 @@ int main() {
               cap.find(R"("request_event_history":64)")!=std::string::npos &&
               cap.find(R"("sip_request_correlation":false)")!=std::string::npos &&
               cap.find(R"("call_completion_confirmation":false)")!=std::string::npos &&
+              cap.find(R"("idempotency_key_destination_bound":true)")!=std::string::npos &&
               cap.find("ABCDEFGHIJKLMNOPQRSTUVWXYZ123456")==std::string::npos);
+        // 120 actual HTTP transactions challenge routing, Bearer auth and
+        // browser-origin blocking; never mutate queue/engine state.
+        for(int i=0;i<40;++i) {
+            const auto serial=std::to_string(i+1);
+            CHECK(code(request("GET /v1/capabilities?nonce="+serial,"",token),404));
+            CHECK(code(request("GET /v1/request-events?after="+serial,"",{}),401));
+            CHECK(code(request("GET /v1/requests/1/events?after="+serial,"",token,
+                               "Origin: https://crm.example.org\r\n"),403));
+        }
+        std::puts("AXE CTI HTTP SECURITY MATRIX PASSED: 120/120 HTTP scenarios");
         // Read-only CTI endpoints deny unauthenticated/browser requests.
         CHECK(code(request("GET /v1/calls/current","",{}),401));
         CHECK(code(request("GET /v1/events","",{}),401));
@@ -264,14 +275,22 @@ int main() {
         call=service.take();
         CHECK(call && call->id==4 && call->destination==L"1004");
         service.set_ready(false);
-        const auto repeat_inflight=request("POST /v1/calls",
+        const auto conflict_inflight=request("POST /v1/calls",
             R"({"destination":"9999"})",token,retry_header);
+        CHECK(code(conflict_inflight,409) &&
+              conflict_inflight.find(R"("error":"idempotency_key_conflict")")!=std::string::npos &&
+              conflict_inflight.find("1004")==std::string::npos);
+        const auto repeat_inflight=request("POST /v1/calls",
+            R"({"destination":"1004"})",token,retry_header);
         CHECK(code(repeat_inflight,200) &&
               repeat_inflight.find(R"("status":"dispatching")")!=std::string::npos);
         CHECK(!service.take());
         CHECK(service.complete(4,true));
-        const auto repeat_submitted=request("POST /v1/calls",
+        const auto conflict_submitted=request("POST /v1/calls",
             R"({"destination":"9999"})",token,retry_header);
+        CHECK(code(conflict_submitted,409));
+        const auto repeat_submitted=request("POST /v1/calls",
+            R"({"destination":"1004"})",token,retry_header);
         CHECK(code(repeat_submitted,200) &&
               repeat_submitted.find(R"("status":"submitted")")!=std::string::npos);
         CHECK(!service.take());

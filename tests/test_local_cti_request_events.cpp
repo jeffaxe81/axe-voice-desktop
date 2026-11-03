@@ -14,7 +14,9 @@ int main() {
     auto page=q.events_after(0);
     CHECK(page.events.size()==1 && page.events[0].sequence==1);
     CHECK(page.events[0].request_id==1 && page.events[0].state==CtiRequestState::Queued);
-    const auto repeated=q.submit_idempotent(L"do-not-dial-again",retry_key,false);
+    const auto conflict=q.submit_idempotent(L"do-not-dial-again",retry_key,false);
+    CHECK(conflict.outcome==CtiSubmitOutcome::KeyConflict);
+    const auto repeated=q.submit_idempotent(L"confidential-1001",retry_key,false);
     CHECK(repeated.outcome==CtiSubmitOutcome::Replayed);
     CHECK(q.events_after(0).events.size()==1);
     CHECK(q.submit_idempotent(L"1002","different_12345678",false).outcome==

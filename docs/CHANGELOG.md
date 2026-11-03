@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.82.0 — idempotência CTI reforçada e matriz de 1.400 cenários (candidata)
+- Reutilização de `Idempotency-Key` com destino normalizado diferente retorna HTTP 409 `idempotency_key_conflict`, sem nova chamada e sem divulgar o número original; replay válido permanece com o mesmo ID.
+- Intenção original do pedido vinculada à chave **apenas na memória privada** e removida pelo limite de 32 resultados ou ao reiniciar.
+- Novo teste de estresse C++ com **1.400 cenários determinísticos** (7 domínios × 200), incluindo **800 threads** de disputa, privacidade, histórico e eventos nativos simulados.
+- Loopback HTTP com **120 transações adversariais** adicionais para rotas, Bearer e Origin. A matriz é executada mais 3 vezes no gate, para 4.200 cenários de repetição.
+- Novo gate de **oito ciclos de toda a suíte CTest**, cobrindo todos os módulos do AXE Voice; com 129 testes, são 1.032 execuções CTest e o script exige ao menos 1.000 para aprovar.
+- CI nativa e de interface preservada; não representa 1.400 chamadas reais, cobertura total de código nem homologação física SIP/áudio.
+- Guia: `docs/quality/CTI-1400-STRESS-MATRIX.md`, contrato atualizado em `docs/integration/LOCAL-CTI-IDEMPOTENCY.md`.
+
 ## v0.81.0 — descoberta da API CTI e exemplo para integração (candidata)
 - Novo `GET /v1/capabilities` autenticado em loopback, com funcionalidades realmente implementadas, limites de histórico e semântica de submissão de chamadas.
 - Explicitamente `sip_request_correlation=false` e `call_completion_confirmation=false` para não confundir request_id com prova de chamada atendida.

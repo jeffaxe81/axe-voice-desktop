@@ -28,10 +28,27 @@ foreach($group in $groups) {
         & ctest --test-dir $buildDir -C $Configuration --output-on-failure -R '^libre_owner_reactor$' --repeat until-fail:10
         if ($LASTEXITCODE -ne 0) { throw 'Gate libre_owner_reactor stability FALHOU.' }
         Write-Host 'Reactor stability gate APROVADO: 10/10'
+        # A separate CTest process executes 1400 deterministic CTI scenarios.
+        # Repeat three times and fail if any scenario fails.
+        Write-Host '=== AXE VOICE CTI MATRIX: 3 x 1400 scenarios ==='
+        & ctest --test-dir $buildDir -C $Configuration --output-on-failure -R '^local_cti_stress_matrix' --repeat until-fail:3
+        if ($LASTEXITCODE -ne 0) { throw 'CTI 1400-scenario matrix FALHOU.' }
+        Write-Host 'CTI matrix gate APROVADO: 3 x 1400 scenarios'
     }
     $summary[$group]=$matching.Count
     Write-Host "GATE $group APROVADO: $($matching.Count)/$($matching.Count)"
 }
+# Eight full-suite cycles independently exercise all AXE Voice CTest modules.
+# At least 1000 actual CTest executions must be scheduled; fail on any error.
+$fullCycles=8
+$fullExecutions=@($manifest.tests).Count * $fullCycles
+if ($fullExecutions -lt 1000) {
+    throw "Full suite stress below 1000 requested executions: $fullExecutions"
+}
+Write-Host "=== AXE VOICE FULL TEST SUITE: $(@($manifest.tests).Count) tests x $fullCycles ==="
+& ctest --test-dir $buildDir -C $Configuration --output-on-failure --repeat until-fail:8
+if ($LASTEXITCODE -ne 0) { throw 'Full-suite stress FALHOU.' }
+Write-Host "Full-suite stress APROVADO: $fullExecutions/$fullExecutions CTest executions"
 $total=0
 foreach($n in $summary.Values) { $total+=$n }
 Write-Host "AXE Voice - 100% de PASSAGEM dos testes categorizados: $total/$total"

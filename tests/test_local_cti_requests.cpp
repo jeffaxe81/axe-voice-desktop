@@ -17,10 +17,12 @@ int main(){
     CHECK(same_while_dispatching.outcome==CtiSubmitOutcome::Replayed &&
           same_while_dispatching.state==CtiRequestState::Dispatching);
     CHECK(retries.complete(1,true));
-    const auto same_after_submission=retries.submit_idempotent(L"2002",key,false);
+    const auto key_reuse_different_target=retries.submit_idempotent(L"2002",key,false);
+    CHECK(key_reuse_different_target.outcome==CtiSubmitOutcome::KeyConflict);
+    const auto same_after_submission=retries.submit_idempotent(L"1001",key,false);
     CHECK(same_after_submission.outcome==CtiSubmitOutcome::Replayed &&
           same_after_submission.state==CtiRequestState::Submitted &&
-          same_after_submission.id==1); // Same key never causes a second dial.
+          same_after_submission.id==1);
     CHECK(!retries.take());
     const auto not_ready=retries.submit_idempotent(L"1002","new_0123456789abcdef",false);
     CHECK(not_ready.outcome==CtiSubmitOutcome::NotReady);
@@ -31,6 +33,8 @@ int main(){
           CtiRequestState::Cancelled);
     CHECK(!retries.take());
     CHECK(cti_request_json(*retries.get(1)).find(key)==std::string::npos);
+    CHECK(cti_request_json(*retries.get(1)).find("1001")==std::string::npos);
+    CHECK(cti_request_events_json(retries.events_after(0)).find("1001")==std::string::npos);
     retries.clear();
     CHECK(retries.submit_idempotent(L"1003",key,true).id==3); // Old keys expire.
 

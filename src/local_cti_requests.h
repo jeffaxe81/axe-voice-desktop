@@ -13,7 +13,7 @@ namespace axv {
 
 enum class CtiRequestState { Queued, Dispatching, Submitted, Rejected, Cancelled };
 enum class CtiCancelOutcome { Cancelled, NotFound, TooLate };
-enum class CtiSubmitOutcome { Created, Replayed, Busy, NotReady };
+enum class CtiSubmitOutcome { Created, Replayed, KeyConflict, Busy, NotReady };
 struct CtiSubmitResult {
     CtiSubmitOutcome outcome = CtiSubmitOutcome::Busy;
     std::uint64_t id = 0;
@@ -41,6 +41,9 @@ struct CtiRequestResult {
     CtiRequestState state = CtiRequestState::Queued;
     // Private per-process retry key. Never include it in cti_request_json.
     std::string idempotency_key;
+    // Internal-only exact normalized dial target used to reject key reuse
+    // with different intent. Never serialized, evicted with bounded history.
+    std::wstring idempotency_destination;
 };
 
 // Lifecycle of a local CTI request, not the lifecycle of a SIP call.
@@ -99,15 +102,19 @@ public:
         // second call, including after the first call changes SIP readiness.
         if(!key.empty()) {
             for(const auto& record:records_)
-                if(record.idempotency_key==key)
+                if(record.idempotency_key==key) {
+                    if(record.idempotency_destination!=destination)
+                        return {CtiSubmitOutcome::KeyConflict,record.id,record.state};
                     return {CtiSubmitOutcome::Replayed,record.id,record.state};
+                }
         }
         if(!ready)return {CtiSubmitOutcome::NotReady,0,CtiRequestState::Queued};
         if(pending_ || active_ || next_==0)
             return {CtiSubmitOutcome::Busy,0,CtiRequestState::Queued};
         const std::uint64_t id=next_++;
         pending_=CtiPendingRequest{id,std::move(destination)};
-        records_.push_back({id,CtiRequestState::Queued,key});
+        records_.push_back({id,CtiRequestState::Queued,key,
+                           key.empty()?std::wstring{}:pending_->destination});
         if(records_.size()>capacity)records_.pop_front();
         append_event_locked(id,CtiRequestState::Queued);
         return {CtiSubmitOutcome::Created,id,CtiRequestState::Queued};
