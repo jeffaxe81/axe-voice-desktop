@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.78.0 — pré-desinstalação com verificação segura (candidata)
+- Teste de empacotamento nativo aguarda no máximo 15 segundos pela ausência dos marcadores de aplicação/setup e acesso exclusivo ao executável antes de desinstalar.
+- Bloqueios e erros inesperados permanecem reprovatórios; nenhum processo é encerrado e nenhuma proteção do Inno Setup é desabilitada.
+- Falha da desinstalação silenciosa passa a informar código de saída e últimas 40 linhas do log do Inno para diagnóstico.
+- Novo teste real de mutexes, arquivo bloqueado/inexistente e espera limitada; acompanha a intermitência da issue #166, cuja causa segue não confirmada.
+- Detalhes em `docs/integration/NATIVE-UNINSTALL-READINESS.md`.
+
 ## v0.77.0 — eventos por solicitação CTI (candidata)
 - Novo `GET /v1/request-events?after=N`: polling autenticado de transições da solicitação com `request_id` e sequência incremental.
 - Emissão atômica de estados `queued`, `dispatching`, `submitted`, `rejected` e `cancelled`; retries idempotentes não geram eventos duplicados.
