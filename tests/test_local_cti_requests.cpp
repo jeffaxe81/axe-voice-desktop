@@ -4,6 +4,25 @@
 #define CHECK(v) do{if(!(v)){std::fprintf(stderr,"CTI request test %d: %s\n",__LINE__,#v);return 1;}}while(false)
 int main(){
     using namespace axv;
+    CtiRequestQueue cancel_queue;
+    CHECK(cancel_queue.cancel(1)==CtiCancelOutcome::NotFound);
+    auto cancel_id=cancel_queue.submit(L"confidential-number");
+    CHECK(cancel_id && *cancel_id==1);
+    CHECK(cancel_queue.cancel(1)==CtiCancelOutcome::Cancelled);
+    CHECK(cancel_queue.get(1)->state==CtiRequestState::Cancelled);
+    CHECK(!cancel_queue.take());
+    CHECK(cancel_queue.cancel(1)==CtiCancelOutcome::TooLate);
+    CHECK(cti_request_json(*cancel_queue.get(1))==
+          R"({"request_id":1,"status":"cancelled"})");
+    CHECK(cti_request_json(*cancel_queue.get(1)).find("confidential")==std::string::npos);
+    cancel_id=cancel_queue.submit(L"another-number");
+    CHECK(cancel_id && *cancel_id==2);
+    CHECK(cancel_queue.take()->id==2);
+    CHECK(cancel_queue.cancel(2)==CtiCancelOutcome::TooLate);
+    CHECK(cancel_queue.complete(2,true));
+    CHECK(cancel_queue.cancel(2)==CtiCancelOutcome::TooLate);
+    CHECK(cancel_queue.get(2)->state==CtiRequestState::Submitted);
+
     CtiRequestQueue queue;
     CHECK(!queue.get(1));
     CHECK(!queue.take());
