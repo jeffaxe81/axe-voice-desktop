@@ -68,6 +68,16 @@ int main() {
         CHECK(code(request("GET /v1/calls/current","",{}),401));
         CHECK(code(request("GET /v1/events","",{}),401));
         CHECK(code(request("GET /v1/request-events","",{}),401));
+        CHECK(code(request("GET /v1/requests/1/events?after=0","",{}),401));
+        CHECK(code(request("GET /v1/requests/0/events","",token),400));
+        CHECK(code(request("GET /v1/requests/bad/events","",token),400));
+        CHECK(code(request("GET /v1/requests/1/events?after=invalid","",token),400));
+        CHECK(code(request("GET /v1/requests/1/events?after=18446744073709551616","",token),400));
+        CHECK(code(request("GET /v1/requests/1/events","",token),404));
+        CHECK(code(request("GET /v1/requests/1/events","",token,
+                           "Origin: https://crm.example.org\r\n"),403));
+        CHECK(code(request("GET /v1/requests/1/events","",token,
+                           "Content-Length: 0\r\n"),400));
         CHECK(code(request("GET /v1/request-events?after=2","",{}),401));
         CHECK(code(request("GET /v1/request-events?after=oops","",token),400));
         CHECK(code(request("GET /v1/request-events?after=18446744073709551616","",token),400));
@@ -150,6 +160,10 @@ int main() {
         CHECK(code(request_events,200) &&
               request_events.find(R"("sequence":1,"request_id":1,"status":"queued")")!=std::string::npos &&
               request_events.find("1001")==std::string::npos);
+        auto scoped_events=request("GET /v1/requests/1/events?after=0","",token);
+        CHECK(code(scoped_events,200) &&
+              scoped_events.find(R"("sequence":1,"request_id":1,"status":"queued")")!=std::string::npos);
+        CHECK(code(request("GET /v1/requests/1/events?after=1","",token),200));
         CHECK(code(request("GET /v1/request-events?after=1","",token),200));
         CHECK(code(request("POST /v1/calls",R"({"destination":"1002"})",token),429));
         auto queued=request("GET /v1/requests/1","",token);
@@ -185,6 +199,15 @@ int main() {
         const auto rejected=request("GET /v1/requests/2","",token);
         CHECK(code(rejected,200) &&
               rejected.find(R"("status":"rejected")")!=std::string::npos);
+        scoped_events=request("GET /v1/requests/1/events?after=0","",token);
+        CHECK(code(scoped_events,200) &&
+              scoped_events.find(R"("request_id":2)") ==std::string::npos &&
+              scoped_events.find(R"("status":"submitted")")!=std::string::npos);
+        const auto second_scoped=request("GET /v1/requests/2/events?after=0","",token);
+        CHECK(code(second_scoped,200) &&
+              second_scoped.find(R"("request_id":2)")!=std::string::npos &&
+              second_scoped.find(R"("request_id":1)")==std::string::npos &&
+              second_scoped.find(R"("status":"rejected")")!=std::string::npos);
         CHECK(code(request("DELETE /v1/requests/2","",token),409));
         const auto third=request("POST /v1/calls",R"({"destination":"1003"})",token);
         CHECK(code(third,202) && third.find(R"("request_id":3)")!=std::string::npos);
@@ -195,6 +218,10 @@ int main() {
         const auto cancellation_status=request("GET /v1/requests/3","",token);
         CHECK(code(cancellation_status,200) &&
               cancellation_status.find(R"("status":"cancelled")")!=std::string::npos);
+        scoped_events=request("GET /v1/requests/3/events?after=7","",token);
+        CHECK(code(scoped_events,200) &&
+              scoped_events.find(R"("status":"cancelled")")!=std::string::npos &&
+              scoped_events.find(R"("request_id":1)")==std::string::npos);
         CHECK(!service.take()); // GUI must not receive cancelled requests.
         request_events=request("GET /v1/request-events?after=7","",token);
         CHECK(code(request_events,200) &&

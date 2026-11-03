@@ -177,6 +177,37 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
         request_line.size()>cancel_prefix.size()+http_suffix.size() &&
         request_line.compare(request_line.size()-http_suffix.size(),
                              http_suffix.size(),http_suffix)==0;
+    // Scoped polling for one known request; no unrelated request's event
+    // is returned. Both id and cursor are validated before auth dispatch.
+    std::uint64_t scoped_request_id=0;
+    std::uint64_t scoped_cursor=0;
+    bool scoped_request_events=false;
+    constexpr std::string_view scoped_query="/events?after=";
+    if(request_line.compare(0,request_prefix.size(),request_prefix)==0 &&
+       request_line.size()>request_prefix.size()+http_suffix.size() &&
+       request_line.compare(request_line.size()-http_suffix.size(),
+                            http_suffix.size(),http_suffix)==0) {
+        const std::string path=request_line.substr(request_prefix.size(),
+            request_line.size()-request_prefix.size()-http_suffix.size());
+        const auto slash=path.find('/');
+        if(slash!=std::string::npos) {
+            const auto tail=path.substr(slash);
+            if(tail=="/events" ||
+               tail.compare(0,scoped_query.size(),scoped_query)==0) {
+                if(!parse_cti_event_cursor(path.substr(0,slash),scoped_request_id) ||
+                   scoped_request_id==0) {
+                    reply(client,400,"Bad Request",R"({"error":"invalid_request_id"})");
+                    return;
+                }
+                if(tail!="/events" &&
+                   !parse_cti_event_cursor(tail.substr(scoped_query.size()),scoped_cursor)) {
+                    reply(client,400,"Bad Request",R"({"error":"invalid_cursor"})");
+                    return;
+                }
+                scoped_request_events=true;
+            }
+        }
+    }
     const bool all_events=request_line=="GET /v1/events HTTP/1.1";
     constexpr std::string_view event_prefix="GET /v1/events?after=";
     std::uint64_t event_cursor=0;
@@ -215,7 +246,7 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
         request_events=true;
     }
     if (!status && !call && !current_call && !events && !request_events &&
-        !request_result && !cancel_request) {
+        !scoped_request_events && !request_result && !cancel_request) {
         reply(client,404,"Not Found",R"({"error":"not_found"})");
         return;
     }
@@ -254,7 +285,7 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
         return;
     }
     if(status || current_call || events || request_events ||
-       request_result || cancel_request) {
+       scoped_request_events || request_result || cancel_request) {
         if(packet.size()!=delimiter+4 || fields.count("content-length")) {
             reply(client,400,"Bad Request",R"({"error":"bad_request"})");
             return;
@@ -272,6 +303,14 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
             const auto json=cti_request_events_json(
                 requests_.events_after(request_events_cursor));
             reply(client,200,"OK",json);
+        } else if(scoped_request_events) {
+            const auto page=requests_.events_after_for_request(
+                scoped_request_id,scoped_cursor);
+            if(!page) {
+                reply(client,404,"Not Found",R"({"error":"unknown_request"})");
+                return;
+            }
+            reply(client,200,"OK",cti_request_events_json(*page));
         } else {
             const auto used_prefix=cancel_request?cancel_prefix:request_prefix;
             const auto value=request_line.substr(

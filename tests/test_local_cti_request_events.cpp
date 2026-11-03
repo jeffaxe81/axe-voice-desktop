@@ -63,6 +63,22 @@ int main() {
     CHECK(serialized.find(retry_key)==std::string::npos);
     CHECK(serialized.find("destination")==std::string::npos);
     CHECK(serialized.find("sip")==std::string::npos);
+    // Server-side filtering exposes only transitions of the selected ID.
+    const auto only_first=q.events_after_for_request(1,0);
+    CHECK(only_first && only_first->events.size()==3);
+    CHECK(only_first->events[0].state==CtiRequestState::Queued);
+    CHECK(only_first->events[1].state==CtiRequestState::Dispatching);
+    CHECK(only_first->events[2].state==CtiRequestState::Submitted);
+    for(const auto& e:only_first->events)CHECK(e.request_id==1);
+    const auto only_second=q.events_after_for_request(2,0);
+    CHECK(only_second && only_second->events.size()==2);
+    CHECK(only_second->events[1].state==CtiRequestState::Cancelled);
+    CHECK(!q.events_after_for_request(999,0));
+    CHECK(q.events_after_for_request(1,3)->events.empty());
+    const auto scoped_json=cti_request_events_json(*only_first);
+    CHECK(scoped_json.find("\"request_id\":2")==std::string::npos);
+    CHECK(scoped_json.find("\"request_id\":3")==std::string::npos);
+    CHECK(scoped_json.find("confidential")==std::string::npos);
 
     // One event per real state change, and bounded independently from the
     // 32-item result history. No replay event or event from failed commands.
@@ -84,7 +100,16 @@ int main() {
     CHECK(many.events_after(999).events.empty());
     CHECK(many.events_after(0).events.front().sequence==27);
     CHECK(cti_request_events_json(many.events_after(0)).find("\"gap\":true")!=std::string::npos);
+    // The first request is still in the 32-result registry but its events
+    // have been evicted from the separate 64-event journal.
+    const auto lost_scope=many.events_after_for_request(1,0);
+    CHECK(lost_scope && lost_scope->gap && lost_scope->events.empty());
+    const auto last_scope=many.events_after_for_request(30,0);
+    CHECK(last_scope && last_scope->gap && last_scope->events.size()==3);
+    CHECK(last_scope->events[0].sequence==88);
+    CHECK(!many.events_after_for_request(31,0));
     many.clear();
+    CHECK(!many.events_after_for_request(1,0));
     CHECK(many.events_after(0).events.empty());
     CHECK(many.events_after(0).latest_sequence==90);
     const auto new_id=many.submit(L"after_restart");

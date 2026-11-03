@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.79.0 — eventos CTI filtrados por solicitação (candidata)
+- Novo `GET /v1/requests/{id}/events?after=N`: consulta autenticada de transições pertencentes somente ao pedido indicado.
+- Filtragem e verificação de ID conhecido no mesmo mutex; sem vazamento de eventos de outros pedidos, destinos, credenciais ou IDs nativos.
+- Preserva cursores globais, histórico de 64 eventos e `gap` conservador; IDs retirados do histórico de 32 resultados retornam 404.
+- Novos testes unitários e HTTP de isolamento, autenticação, cursores, cancelamento e eventos expirados.
+- Guia: `docs/integration/LOCAL-CTI-SCOPED-EVENTS.md`; sem homologação física com central/áudio.
+
 ## v0.78.0 — pré-desinstalação com verificação segura (candidata)
 - Teste de empacotamento nativo aguarda no máximo 15 segundos pela ausência dos marcadores de aplicação/setup e acesso exclusivo ao executável antes de desinstalar.
 - Bloqueios e erros inesperados permanecem reprovatórios; nenhum processo é encerrado e nenhuma proteção do Inno Setup é desabilitada.
