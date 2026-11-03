@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.80.0 — estabilidade do gate de integração libre (candidata)
+- `libre_owner_reactor` passa a aguardar eventos reais de tick/falha sob prazo máximo de 1 s, sem depender de sleeps fixos de 20–30 ms.
+- Falhas passam a indicar código de cenário e contadores nativos, facilitando investigação da issue #169.
+- O gate de integração executa mais 10 repetições fail-fast do teste de reator nativo; qualquer falha continua reprovando a CI.
+- Nenhuma mudança no motor SIP/áudio de produção; causa raiz da intermitência anterior não declarada resolvida.
+- Detalhes em `docs/integration/LIBRE-REACTOR-TEST-STABILITY.md`.
+
 ## v0.79.0 — eventos CTI filtrados por solicitação (candidata)
 - Novo `GET /v1/requests/{id}/events?after=N`: consulta autenticada de transições pertencentes somente ao pedido indicado.
 - Filtragem e verificação de ID conhecido no mesmo mutex; sem vazamento de eventos de outros pedidos, destinos, credenciais ou IDs nativos.
