@@ -23,17 +23,9 @@ foreach($group in $groups) {
     & ctest --test-dir $buildDir -C $Configuration --output-on-failure -L "^$group$"
     if ($LASTEXITCODE -ne 0) { throw "Gate '$group' FALHOU." }
     if ($group -eq 'integration') {
-        # Exercise the real owner-thread lifecycle repeatedly. A single fast
-        # pass must not hide a timing-sensitive reactor regression.
+        # Exercise the real owner-thread lifecycle repeatedly.
         Write-Host '=== AXE VOICE REACTOR STABILITY GATE: 10 repetitions ==='
-        & ctest --test-dir $buildDir -C $Configuration --output-on-failure -R '^libre_owner_reactor
-    Write-Host "GATE $group APROVADO: $($matching.Count)/$($matching.Count)"
-}
-$total=0
-foreach($n in $summary.Values) { $total+=$n }
-Write-Host "AXE Voice - 100% de PASSAGEM dos testes categorizados: $total/$total"
-Write-Host 'Isto NAO significa 100% de cobertura de codigo ou homologacao SIP real.'
- --repeat until-fail:10
+        & ctest --test-dir $buildDir -C $Configuration --output-on-failure -R '^libre_owner_reactor$' --repeat until-fail:10
         if ($LASTEXITCODE -ne 0) { throw 'Gate libre_owner_reactor stability FALHOU.' }
         Write-Host 'Reactor stability gate APROVADO: 10/10'
     }
