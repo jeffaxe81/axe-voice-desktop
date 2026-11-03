@@ -43,12 +43,18 @@ mesmo destino, autenticação e eventos por `request_id`.
 - `libre_owner_reactor`: 10 repetições consecutivas, sem falha.
 - Matriz CTI: **3 execuções independentes × 1.400 = 4.200 cenários**
   adicionais, rejeitando qualquer falha intermediária.
+- Suíte **completa** (todos os módulos CTest, não apenas CTI):
+  **8 repetições de cada teste**; com 129 testes registrados,
+  são **1.032 execuções reais de CTest**. O script calcula a quantidade
+  do manifesto e **falha caso o total seja inferior a 1.000**.
 - Native SDK ABI, TLS/mídia, compilação e instalação/desinstalação do
   candidato Windows.
 - Integridade MicroSIP e CI pós-merge.
 
-A contagem representa **cenários e repetições**, não 4.200 testes
-CTest distintos ou 4.200 chamadas SIP. É cobertura ampla das áreas
+A contagem de **4.200** representa cenários da matriz repetidos, não
+4.200 alvos CTest distintos ou chamadas SIP. Já a suíte completa
+repete cada alvo CTest oito vezes e contabiliza suas execuções
+individuais, cobrindo também os demais módulos de software. É cobertura ampla das áreas
 selecionadas, mas não exaustiva para todos os ambientes, codecs,
 operadoras, dispositivos, falhas de energia ou cargas prolongadas.
 
