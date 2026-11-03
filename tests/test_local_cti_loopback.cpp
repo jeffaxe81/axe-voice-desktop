@@ -68,6 +68,12 @@ int main() {
         CHECK(code(request("GET /v1/calls/current","",{}),401));
         CHECK(code(request("GET /v1/events","",{}),401));
         CHECK(code(request("GET /v1/requests/1","",{}),401));
+        CHECK(code(request("DELETE /v1/requests/1","",{}),401));
+        CHECK(code(request("DELETE /v1/requests/not-a-number","",token),400));
+        CHECK(code(request("DELETE /v1/requests/0","",token),400));
+        CHECK(code(request("DELETE /v1/requests/1","",token),404));
+        CHECK(code(request("DELETE /v1/requests/1","",token,
+                           "Origin: https://crm.example.org\r\n"),403));
         CHECK(code(request("GET /v1/requests/0","",token),400));
         CHECK(code(request("GET /v1/requests/invalid","",token),400));
         CHECK(code(request("GET /v1/requests/1","",token),404));
@@ -141,6 +147,7 @@ int main() {
         CHECK(code(dispatching,200) &&
               dispatching.find(R"("status":"dispatching")")!=std::string::npos);
         CHECK(!service.complete(2,true));
+        CHECK(code(request("DELETE /v1/requests/1","",token),409));
         CHECK(service.complete(1,true));
         CHECK(!service.complete(1,true));
         const auto submitted=request("GET /v1/requests/1","",token);
@@ -156,6 +163,19 @@ int main() {
         const auto rejected=request("GET /v1/requests/2","",token);
         CHECK(code(rejected,200) &&
               rejected.find(R"("status":"rejected")")!=std::string::npos);
+        CHECK(code(request("DELETE /v1/requests/2","",token),409));
+        const auto third=request("POST /v1/calls",R"({"destination":"1003"})",token);
+        CHECK(code(third,202) && third.find(R"("request_id":3)")!=std::string::npos);
+        const auto cancelled=request("DELETE /v1/requests/3","",token);
+        CHECK(code(cancelled,200) &&
+              cancelled.find(R"("status":"cancelled")")!=std::string::npos);
+        CHECK(code(request("DELETE /v1/requests/3","",token),409));
+        const auto cancellation_status=request("GET /v1/requests/3","",token);
+        CHECK(code(cancellation_status,200) &&
+              cancellation_status.find(R"("status":"cancelled")")!=std::string::npos);
+        CHECK(!service.take()); // GUI must not receive cancelled requests.
+        CHECK(code(request("DELETE /v1/requests/3","",token,
+                           "Content-Length: 0\r\n"),400));
         service.stop();
         CHECK(!service.active());
         CHECK(!service.take());
