@@ -9,13 +9,15 @@
 
 namespace axv {
 
-enum class CtiRequestState { Queued, Dispatching, Submitted, Rejected };
+enum class CtiRequestState { Queued, Dispatching, Submitted, Rejected, Cancelled };
+enum class CtiCancelOutcome { Cancelled, NotFound, TooLate };
 inline const char* cti_request_state_name(CtiRequestState state) {
     switch(state) {
     case CtiRequestState::Queued: return "queued";
     case CtiRequestState::Dispatching: return "dispatching";
     case CtiRequestState::Submitted: return "submitted";
     case CtiRequestState::Rejected: return "rejected";
+    case CtiRequestState::Cancelled: return "cancelled";
     }
     return "rejected";
 }
@@ -71,6 +73,20 @@ public:
                 return true;
             }
         return false;
+    }
+
+    CtiCancelOutcome cancel(std::uint64_t id) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for(auto& record:records_) {
+            if(record.id!=id)continue;
+            if(!pending_ || pending_->id!=id ||
+               record.state!=CtiRequestState::Queued)
+                return CtiCancelOutcome::TooLate;
+            pending_.reset();
+            record.state=CtiRequestState::Cancelled;
+            return CtiCancelOutcome::Cancelled;
+        }
+        return CtiCancelOutcome::NotFound;
     }
 
     std::optional<CtiRequestResult> get(std::uint64_t id) const {
