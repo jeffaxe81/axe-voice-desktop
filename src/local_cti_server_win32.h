@@ -1,5 +1,6 @@
 #pragma once
 #include "local_cti_events.h"
+#include "local_cti_requests.h"
 #include <atomic>
 #include <cstdint>
 #include <mutex>
@@ -24,7 +25,8 @@ public:
     bool active() const { return running_.load(); }
     void set_ready(bool ready) { ready_.store(ready); }
     void observe(const SipRuntimeObservation& state) { journal_.observe(state); }
-    std::optional<std::wstring> take();
+    std::optional<CtiPendingRequest> take();
+    bool complete(std::uint64_t id,bool submitted) { return requests_.complete(id,submitted); }
 private:
     void run();
     void handle_client(std::uintptr_t client);
@@ -35,7 +37,6 @@ private:
     std::atomic<bool> running_{false};
     std::atomic<bool> ready_{false};
     CtiEventJournal journal_;
-    std::mutex queue_mutex_;
-    std::optional<std::wstring> queued_;
+    CtiRequestQueue requests_;
 };
 } // namespace axv
