@@ -312,15 +312,28 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
         reply(client,422,"Unprocessable Entity",R"({"error":"invalid_destination"})");
         return;
     }
-    if(!ready_.load()) {
+    std::string key;
+    if(const auto header=fields.find("idempotency-key");header!=fields.end()) {
+        if(!valid_cti_idempotency_key(header->second)) {
+            reply(client,400,"Bad Request",R"({"error":"invalid_idempotency_key"})");
+            return;
+        }
+        key=header->second;
+    }
+    const auto submitted=requests_.submit_idempotent(*parsed,key,ready_.load());
+    if(submitted.outcome==CtiSubmitOutcome::NotReady) {
         reply(client,409,"Conflict",R"({"error":"sip_not_ready"})");
         return;
     }
-    const auto id=requests_.submit(*parsed);
-    if(!id) {
+    if(submitted.outcome==CtiSubmitOutcome::Busy) {
         reply(client,429,"Too Many Requests",R"({"error":"busy"})");
         return;
     }
-    reply(client,202,"Accepted",cti_request_json({*id,CtiRequestState::Queued}));
+    if(submitted.outcome==CtiSubmitOutcome::Replayed) {
+        const auto prior=cti_request_json({submitted.id,submitted.state});
+        reply(client,200,"OK",prior.substr(0,prior.size()-1)+",\"replayed\":true}");
+        return;
+    }
+    reply(client,202,"Accepted",cti_request_json({submitted.id,CtiRequestState::Queued}));
 }
 } // namespace axv
