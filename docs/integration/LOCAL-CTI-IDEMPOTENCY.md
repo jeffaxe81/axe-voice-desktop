@@ -1,4 +1,4 @@
-# AXE Voice v0.76 — repetição segura de pedidos CTI
+# AXE Voice — repetição segura de pedidos CTI (v0.76–v0.82)
 
 A API local de click-to-call permite que um CRM repita o mesmo pedido
 HTTP sem disparar duas chamadas por timeout, falha de rede ou retry.
@@ -53,9 +53,16 @@ Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:27652/v1/calls" -Headers $
 
 - Sem o cabeçalho, o comportamento existente permanece: cada pedido
   independente pode originar outra chamada quando o ramal estiver apto.
-- Uma chave repetida com destino diferente **não** produz outra chamada;
-  recebe o resultado do pedido inicial. O CRM precisa usar uma chave
-  nova para uma intenção de discagem diferente.
+- **A partir da v0.82:** reutilizar uma chave de idempotência com
+  destino normalizado **diferente** devolve HTTP **409 Conflict**
+  com `{"error":"idempotency_key_conflict"}`, sem produzir outra
+  chamada e sem revelar o destino da chamada original. Versões até
+  a v0.81 retornavam o resultado anterior como replay, o que podia
+  ocultar um erro do integrador.
+- O CRM deve usar **a mesma chave e o mesmo destino** ao repetir uma
+  tentativa após timeout. Para discar outro destino, gere uma chave
+  diferente. Ao receber o conflito 409, não tente um terceiro número
+  com a chave antiga.
 - A retenção é de **até 32 resultados** na memória do processo.
   Após sair do buffer ou reiniciar o aplicativo, a mesma chave pode
   ser tratada como nova. Portanto, não há garantia de exatamente uma
@@ -72,3 +79,12 @@ Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:27652/v1/calls" -Headers $
 
 Testes automáticos cobrem chave inválida, replay nas transições da fila,
 estado terminal, ramal indisponível e ausência de segunda discagem.
+
+## Evidências automatizadas da v0.82
+
+A matriz determinística cobre 1.400 cenários por execução, incluindo 200
+repetições com destinos divergentes, 200 disputas concorrentes por fila,
+200 testes de cancelamento/conclusão e cenários adicionais de entrada,
+histórico, eventos e isolamento SIP. A suite HTTP de loopback acrescenta
+120 solicitações negativas reais. A matriz é repetida três vezes na CI,
+sem aceitar falhas intermediárias. Isso não substitui teste SIP físico.
