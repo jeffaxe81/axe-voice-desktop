@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.75.0 — cancelamento de pedidos CTI enfileirados (candidata)
+- Novo `DELETE /v1/requests/{id}` autenticado, capaz de cancelar atomicamente uma solicitação ainda na fila.
+- Novo status `cancelled` na consulta de resultados da v0.74.
+- Rejeita cancelamento depois de retirada para execução com 409; não envia SIP BYE/CANCEL nem tenta encerrar chamada estabelecida.
+- Mesma proteção de mutex para cancelamento e retirada de fila; testes de concorrência lógica, HTTP e privacidade.
+- Documentação: `docs/integration/LOCAL-CTI-CANCEL-QUEUED.md`. Sem homologação com central real.
+
 ## v0.74.0 — rastreamento de solicitações CTI (candidata)
 - `POST /v1/calls` retorna um `request_id` efêmero com o status `queued`.
 - `GET /v1/requests/{id}` permite consultar a tramitação: `queued`, `dispatching`, `submitted` ou `rejected`.
