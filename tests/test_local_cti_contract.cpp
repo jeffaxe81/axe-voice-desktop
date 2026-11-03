@@ -5,6 +5,14 @@
 #define CHECK(x) do{if(!(x)){std::fprintf(stderr,"CTI contract check %d: %s\n",__LINE__,#x);return 1;}}while(false)
 int main() {
     using namespace axv;
+    CHECK(valid_cti_idempotency_key("request_0123456789abcdef"));
+    CHECK(valid_cti_idempotency_key("1234567890123456"));
+    CHECK(!valid_cti_idempotency_key(""));
+    CHECK(!valid_cti_idempotency_key("too-short"));
+    CHECK(!valid_cti_idempotency_key(std::string(65,'a')));
+    CHECK(!valid_cti_idempotency_key("123456789012345!"));
+    CHECK(!valid_cti_idempotency_key("123456789012345 "));
+    CHECK(!valid_cti_idempotency_key("12345678901234\n"));
     CHECK(valid_cti_api_token("12345678901234567890123456789012"));
     CHECK(valid_cti_api_token("abcdeABCDE1234567890abcdeABCDE12"));
     CHECK(!valid_cti_api_token(""));
