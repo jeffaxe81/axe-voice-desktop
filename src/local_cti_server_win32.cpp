@@ -5,6 +5,7 @@
 #include <windows.h>
 #include "local_cti_server_win32.h"
 #include "local_cti_contract.h"
+#include "local_cti_capabilities.h"
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
@@ -162,6 +163,7 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
     }
     const auto request_line=header.substr(0,first_line);
     const bool status=request_line=="GET /v1/status HTTP/1.1";
+    const bool capabilities=request_line=="GET /v1/capabilities HTTP/1.1";
     const bool call=request_line=="POST /v1/calls HTTP/1.1";
     const bool current_call=request_line=="GET /v1/calls/current HTTP/1.1";
     constexpr std::string_view request_prefix="GET /v1/requests/";
@@ -245,8 +247,8 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
         }
         request_events=true;
     }
-    if (!status && !call && !current_call && !events && !request_events &&
-        !scoped_request_events && !request_result && !cancel_request) {
+    if (!status && !capabilities && !call && !current_call && !events &&
+        !request_events && !scoped_request_events && !request_result && !cancel_request) {
         reply(client,404,"Not Found",R"({"error":"not_found"})");
         return;
     }
@@ -284,7 +286,7 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
         reply(client,401,"Unauthorized",R"({"error":"unauthorized"})");
         return;
     }
-    if(status || current_call || events || request_events ||
+    if(status || capabilities || current_call || events || request_events ||
        scoped_request_events || request_result || cancel_request) {
         if(packet.size()!=delimiter+4 || fields.count("content-length")) {
             reply(client,400,"Bad Request",R"({"error":"bad_request"})");
@@ -293,6 +295,8 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
         if(status) {
             reply(client,200,"OK",
                   ready_.load()?R"({"ready":true})":R"({"ready":false})");
+        } else if(capabilities) {
+            reply(client,200,"OK",local_cti_capabilities_json());
         } else if(current_call) {
             const auto json=cti_snapshot_json(journal_.snapshot());
             reply(client,200,"OK",json);
