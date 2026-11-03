@@ -176,6 +176,34 @@ int main() {
         CHECK(!service.take()); // GUI must not receive cancelled requests.
         CHECK(code(request("DELETE /v1/requests/3","",token,
                            "Content-Length: 0\r\n"),400));
+        constexpr std::string_view retry_header=
+            "Idempotency-Key: client_0123456789abcdef\r\n";
+        CHECK(code(request("POST /v1/calls",R"({"destination":"1004"})",token,
+                           "Idempotency-Key: bad\r\n"),400));
+        const auto original=request("POST /v1/calls",
+            R"({"destination":"1004"})",token,retry_header);
+        CHECK(code(original,202) &&
+              original.find(R"("request_id":4)")!=std::string::npos);
+        const auto repeat_queued=request("POST /v1/calls",
+            R"({"destination":"1004"})",token,retry_header);
+        CHECK(code(repeat_queued,200) &&
+              repeat_queued.find(R"("replayed":true)")!=std::string::npos &&
+              repeat_queued.find(R"("request_id":4)")!=std::string::npos);
+        call=service.take();
+        CHECK(call && call->id==4 && call->destination==L"1004");
+        service.set_ready(false);
+        const auto repeat_inflight=request("POST /v1/calls",
+            R"({"destination":"9999"})",token,retry_header);
+        CHECK(code(repeat_inflight,200) &&
+              repeat_inflight.find(R"("status":"dispatching")")!=std::string::npos);
+        CHECK(!service.take());
+        CHECK(service.complete(4,true));
+        const auto repeat_submitted=request("POST /v1/calls",
+            R"({"destination":"9999"})",token,retry_header);
+        CHECK(code(repeat_submitted,200) &&
+              repeat_submitted.find(R"("status":"submitted")")!=std::string::npos);
+        CHECK(!service.take());
+        CHECK(code(request("POST /v1/calls",R"({"destination":"1005"})",token),409));
         service.stop();
         CHECK(!service.active());
         CHECK(!service.take());

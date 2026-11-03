@@ -77,6 +77,14 @@ inline std::optional<std::wstring> parse_axvoice_click_to_call_uri(
     return result.normalized;
 }
 
+inline bool valid_cti_idempotency_key(std::string_view key) {
+    if(key.size()<16 || key.size()>64)return false;
+    for(unsigned char c:key)
+        if(!((c>='A'&&c<='Z')||(c>='a'&&c<='z')||
+             (c>='0'&&c<='9')||c=='-'||c=='_'))return false;
+    return true;
+}
+
 inline bool valid_cti_api_token(std::string_view token) {
     if (token.size() < 32 || token.size() > 128) return false;
     for (unsigned char c: token)

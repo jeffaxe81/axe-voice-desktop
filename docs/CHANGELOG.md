@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.76.0 — idempotência opcional do Click-to-Call (candidata)
+- Novo cabeçalho `Idempotency-Key` opcional em `POST /v1/calls`; chaves válidas têm 16–64 caracteres ASCII seguros.
+- Chave repetida retorna HTTP 200 com mesmo `request_id`, status existente e `replayed=true`, sem nova chamada, mesmo se a aptidão SIP mudou.
+- Chaves retidas apenas no histórico efêmero de 32 resultados; não fornece idempotência entre reinícios.
+- Testes de parser, estado da fila, cancelamento, submissão, diferença de destino e autorização HTTP.
+- Documentação: `docs/integration/LOCAL-CTI-IDEMPOTENCY.md`; ainda sem homologação em PABX real.
+
 ## v0.75.0 — cancelamento de pedidos CTI enfileirados (candidata)
 - Novo `DELETE /v1/requests/{id}` autenticado, capaz de cancelar atomicamente uma solicitação ainda na fila.
 - Novo status `cancelled` na consulta de resultados da v0.74.
