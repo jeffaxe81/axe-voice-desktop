@@ -174,6 +174,27 @@ public:
         return result;
     }
 
+    // Filter while holding the same queue lock. Do not disclose activity
+    // for an evicted/unknown ID and never return other requests' events.
+    // Cursor and gap are based on the GLOBAL event ring, conservatively:
+    // a gap may flag lost events even if none belonged to this request.
+    std::optional<CtiRequestEventsPage> events_after_for_request(
+        std::uint64_t id,std::uint64_t after) const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        bool known=false;
+        for(const auto& record:records_)
+            if(record.id==id) { known=true; break; }
+        if(!known)return std::nullopt;
+        CtiRequestEventsPage page;
+        page.latest_sequence=event_sequence_;
+        page.oldest_sequence=events_.empty()?0:events_.front().sequence;
+        page.gap=page.oldest_sequence>0 && after<page.oldest_sequence-1;
+        for(const auto& event:events_)
+            if(event.sequence>after && event.request_id==id)
+                page.events.push_back(event);
+        return page;
+    }
+
     void clear() {
         std::lock_guard<std::mutex> lock(mutex_);
         pending_.reset();
