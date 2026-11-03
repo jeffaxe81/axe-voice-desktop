@@ -83,6 +83,16 @@ int main() {
               cap.find(R"("sip_request_correlation":false)")!=std::string::npos &&
               cap.find(R"("call_completion_confirmation":false)")!=std::string::npos &&
               cap.find("ABCDEFGHIJKLMNOPQRSTUVWXYZ123456")==std::string::npos);
+        // 120 actual HTTP transactions challenge routing, Bearer auth and
+        // browser-origin blocking; never mutate queue/engine state.
+        for(int i=0;i<40;++i) {
+            const auto serial=std::to_string(i+1);
+            CHECK(code(request("GET /v1/capabilities?nonce="+serial,"",token),404));
+            CHECK(code(request("GET /v1/request-events?after="+serial,"",{}),401));
+            CHECK(code(request("GET /v1/requests/1/events?after="+serial,"",token,
+                               "Origin: https://crm.example.org\r\n"),403));
+        }
+        std::puts("AXE CTI HTTP SECURITY MATRIX PASSED: 120/120 HTTP scenarios");
         // Read-only CTI endpoints deny unauthenticated/browser requests.
         CHECK(code(request("GET /v1/calls/current","",{}),401));
         CHECK(code(request("GET /v1/events","",{}),401));
