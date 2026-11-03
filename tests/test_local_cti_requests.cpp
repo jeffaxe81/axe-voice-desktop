@@ -4,6 +4,36 @@
 #define CHECK(v) do{if(!(v)){std::fprintf(stderr,"CTI request test %d: %s\n",__LINE__,#v);return 1;}}while(false)
 int main(){
     using namespace axv;
+    CtiRequestQueue retries;
+    const std::string key="request_0123456789abcd";
+    const auto first_retry=retries.submit_idempotent(L"1001",key,true);
+    CHECK(first_retry.outcome==CtiSubmitOutcome::Created && first_retry.id==1);
+    const auto same_while_queued=retries.submit_idempotent(L"1001",key,true);
+    CHECK(same_while_queued.outcome==CtiSubmitOutcome::Replayed &&
+          same_while_queued.id==1);
+    CHECK(!retries.submit(L"1002")); // Duplicate must not enqueue another call.
+    CHECK(retries.take()->id==1);
+    const auto same_while_dispatching=retries.submit_idempotent(L"1001",key,false);
+    CHECK(same_while_dispatching.outcome==CtiSubmitOutcome::Replayed &&
+          same_while_dispatching.state==CtiRequestState::Dispatching);
+    CHECK(retries.complete(1,true));
+    const auto same_after_submission=retries.submit_idempotent(L"2002",key,false);
+    CHECK(same_after_submission.outcome==CtiSubmitOutcome::Replayed &&
+          same_after_submission.state==CtiRequestState::Submitted &&
+          same_after_submission.id==1); // Same key never causes a second dial.
+    CHECK(!retries.take());
+    const auto not_ready=retries.submit_idempotent(L"1002","new_0123456789abcdef",false);
+    CHECK(not_ready.outcome==CtiSubmitOutcome::NotReady);
+    const auto second_retry=retries.submit_idempotent(L"1002","new_0123456789abcdef",true);
+    CHECK(second_retry.outcome==CtiSubmitOutcome::Created && second_retry.id==2);
+    CHECK(retries.cancel(2)==CtiCancelOutcome::Cancelled);
+    CHECK(retries.submit_idempotent(L"1002","new_0123456789abcdef",true).state==
+          CtiRequestState::Cancelled);
+    CHECK(!retries.take());
+    CHECK(cti_request_json(*retries.get(1)).find(key)==std::string::npos);
+    retries.clear();
+    CHECK(retries.submit_idempotent(L"1003",key,true).id==3); // Old keys expire.
+
     CtiRequestQueue cancel_queue;
     CHECK(cancel_queue.cancel(1)==CtiCancelOutcome::NotFound);
     auto cancel_id=cancel_queue.submit(L"confidential-number");
