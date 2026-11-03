@@ -67,6 +67,12 @@ int main() {
         // Read-only CTI endpoints deny unauthenticated/browser requests.
         CHECK(code(request("GET /v1/calls/current","",{}),401));
         CHECK(code(request("GET /v1/events","",{}),401));
+        CHECK(code(request("GET /v1/requests/1","",{}),401));
+        CHECK(code(request("GET /v1/requests/0","",token),400));
+        CHECK(code(request("GET /v1/requests/invalid","",token),400));
+        CHECK(code(request("GET /v1/requests/1","",token),404));
+        CHECK(code(request("GET /v1/requests/1","",token,
+                           "Origin: https://crm.example.org\r\n"),403));
         CHECK(code(request("GET /v1/events?after=garbage","",token),400));
         CHECK(code(request("GET /v1/events?after=18446744073709551616","",token),400));
         CHECK(code(request("GET /v1/calls/current","",token,
@@ -119,14 +125,37 @@ int main() {
         CHECK(code(request("POST /v1/calls",R"({"destination":"1001"})",token),409));
         service.set_ready(true);
         CHECK(code(request("POST /v1/calls",R"({"destination":"abc"})",token),422));
-        CHECK(code(request("POST /v1/calls",R"({"destination":"1001"})",token),202));
+        const auto first_post=request("POST /v1/calls",R"({"destination":"1001"})",token);
+        CHECK(code(first_post,202) &&
+              first_post.find(R"("request_id":1)")!=std::string::npos &&
+              first_post.find(R"("status":"queued")")!=std::string::npos);
         CHECK(code(request("POST /v1/calls",R"({"destination":"1002"})",token),429));
+        auto queued=request("GET /v1/requests/1","",token);
+        CHECK(code(queued,200) && queued.find(R"("status":"queued")")!=std::string::npos);
         auto call=service.take();
-        CHECK(call && *call==L"1001");
+        CHECK(call && call->destination==L"1001" && call->id==1);
         CHECK(!service.take());
-        CHECK(code(request("POST /v1/calls",R"({"destination":"1002"})",token),202));
+        // Taking a request never frees the single inflight slot.
+        CHECK(code(request("POST /v1/calls",R"({"destination":"1002"})",token),429));
+        const auto dispatching=request("GET /v1/requests/1","",token);
+        CHECK(code(dispatching,200) &&
+              dispatching.find(R"("status":"dispatching")")!=std::string::npos);
+        CHECK(!service.complete(2,true));
+        CHECK(service.complete(1,true));
+        CHECK(!service.complete(1,true));
+        const auto submitted=request("GET /v1/requests/1","",token);
+        CHECK(code(submitted,200) &&
+              submitted.find(R"("status":"submitted")")!=std::string::npos &&
+              submitted.find("1001")==std::string::npos);
+        const auto second_post=request("POST /v1/calls",R"({"destination":"1002"})",token);
+        CHECK(code(second_post,202) &&
+              second_post.find(R"("request_id":2)")!=std::string::npos);
         call=service.take();
-        CHECK(call && *call==L"1002");
+        CHECK(call && call->destination==L"1002" && call->id==2);
+        CHECK(service.complete(2,false));
+        const auto rejected=request("GET /v1/requests/2","",token);
+        CHECK(code(rejected,200) &&
+              rejected.find(R"("status":"rejected")")!=std::string::npos);
         service.stop();
         CHECK(!service.active());
         CHECK(!service.take());
