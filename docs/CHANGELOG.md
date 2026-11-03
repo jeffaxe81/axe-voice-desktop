@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.81.0 — descoberta da API CTI e exemplo para integração (candidata)
+- Novo `GET /v1/capabilities` autenticado em loopback, com funcionalidades realmente implementadas, limites de histórico e semântica de submissão de chamadas.
+- Explicitamente `sip_request_correlation=false` e `call_completion_confirmation=false` para não confundir request_id com prova de chamada atendida.
+- Segurança existente preservada: Bearer obrigatório, Host local exato, sem CORS ou webhooks; testes unitários e HTTP de bloqueio de Origin, Referer, corpo e métodos inválidos.
+- Novo exemplo PowerShell de descoberta de recursos, discagem idempotente, consulta de solicitação, eventos por ID e cancelamento apenas na fila.
+- Documentação: `docs/integration/LOCAL-CTI-CAPABILITIES.md` e `examples/cti/README.md`.
+- Contrato CTI de laboratório, ainda sem homologação de chamadas, mídia ou integração externa.
+
 ## v0.80.0 — estabilidade do gate de integração libre (candidata)
 - `libre_owner_reactor` passa a aguardar eventos reais de tick/falha sob prazo máximo de 1 s, sem depender de sleeps fixos de 20–30 ms.
 - Falhas passam a indicar código de cenário e contadores nativos, facilitando investigação da issue #169.
