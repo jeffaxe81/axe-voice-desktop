@@ -399,6 +399,11 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
         reply(client,429,"Too Many Requests",R"({"error":"busy"})");
         return;
     }
+    if(submitted.outcome==CtiSubmitOutcome::KeyConflict) {
+        // Do not reveal the original destination or which SIP state it reached.
+        reply(client,409,"Conflict",R"({"error":"idempotency_key_conflict"})");
+        return;
+    }
     if(submitted.outcome==CtiSubmitOutcome::Replayed) {
         const auto prior=cti_request_json({submitted.id,submitted.state});
         reply(client,200,"OK",prior.substr(0,prior.size()-1)+",\"replayed\":true}");
