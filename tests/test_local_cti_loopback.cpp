@@ -82,6 +82,7 @@ int main() {
               cap.find(R"("request_event_history":64)")!=std::string::npos &&
               cap.find(R"("sip_request_correlation":false)")!=std::string::npos &&
               cap.find(R"("call_completion_confirmation":false)")!=std::string::npos &&
+              cap.find(R"("idempotency_key_destination_bound":true)")!=std::string::npos &&
               cap.find("ABCDEFGHIJKLMNOPQRSTUVWXYZ123456")==std::string::npos);
         // 120 actual HTTP transactions challenge routing, Bearer auth and
         // browser-origin blocking; never mutate queue/engine state.
