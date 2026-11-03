@@ -67,6 +67,17 @@ int main() {
         // Read-only CTI endpoints deny unauthenticated/browser requests.
         CHECK(code(request("GET /v1/calls/current","",{}),401));
         CHECK(code(request("GET /v1/events","",{}),401));
+        CHECK(code(request("GET /v1/request-events","",{}),401));
+        CHECK(code(request("GET /v1/request-events?after=2","",{}),401));
+        CHECK(code(request("GET /v1/request-events?after=oops","",token),400));
+        CHECK(code(request("GET /v1/request-events?after=18446744073709551616","",token),400));
+        CHECK(code(request("GET /v1/request-events","",token,
+                           "Origin: https://crm.example.org\r\n"),403));
+        CHECK(code(request("GET /v1/request-events","",token,
+                           "Content-Length: 0\r\n"),400));
+        const auto empty_requests=request("GET /v1/request-events","",token);
+        CHECK(code(empty_requests,200) &&
+              empty_requests.find(R"("events":[])")!=std::string::npos);
         CHECK(code(request("GET /v1/requests/1","",{}),401));
         CHECK(code(request("DELETE /v1/requests/1","",{}),401));
         CHECK(code(request("DELETE /v1/requests/not-a-number","",token),400));
@@ -135,6 +146,11 @@ int main() {
         CHECK(code(first_post,202) &&
               first_post.find(R"("request_id":1)")!=std::string::npos &&
               first_post.find(R"("status":"queued")")!=std::string::npos);
+        auto request_events=request("GET /v1/request-events?after=0","",token);
+        CHECK(code(request_events,200) &&
+              request_events.find(R"("sequence":1,"request_id":1,"status":"queued")")!=std::string::npos &&
+              request_events.find("1001")==std::string::npos);
+        CHECK(code(request("GET /v1/request-events?after=1","",token),200));
         CHECK(code(request("POST /v1/calls",R"({"destination":"1002"})",token),429));
         auto queued=request("GET /v1/requests/1","",token);
         CHECK(code(queued,200) && queued.find(R"("status":"queued")")!=std::string::npos);
@@ -146,6 +162,9 @@ int main() {
         const auto dispatching=request("GET /v1/requests/1","",token);
         CHECK(code(dispatching,200) &&
               dispatching.find(R"("status":"dispatching")")!=std::string::npos);
+        request_events=request("GET /v1/request-events?after=1","",token);
+        CHECK(code(request_events,200) &&
+              request_events.find(R"("sequence":2,"request_id":1,"status":"dispatching")")!=std::string::npos);
         CHECK(!service.complete(2,true));
         CHECK(code(request("DELETE /v1/requests/1","",token),409));
         CHECK(service.complete(1,true));
@@ -154,6 +173,9 @@ int main() {
         CHECK(code(submitted,200) &&
               submitted.find(R"("status":"submitted")")!=std::string::npos &&
               submitted.find("1001")==std::string::npos);
+        request_events=request("GET /v1/request-events?after=2","",token);
+        CHECK(code(request_events,200) &&
+              request_events.find(R"("sequence":3,"request_id":1,"status":"submitted")")!=std::string::npos);
         const auto second_post=request("POST /v1/calls",R"({"destination":"1002"})",token);
         CHECK(code(second_post,202) &&
               second_post.find(R"("request_id":2)")!=std::string::npos);
@@ -174,6 +196,10 @@ int main() {
         CHECK(code(cancellation_status,200) &&
               cancellation_status.find(R"("status":"cancelled")")!=std::string::npos);
         CHECK(!service.take()); // GUI must not receive cancelled requests.
+        request_events=request("GET /v1/request-events?after=7","",token);
+        CHECK(code(request_events,200) &&
+              request_events.find(R"("sequence":8,"request_id":3,"status":"cancelled")")!=std::string::npos);
+        CHECK(code(request("GET /v1/request-events?after=8","",token),200));
         CHECK(code(request("DELETE /v1/requests/3","",token,
                            "Content-Length: 0\r\n"),400));
         constexpr std::string_view retry_header=
@@ -203,6 +229,13 @@ int main() {
         CHECK(code(repeat_submitted,200) &&
               repeat_submitted.find(R"("status":"submitted")")!=std::string::npos);
         CHECK(!service.take());
+        request_events=request("GET /v1/request-events?after=10","",token);
+        CHECK(code(request_events,200) &&
+              request_events.find(R"("sequence":11,"request_id":4,"status":"submitted")")!=std::string::npos &&
+              request_events.find("client_0123456789abcdef")==std::string::npos);
+        const auto no_extra_events=request("GET /v1/request-events?after=11","",token);
+        CHECK(code(no_extra_events,200) &&
+              no_extra_events.find(R"("events":[])")!=std::string::npos);
         CHECK(code(request("POST /v1/calls",R"({"destination":"1005"})",token),409));
         service.stop();
         CHECK(!service.active());

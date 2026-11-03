@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.77.0 — eventos por solicitação CTI (candidata)
+- Novo `GET /v1/request-events?after=N`: polling autenticado de transições da solicitação com `request_id` e sequência incremental.
+- Emissão atômica de estados `queued`, `dispatching`, `submitted`, `rejected` e `cancelled`; retries idempotentes não geram eventos duplicados.
+- Histórico de até 64 transições, indicador `gap` ao perder eventos e bloqueio de acesso externo/CORS mantido.
+- Eventos de pedidos não representam confirmação de chamada SIP atendida ou RTP; sem correlação inferida de call_id.
+- Cobertura de testes da fila, HTTP local, isolamento e cursor; documentação em `docs/integration/LOCAL-CTI-REQUEST-EVENTS.md`.
+
 ## v0.76.0 — idempotência opcional do Click-to-Call (candidata)
 - Novo cabeçalho `Idempotency-Key` opcional em `POST /v1/calls`; chaves válidas têm 16–64 caracteres ASCII seguros.
 - Chave repetida retorna HTTP 200 com mesmo `request_id`, status existente e `replayed=true`, sem nova chamada, mesmo se a aptidão SIP mudou.
