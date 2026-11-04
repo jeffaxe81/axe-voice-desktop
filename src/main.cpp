@@ -510,23 +510,27 @@ int footer_height() { return axv::dpi_pixels(kFooterHeight,g_dpi); }
 int content_viewport_height(HWND window) {
     RECT client{};
     GetClientRect(window,&client);
-    return std::max(1,client.bottom-client.top-footer_height());
+    const int height=static_cast<int>(client.bottom-client.top);
+    return std::max(1,height-footer_height());
 }
 void position_footer(HWND window) {
     if(!g_status || !g_footer_panel || !window)return;
     RECT client{};
     GetClientRect(window,&client);
+    const int width=static_cast<int>(client.right-client.left);
+    const int client_height=static_cast<int>(client.bottom-client.top);
     const int height=footer_height();
-    const int top=std::max(0,client.bottom-height);
+    const int top=std::max(0,client_height-height);
     SetWindowPos(g_footer_panel,HWND_TOP,0,top,
-                 std::max(1,client.right),std::min(height,client.bottom),
+                 std::max(1,width),std::min(height,client_height),
                  SWP_NOACTIVATE);
     const int margin=axv::dpi_pixels(12,g_dpi);
     SetWindowPos(g_status,HWND_TOP,margin,top+axv::dpi_pixels(5,g_dpi),
-                 std::max(1,client.right-2*margin),
+                 std::max(1,width-2*margin),
                  std::max(1,height-axv::dpi_pixels(10,g_dpi)),
                  SWP_NOACTIVATE);
 }
+
 void position_all_children() {
     // One deferred batch avoids dozens of synchronous redraws per scroll tick.
     // Never allow an invalid batch to leave controls stranded: fall back to
