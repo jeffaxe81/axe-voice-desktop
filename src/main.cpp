@@ -753,8 +753,18 @@ void edit_number(HWND root, wchar_t action) {
 }
 
 bool can_preview_selected_ringtone(){
-    if(g_smoke_mode || !g_audio_inventory_current || g_tone_preview.state()==axv::TonePreviewState::Playing ||
+    if(g_smoke_mode || g_tone_preview.state()==axv::TonePreviewState::Playing ||
         g_microphone_test.state()==axv::MicrophoneTestState::Capturing)return false;
+    if(g_ringtone_preset.load()==5){
+        std::lock_guard<std::mutex> lock(g_ringtone_mp3_mutex);
+        if(g_ringtone_custom_mp3.empty())return false;
+#ifdef AXV_ENABLE_NATIVE_SIP
+        return !g_ring_player.busy() && !axv::verified_incoming_call(native_engine().observation());
+#else
+        return true;
+#endif
+    }
+    if(!g_audio_inventory_current)return false;
 #ifdef AXV_ENABLE_NATIVE_SIP
     if(g_ring_player.busy() || axv::verified_incoming_call(native_engine().observation()))return false;
     return axv::fixed_native_ringtone_selection(g_audio_outputs,g_selected_ringtone_id).available();
@@ -2456,6 +2466,29 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             ok=ok && action &&
                 ((GetWindowLongPtrW(action,GWL_STYLE)&BS_TYPEMASK)==BS_OWNERDRAW);
         }
+        // Verify five choices are selectable, and custom MP3 requires a path.
+        ok=ok && g_ringtone_preset_combo &&
+            SendMessageW(g_ringtone_preset_combo,CB_GETCOUNT,0,0)==6 &&
+            GetDlgItem(window,kRingtoneChooseMp3);
+        const int original_preset=g_ringtone_preset.load();
+        std::wstring original_mp3;
+        {std::lock_guard<std::mutex> lock(g_ringtone_mp3_mutex);
+         original_mp3=g_ringtone_custom_mp3;g_ringtone_custom_mp3.clear();}
+        for(int tone=0;tone<5;++tone){
+            SendMessageW(g_ringtone_preset_combo,CB_SETCURSEL,tone,0);
+            SendMessageW(window,WM_COMMAND,MAKEWPARAM(kRingtonePresetCombo,CBN_SELCHANGE),
+                         reinterpret_cast<LPARAM>(g_ringtone_preset_combo));
+            ok=ok && g_ringtone_preset.load()==tone;
+        }
+        SendMessageW(g_ringtone_preset_combo,CB_SETCURSEL,5,0);
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kRingtonePresetCombo,CBN_SELCHANGE),
+                     reinterpret_cast<LPARAM>(g_ringtone_preset_combo));
+        ok=ok && g_ringtone_preset.load()==4 &&
+            SendMessageW(g_ringtone_preset_combo,CB_GETCURSEL,0,0)==4;
+        {std::lock_guard<std::mutex> lock(g_ringtone_mp3_mutex);
+         g_ringtone_custom_mp3=std::move(original_mp3);}
+        g_ringtone_preset.store(original_preset);
+        SendMessageW(g_ringtone_preset_combo,CB_SETCURSEL,original_preset,0);
         for (int i = 0; i != 12; ++i) {
             const HWND key = GetDlgItem(window, kDigitStart + i);
             RECT bounds{};
