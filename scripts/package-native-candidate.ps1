@@ -68,6 +68,21 @@ Get-ChildItem (Join-Path $Prefix 'bin') -Filter '*.dll' | Copy-Item -Destination
 Copy-Item (Join-Path $Prefix 'licenses') $Stage -Recurse -Force
 Copy-Item (Join-Path $Prefix 'CANDIDATE-MANIFEST.json') $Stage
 Copy-Item (Join-Path $Root 'installer/CANDIDATE-README.txt') $Stage
+# Make the exact source and visual revision discoverable inside the installed app.
+# The runtime smoke check below requires the branded UI caption; this receipt
+# additionally binds the packaged EXE to its commit and SHA-256.
+$SourceRevision = (& git -C $Root rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or $SourceRevision.Length -ne 40 -or $SourceRevision -match '[^0-9a-f]') {
+    throw 'Could not identify the candidate source revision'
+}
+$DesignReceipt = @(
+    'AXE Voice Desktop - Dispatch UI candidate'
+    'Design: DESPACHO UI - BUILD 2026.11.04'
+    ('Git commit: ' + $SourceRevision)
+    ('EXE SHA256: ' + $Manifest.product_sha256)
+    'Validated target: native Windows GUI (AXV_ENABLE_NATIVE_SIP)'
+)
+$DesignReceipt | Set-Content -LiteralPath (Join-Path $Stage 'AXE-VOICE-BUILD.txt') -Encoding ascii
 # Ship the redistributable app-local CRT: a per-user installer cannot assume
 # administrative installation of the Visual C++ runtime on the target PC.
 $Vswhere=Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
