@@ -2383,6 +2383,28 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                 ok = ok && above.bottom + axv::dpi_pixels(4,g_dpi) <= current.top;
             }
         }
+        // Screenshot regression: compact, evenly spaced digits and a dedicated
+        // two-line feedback area below DTMF/ringtone buttons, never overlapping.
+        RECT feedback{}, last_action{}, last_digit{};
+        GetWindowRect(g_status,&feedback);
+        GetWindowRect(GetDlgItem(window,kIncomingRingtoneMuteButton),&last_action);
+        GetWindowRect(GetDlgItem(window,kDigitStart+11),&last_digit);
+        ok = ok && (last_digit.right-last_digit.left)==axv::dpi_pixels(88,g_dpi) &&
+            (last_digit.bottom-last_digit.top)==axv::dpi_pixels(54,g_dpi) &&
+            (feedback.bottom-feedback.top)==axv::dpi_pixels(kFeedbackHeight,g_dpi) &&
+            last_action.bottom + axv::dpi_pixels(10,g_dpi) <= feedback.top;
+        // Verify the actual Win32 status handler requests an opaque paint
+        // against the background brush instead of transparent text remnants.
+        HDC feedback_dc=GetDC(g_status);
+        if(feedback_dc) {
+            const auto brush=SendMessageW(window,WM_CTLCOLORSTATIC,
+                reinterpret_cast<WPARAM>(feedback_dc),
+                reinterpret_cast<LPARAM>(g_status));
+            ok = ok && brush == reinterpret_cast<LRESULT>(g_background_brush) &&
+                 GetBkMode(feedback_dc)==OPAQUE &&
+                 GetBkColor(feedback_dc)==background_color();
+            ReleaseDC(g_status,feedback_dc);
+        } else ok=false;
         // Navigation font uses the actual smaller font rather than the
         // regular dial/button font; high-density labels must not be clipped.
         for (int id : tabs)
