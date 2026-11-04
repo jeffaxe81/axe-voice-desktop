@@ -2199,7 +2199,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             }
             return (GetWindowLongPtrW(g_call_duration_label,GWL_STYLE)&WS_VISIBLE) &&
                    runtime.bottom<=duration.top && duration.right<=ringtone.left &&
-                   duration.top==ringtone.top && ringtone.right<=destination.right &&
+                   duration.top==ringtone.top && ringtone.right<=runtime.right &&
                    duration.bottom<=destination.top && ringtone.bottom<=destination.top &&
                    dial_section_clear;
         };
