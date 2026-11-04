@@ -2329,6 +2329,31 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                 ok = ok && prior.right < left.left;
             }
         }
+        // Touch/keyboard ergonomics: repeated dial targets must stay at least
+        // 40 logical pixels tall/wide, with a visible gap and no intersections.
+        for (int i=0;i<12;++i) {
+            RECT current{};
+            const HWND digit = GetDlgItem(window,kDigitStart+i);
+            ok = ok && digit && GetWindowRect(digit,&current);
+            const int min_target = axv::dpi_pixels(40,g_dpi);
+            ok = ok && current.right-current.left >= min_target &&
+                       current.bottom-current.top >= min_target;
+            if(i%3) {
+                RECT previous{};
+                GetWindowRect(GetDlgItem(window,kDigitStart+i-1),&previous);
+                ok = ok && previous.right + axv::dpi_pixels(4,g_dpi) <= current.left;
+            }
+            if(i>=3) {
+                RECT above{};
+                GetWindowRect(GetDlgItem(window,kDigitStart+i-3),&above);
+                ok = ok && above.bottom + axv::dpi_pixels(4,g_dpi) <= current.top;
+            }
+        }
+        // Navigation font uses the actual smaller font rather than the
+        // regular dial/button font; high-density labels must not be clipped.
+        for (int id : tabs)
+            ok = ok && reinterpret_cast<HFONT>(SendMessageW(GetDlgItem(window,id),
+                          WM_GETFONT,0,0)) == g_font_small;
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kShowGeneral,BN_CLICKED),
                      reinterpret_cast<LPARAM>(GetDlgItem(window,kShowGeneral)));
         ok = ok && g_page==3 &&
