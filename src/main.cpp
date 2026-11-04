@@ -158,6 +158,7 @@ constexpr int kHangupFuture = 2304;
 constexpr int kFocusNumber = 2305;
 constexpr UINT kTrayCallback = WM_APP + 41;
 constexpr UINT kAsyncScrollMessage = WM_APP + 43;
+constexpr UINT kAsyncCtiMessage = WM_APP + 44;
 constexpr UINT kTrayIconId = 1;
 constexpr UINT kTrayOpen = 3001;
 constexpr UINT kTrayExit = 3002;
@@ -1187,6 +1188,29 @@ bool try_dial_from_ui(HWND window,const std::wstring& typed_destination) {
 #endif
     return true;
 }
+#ifdef AXV_ENABLE_NATIVE_SIP
+void dispatch_pending_cti(HWND window) {
+    if (const auto cti_request=g_cti_server.take()) {
+        // HTTP 202 is merely queued; only the GUI thread can submit SIP.
+        const auto observed=current_sip_observation(g_baresip_process.poll());
+        const auto grant=axv::authorize_call_command(
+            observed,observed.session,g_sip_selection,
+            axv::CallAction::Dial,0,cti_request->destination);
+        bool submitted=false;
+        if (!grant.allowed() || g_shutdown.pending()) {
+            SetWindowTextW(g_status,L"CTI: pedido recusado; confira o registro SIP.");
+        } else {
+            show_page(window,0);
+            SetWindowTextW(g_number,grant.destination.c_str());
+            // Shared with the manual button: revalidate again at dispatch.
+            submitted=try_dial_from_ui(window,grant.destination);
+        }
+        (void)g_cti_server.complete(cti_request->id,submitted);
+    }
+ }
+#endif
+
+
 
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
@@ -1954,6 +1978,11 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         }
         return 0;
     }
+    case kAsyncCtiMessage:
+#ifdef AXV_ENABLE_NATIVE_SIP
+        if(!g_shutdown.pending())dispatch_pending_cti(window);
+#endif
+        return 0;
     case kAsyncScrollMessage:
         if(g_scroll_message_queued){
             g_scroll_message_queued=false;
@@ -2113,23 +2142,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             }
             refresh_runtime_banner(g_baresip_process.poll());
 #ifdef AXV_ENABLE_NATIVE_SIP
-            if (const auto cti_request=g_cti_server.take()) {
-                // HTTP 202 is merely queued; only the GUI thread can submit SIP.
-                const auto observed=current_sip_observation(g_baresip_process.poll());
-                const auto grant=axv::authorize_call_command(
-                    observed,observed.session,g_sip_selection,
-                    axv::CallAction::Dial,0,cti_request->destination);
-                bool submitted=false;
-                if (!grant.allowed() || g_shutdown.pending()) {
-                    SetWindowTextW(g_status,L"CTI: pedido recusado; confira o registro SIP.");
-                } else {
-                    show_page(window,0);
-                    SetWindowTextW(g_number,grant.destination.c_str());
-                    // Shared with the manual button: revalidate again at dispatch.
-                    submitted=try_dial_from_ui(window,grant.destination);
-                }
-                (void)g_cti_server.complete(cti_request->id,submitted);
-            }
+            dispatch_pending_cti(window);
 #endif
             if (g_shutdown.pending()) {
                 const auto state = g_baresip_process.poll();
@@ -2300,6 +2313,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             "AXV_LOCAL_API_TOKEN",token,static_cast<DWORD>(sizeof(token)));
         if (count) {
             if (count < sizeof(token) && g_cti_server.start(std::string(token,count))) {
+                g_cti_server.set_notification_target(reinterpret_cast<std::uintptr_t>(window),kAsyncCtiMessage);
                 SetWindowTextW(g_status,L"CTI local habilitada (127.0.0.1:27652).");
             } else {
                 SetWindowTextW(g_status,L"CTI desabilitada: token invalido ou porta ocupada.");
