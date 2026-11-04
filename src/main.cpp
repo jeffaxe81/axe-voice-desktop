@@ -580,8 +580,10 @@ void show_page(HWND root, int page) {
     if (target) SetFocus(target);
     if (page == 0) refresh_destination_feedback();
     else if (page == 1) refresh_account_feedback();
-    else if (g_status) SetWindowTextW(g_status,
+    else if (g_status && page == 2) SetWindowTextW(g_status,
         L"Dispositivos inspecionados localmente. Sem audio SIP ativo.");
+    else if (g_status && page == 3) SetWindowTextW(g_status,
+        L"Configuracoes gerais. Ajuste a altura da janela sem comprimir os controles.");
 }
 
 // Mini mode keeps only the target and true SIP state, without fake call actions.
@@ -1204,6 +1206,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
     case WM_CREATE: {
         g_dpi=axv::normalized_dpi(GetDpiForWindow(window));
         load_ui_preferences();
+        if (g_smoke_mode) g_window_size = 1; // deterministic UI tests, never persist test choices.
         read_windows_contrast();
         g_font_regular = create_font(17, FW_MEDIUM);
         g_font_title = create_font(27, FW_BOLD);
