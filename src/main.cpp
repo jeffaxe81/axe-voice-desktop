@@ -113,6 +113,10 @@ constexpr int kTheme = 2003;
 constexpr int kPin = 2004;
 constexpr int kCompact = 2005;
 constexpr int kShowAudio = 2006;
+constexpr int kShowGeneral = 2016;
+constexpr int kSizeComfort = 2017;
+constexpr int kSizeStandard = 2018;
+constexpr int kSizeExpanded = 2019;
 constexpr int kHelpButton = 2007;
 constexpr int kReadinessButton = 2008;
 constexpr int kCopyStatusButton = 2009;
@@ -223,6 +227,7 @@ bool g_high_contrast = false;
 axv::UiSystemColors g_system_colors{};
 bool g_pinned = false;
 bool g_compact = false;
+int g_window_size = 1; // 0 = compact height, 1 = standard, 2 = expanded; fixed control geometry
 bool g_smoke_mode = false;
 constexpr UINT kExternalClickToCallMessage=WM_APP+42;
 constexpr ULONG_PTR kExternalClickDataId=0x41585643;
@@ -236,10 +241,11 @@ bool g_account_invalid_user = false;
 bool g_account_invalid_port = false;
 bool g_tray_visible = false;
 constexpr wchar_t kPrefsKey[] = L"Software\\AXEVoice\\Desktop";
-int g_page = 0; // 0 = dial, 1 = settings, 2 = audio
+int g_page = 0; // 0 = dial, 1 = SIP, 2 = audio, 3 = general
 std::vector<HWND> g_dial_controls;
 std::vector<HWND> g_settings_controls;
 std::vector<HWND> g_audio_controls;
+std::vector<HWND> g_general_controls;
 enum class UiFontKind { Regular, Title, Small, Digit };
 struct ChildLayout { HWND handle; axv::DpiBox logical; UiFontKind font; };
 std::vector<ChildLayout> g_layout;
@@ -268,6 +274,11 @@ void load_ui_preferences() {
                      nullptr, &value, &size) == ERROR_SUCCESS) {
         g_compact = value != 0;
     }
+    value = 1; size = sizeof(value);
+    if (RegGetValueW(HKEY_CURRENT_USER, kPrefsKey, L"WindowSize", RRF_RT_REG_DWORD,
+                     nullptr, &value, &size) == ERROR_SUCCESS && value <= 2) {
+        g_window_size = static_cast<int>(value);
+    }
 }
 void save_ui_preferences() {
     if (g_smoke_mode) return; // Smoke may not write to the user's registry.
@@ -278,6 +289,9 @@ void save_ui_preferences() {
     const DWORD theme = g_dark ? 1u : 0u;
     const DWORD pinned = g_pinned ? 1u : 0u;
     const DWORD compact = g_compact ? 1u : 0u;
+    const DWORD window_size = static_cast<DWORD>(g_window_size);
+    RegSetValueExW(key, L"WindowSize", 0, REG_DWORD,
+                   reinterpret_cast<const BYTE*>(&window_size), sizeof(window_size));
     RegSetValueExW(key, L"CompactMode", 0, REG_DWORD,
                    reinterpret_cast<const BYTE*>(&compact), sizeof(compact));
     RegSetValueExW(key, L"DarkTheme", 0, REG_DWORD,
@@ -419,6 +433,7 @@ HWND make_control(HWND root, LPCWSTR type, LPCWSTR title, DWORD style,
         if (page == 0) g_dial_controls.push_back(child);
         if (page == 1) g_settings_controls.push_back(child);
         if (page == 2) g_audio_controls.push_back(child);
+        if (page == 3) g_general_controls.push_back(child);
     }
     return child;
 }
@@ -558,9 +573,10 @@ void show_page(HWND root, int page) {
     }
     for (auto child : g_settings_controls) ShowWindow(child, page == 1 ? SW_SHOW : SW_HIDE);
     for (auto child : g_audio_controls) ShowWindow(child, page == 2 ? SW_SHOW : SW_HIDE);
+    for (auto child : g_general_controls) ShowWindow(child, page == 3 ? SW_SHOW : SW_HIDE);
     sync_viewport_scroll(root);
     InvalidateRect(root, nullptr, TRUE);
-    HWND target = page == 0 ? g_number : (page == 1 ? g_server : g_input_audio_combo);
+    HWND target = page == 0 ? g_number : (page == 1 ? g_server : (page == 2 ? g_input_audio_combo : GetDlgItem(root,kSizeStandard)));
     if (target) SetFocus(target);
     if (page == 0) refresh_destination_feedback();
     else if (page == 1) refresh_account_feedback();
@@ -575,7 +591,11 @@ void apply_compact_layout(HWND root) {
     position_logical(g_number,39,g_compact?242:272,350,43);
     position_logical(g_status,24,g_compact?298:kFullFeedbackY,390,30);
     SetWindowTextW(GetDlgItem(root, kCompact), g_compact ? L"MAX" : L"MINI");
-    const int desired_height = axv::dpi_pixels(g_compact?kCompactHeight:kFullHeight,g_dpi);
+    // The preset changes viewport height, never absolute control positions or font scaling.
+    // All short viewports use the existing keyboard-accessible scrollbar to avoid overlap.
+    const int desired_logical_height = g_compact ? kCompactHeight :
+        (g_window_size == 0 ? 710 : (g_window_size == 2 ? kFullHeight + 120 : kFullHeight));
+    const int desired_height = axv::dpi_pixels(desired_logical_height,g_dpi);
     int fitted_height = desired_height;
     MONITORINFO monitor{};
     monitor.cbSize = sizeof(monitor);
@@ -618,7 +638,8 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     const bool pressed = (item.itemState & ODS_SELECTED) != 0;
     const bool selected_tab = (id == kShowDial && g_page == 0) ||
                               (id == kShowSettings && g_page == 1) ||
-                              (id == kShowAudio && g_page == 2);
+                              (id == kShowAudio && g_page == 2) ||
+                              (id == kShowGeneral && g_page == 3);
     COLORREF color = ui_color(axv::UiRole::Button);
     if (selected_tab || id == kCallButton) color = accent_color();
     // Dedicated call-action hierarchy, aligned with AXE Despacho action buttons.
@@ -1199,9 +1220,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_button(window, g_dark ? L"CLARO" : L"ESCURO", kTheme, 344, 18, 70, 36);
         if (g_pinned) SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0,
                                    SWP_NOMOVE | SWP_NOSIZE);
-        make_button(window, L"TECLADO", kShowDial, 24, 103, 122, 42);
-        make_button(window, L"CONTA SIP", kShowSettings, 153, 103, 123, 42);
-        make_button(window, L"AUDIO", kShowAudio, 283, 103, 131, 42);
+        make_button(window, L"DISCADOR", kShowDial, 24, 103, 92, 42);
+        make_button(window, L"CONTA SIP", kShowSettings, 122, 103, 99, 42);
+        make_button(window, L"AUDIO", kShowAudio, 227, 103, 87, 42);
+        make_button(window, L"GERAL", kShowGeneral, 320, 103, 94, 42);
         g_runtime_banner = make_label(window, L"MOTOR PARADO  |  SIP NAO REGISTRADO",
                                      77, 164, 312, 25, -1, g_font_small, kRuntimeStatusLabel);
 
@@ -1305,6 +1327,14 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
 #endif
         g_process_status = make_label(window, L"Baresip parado; registro SIP indisponível.",
                                       39, 702, 350, 43, 1, g_font_small);
+        make_label(window,L"CONFIGURACOES GERAIS",39,219,350,27,3,g_font_small);
+        make_label(window,L"ALTURA DA JANELA",39,259,350,22,3,g_font_regular);
+        make_label(window,L"Os controles permanecem alinhados; em telas menores, use a rolagem.",39,287,350,44,3,g_font_small);
+        make_button(window,L"COMPACTA",kSizeComfort,39,344,108,42,3);
+        make_button(window,L"PADRAO",kSizeStandard,160,344,108,42,3);
+        make_button(window,L"AMPLIADA",kSizeExpanded,281,344,108,42,3);
+        make_label(window,L"O modo MINI continua disponivel no cabecalho.",39,408,350,42,3,g_font_small);
+        make_label(window,L"As preferencias visuais ficam salvas apenas neste Windows.",39,462,350,42,3,g_font_small);
         make_label(window, L"HEADSET / AUDIO - TRES ROTAS", 39, 218, 352, 27, 2, g_font_small);
         make_label(window, L"Microfone (captura)", 39, 256, 340, 24, 2);
         g_input_audio_combo = make_control(window, L"COMBOBOX", L"",
@@ -1423,6 +1453,18 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             }
 #endif
             if (control == kShowDial || control == kFocusNumber) { show_page(window, 0); return 0; }
+            if (control == kShowGeneral) {
+                if (g_compact) { g_compact=false; apply_compact_layout(window); save_ui_preferences(); }
+                show_page(window,3); return 0;
+            }
+            if (control == kSizeComfort || control == kSizeStandard || control == kSizeExpanded) {
+                g_window_size = control == kSizeComfort ? 0 : control == kSizeStandard ? 1 : 2;
+                g_compact = false;
+                apply_compact_layout(window);
+                save_ui_preferences();
+                InvalidateRect(window,nullptr,TRUE);
+                return 0;
+            }
             if(control==kCopyStatusButton){
                 const auto status=collect_call_readiness();
                 if(g_smoke_mode){
@@ -2651,6 +2693,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         {FVIRTKEY | FCONTROL, L'1', kShowDial},
         {FVIRTKEY | FCONTROL, L'2', kShowSettings},
         {FVIRTKEY | FCONTROL, L'3', kShowAudio},
+        {FVIRTKEY | FCONTROL, L'4', kShowGeneral},
         {FVIRTKEY | FCONTROL, L'R', kRefreshHeadsetsButton},
 #ifdef AXV_ENABLE_NATIVE_SIP
         {FVIRTKEY | FCONTROL, L'J', kContactsButton},
