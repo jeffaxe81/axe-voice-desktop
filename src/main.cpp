@@ -136,14 +136,15 @@ constexpr int kWindowWidth = 438;
 unsigned g_dpi = axv::kBaseDpi;
 #ifdef AXV_ENABLE_NATIVE_SIP
 constexpr int kFullHeight = 886;
-constexpr int kFullScrollContentEnd = 848;
+constexpr int kFullScrollContentEnd = 866;
 constexpr int kFullFeedbackY = 806;
 #else
 constexpr int kFullHeight = 842;
-constexpr int kFullScrollContentEnd = 804;
+constexpr int kFullScrollContentEnd = 822;
 constexpr int kFullFeedbackY = 762;
 #endif
-constexpr int kMiniScrollContentEnd = 340;
+constexpr int kMiniScrollContentEnd = 356;
+constexpr int kFeedbackHeight = 48;
 int g_scroll_offset = 0;
 int g_scroll_max = 0;
 int g_wheel_remainder = 0;
@@ -392,7 +393,7 @@ HFONT font_for_kind(UiFontKind kind) {
 }
 void rebuild_fonts() {
     HFONT next[] = {create_font(17,FW_MEDIUM), create_font(27,FW_BOLD),
-                    create_font(13,FW_NORMAL), create_font(25,FW_SEMIBOLD)};
+                    create_font(13,FW_NORMAL), create_font(23,FW_SEMIBOLD)};
     for(HFONT font : next) if(!font) {
         for(HFONT allocated : next) if(allocated) DeleteObject(allocated);
         return;
@@ -606,7 +607,7 @@ void apply_compact_layout(HWND root) {
     if (g_compact && g_page != 0) show_page(root, 0);
     position_logical(g_number_label,39,g_compact?218:246,320,20);
     position_logical(g_number,39,g_compact?242:272,350,43);
-    position_logical(g_status,24,g_compact?298:kFullFeedbackY,390,30);
+    position_logical(g_status,24,g_compact?298:kFullFeedbackY,390,kFeedbackHeight);
     SetWindowTextW(GetDlgItem(root, kCompact), g_compact ? L"MAX" : L"MINI");
     // The preset changes viewport height, never absolute control positions or font scaling.
     // All short viewports use the existing keyboard-accessible scrollbar to avoid overlap.
@@ -679,7 +680,7 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     HGDIOBJ brush_old = SelectObject(item.hDC, fill);
     HGDIOBJ pen_old = SelectObject(item.hDC, outline);
     const int offset=axv::dpi_pixels(1,g_dpi);
-    const int curve=axv::dpi_pixels(id >= kDigitStart && id < kDigitStart + 12 ? 56 : 32,g_dpi);
+    const int curve=axv::dpi_pixels(id >= kDigitStart && id < kDigitStart + 12 ? 26 : 32,g_dpi);
     RoundRect(item.hDC,rect.left+offset,rect.top+offset,
               rect.right-offset,rect.bottom-offset,curve,curve);
     SelectObject(item.hDC, pen_old);
@@ -700,9 +701,9 @@ void paint_button(const DRAWITEMSTRUCT& item) {
         const auto digit = axv::dialpad_keys()[index];
         const wchar_t primary[2] = {digit, 0};
         RECT number = rect;
-        number.bottom = number.top + axv::dpi_pixels(37,g_dpi);
+        number.bottom = number.top + axv::dpi_pixels(33,g_dpi);
         RECT subtitle = rect;
-        subtitle.top += axv::dpi_pixels(36,g_dpi);
+        subtitle.top += axv::dpi_pixels(33,g_dpi);
         auto old = SelectObject(item.hDC, g_font_digit);
         DrawTextW(item.hDC, primary, -1, &number, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
         SelectObject(item.hDC, g_font_small);
@@ -1242,7 +1243,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_font_regular = create_font(17, FW_MEDIUM);
         g_font_title = create_font(27, FW_BOLD);
         g_font_small = create_font(13, FW_NORMAL);
-        g_font_digit = create_font(25, FW_SEMIBOLD);
+        g_font_digit = create_font(23, FW_SEMIBOLD);
         refresh_brushes();
         make_label(window, L"AXE  VOICE", 24, 16, 240, 37, -1, g_font_title);
         g_visual_identity_label = make_label(window,
@@ -1286,7 +1287,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             const int col = i % 3;
             const int row = i / 3;
             make_button(window, dial_labels[i], kDigitStart + i,
-                        53 + col * 114, 329 + row * 66, 98, 59, 0);
+                        58 + col * 117, 333 + row * 66, 88, 54, 0);
         }
         make_button(window, L"APAGAR", kBackspace, 39, 597, 170, 38, 0);
         make_button(window, L"LIMPAR", kClear, 218, 597, 171, 38, 0);
@@ -1402,7 +1403,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                     kReadinessButton, 39, 690, 169, 42, 2);
         make_button(window, L"COPIAR STATUS",kCopyStatusButton,219,690,170,42,2);
         g_status = make_label(window, L"Digite um ramal ou endereço SIP.",
-                              24, kFullFeedbackY, 390, 30, -1, g_font_small, kFeedbackLabel);
+                              24, kFullFeedbackY, 390, kFeedbackHeight, -1, g_font_small, kFeedbackLabel);
         refresh_destination_feedback();
 
         EnableWindow(g_input_audio_combo, FALSE);
@@ -1996,6 +1997,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
     case WM_CTLCOLORSTATIC: {
         HDC dc = reinterpret_cast<HDC>(wparam);
         SetTextColor(dc, text_color());
+        // Prevent ghosted previous text when rapidly changing SIP status.
+        if (reinterpret_cast<HWND>(lparam) == g_status) {
+            SetBkColor(dc, background_color());
+            SetBkMode(dc, OPAQUE);
+            return reinterpret_cast<LRESULT>(g_background_brush);
+        }
         SetBkMode(dc, TRANSPARENT);
         return reinterpret_cast<LRESULT>(GetStockObject(NULL_BRUSH));
     }
