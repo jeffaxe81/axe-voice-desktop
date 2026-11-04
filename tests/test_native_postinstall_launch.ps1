@@ -161,7 +161,19 @@ public static class NativePostinstallWindows {
             if ($Setup.HasExited -and $ActiveSetup.Count -eq 0) { break }
             Start-Sleep -Milliseconds 200
         } while ([DateTime]::UtcNow -lt $Deadline)
-        if (!$Setup.HasExited -or $ActiveSetup.Count) { throw 'Interactive setup timed out; inspect the desktop for an unexpected wizard/dialog' }
+        if (!$Setup.HasExited -or $ActiveSetup.Count) {
+            # Report only wizard button names; avoid field contents and credentials.
+            $WizardButtons = @()
+            if ($Wizard -ne [IntPtr]::Zero -and (Test-OwnedSetupWindow $Wizard)) {
+                foreach ($Control in [NativePostinstallWindows]::Windows($Wizard)) {
+                    if ([NativePostinstallWindows]::IsWindowVisible($Control) -and
+                        [NativePostinstallWindows]::Class($Control) -in @('TNewButton','TButton')) {
+                        $WizardButtons += [NativePostinstallWindows]::Text($Control)
+                    }
+                }
+            }
+            throw "Interactive setup timed out: last action '$LastAction'; buttons='$($WizardButtons -join ',')'"
+        }
         if ($Setup.ExitCode -ne 0) { throw "Interactive setup failed with exit code $($Setup.ExitCode)" }
         if (!$SawWizard -or !$SawFinish) { throw 'Did not observe and finish the real interactive Inno wizard' }
         if (Test-Marker $SetupMutexName) { throw 'Setup marker remained after interactive setup exited' }
