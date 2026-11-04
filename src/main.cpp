@@ -2331,6 +2331,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                   GetDlgItem(window, kNumberEdit) && GetDlgItem(window, kCallButton) &&
                   GetDlgItem(window, kServerEdit) && GetDlgItem(window, kAudioDevicesButton) &&
                   !IsWindowEnabled(GetDlgItem(window, kCallButton));
+        // Smoke-check the owner-drawn action controls (no SIP calls).
+        for (const int action_id : {kCallButton,kStartBaresipButton,kStopBaresipButton}) {
+            const HWND action=GetDlgItem(window,action_id);
+            ok=ok && action &&
+                ((GetWindowLongPtrW(action,GWL_STYLE)&BS_TYPEMASK)==BS_OWNERDRAW);
+        }
         for (int i = 0; i != 12; ++i)
             ok = ok && GetDlgItem(window, kDigitStart + i) != nullptr;
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(kShowSettings, BN_CLICKED),
