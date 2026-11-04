@@ -89,6 +89,7 @@ axv::LocalCtiServer g_cti_server;
 
 #endif
 constexpr int kCallButton = 1001;
+constexpr int kAnswerNativeColorId = 1018; // Native answer control ID.
 constexpr int kNumberEdit = 1002;
 constexpr int kValidateAccount = 1003;
 constexpr int kServerEdit = 1004;
@@ -600,10 +601,19 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     const bool selected_tab = (id == kShowDial && g_page == 0) ||
                               (id == kShowSettings && g_page == 1) ||
                               (id == kShowAudio && g_page == 2);
+    // Call controls: green for initiating, red for ending/stopping.
+    // High contrast and disabled states keep the Windows/theme palette.
+    const bool positive = id == kCallButton || id == kAnswerNativeColorId ||
+                          id == kStartBaresipButton;
+    const bool negative = id == kHangupFuture || id == kStopBaresipButton;
+    const bool semantic = (positive || negative) && !g_high_contrast;
     COLORREF color = ui_color(axv::UiRole::Button);
     if (selected_tab || id == kCallButton) color = accent_color();
     if (id >= kDigitStart && id < kDigitStart + 12) color = field_color();
-    if (pressed) color = ui_color(axv::UiRole::Pressed);
+    if (semantic) color = positive ? RGB(20,126,72) : RGB(185,40,52);
+    if (pressed) color = semantic
+        ? (positive ? RGB(12,96,53) : RGB(145,27,41))
+        : ui_color(axv::UiRole::Pressed);
     if (disabled) color = ui_color(axv::UiRole::DisabledButton);
 
     RECT rect = item.rcItem;
@@ -621,8 +631,9 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     DeleteObject(fill);
 
     const COLORREF foreground = disabled ? ui_color(axv::UiRole::DisabledText)
-        : (selected_tab || id == kCallButton
-           ? ui_color(axv::UiRole::SelectedText) : ui_color(axv::UiRole::ButtonText));
+        : (semantic ? RGB(255,255,255)
+           : (selected_tab || id == kCallButton
+              ? ui_color(axv::UiRole::SelectedText) : ui_color(axv::UiRole::ButtonText)));
     SetBkMode(item.hDC, TRANSPARENT);
     SetTextColor(item.hDC, foreground);
     wchar_t title[96] = {};
@@ -2320,6 +2331,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                   GetDlgItem(window, kNumberEdit) && GetDlgItem(window, kCallButton) &&
                   GetDlgItem(window, kServerEdit) && GetDlgItem(window, kAudioDevicesButton) &&
                   !IsWindowEnabled(GetDlgItem(window, kCallButton));
+        // Smoke-check the owner-drawn action controls (no SIP calls).
+        for (const int action_id : {kCallButton,kStartBaresipButton,kStopBaresipButton}) {
+            const HWND action=GetDlgItem(window,action_id);
+            ok=ok && action &&
+                ((GetWindowLongPtrW(action,GWL_STYLE)&BS_TYPEMASK)==BS_OWNERDRAW);
+        }
         for (int i = 0; i != 12; ++i)
             ok = ok && GetDlgItem(window, kDigitStart + i) != nullptr;
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(kShowSettings, BN_CLICKED),
