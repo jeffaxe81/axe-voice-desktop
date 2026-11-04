@@ -132,11 +132,11 @@ constexpr int kWindowWidth = 438;
 unsigned g_dpi = axv::kBaseDpi;
 #ifdef AXV_ENABLE_NATIVE_SIP
 constexpr int kFullHeight = 886;
-constexpr int kFullScrollContentEnd = 800;
+constexpr int kFullScrollContentEnd = 737;
 constexpr int kFullFeedbackY = 806;
 #else
 constexpr int kFullHeight = 842;
-constexpr int kFullScrollContentEnd = 752;
+constexpr int kFullScrollContentEnd = 737;
 constexpr int kFullFeedbackY = 762;
 #endif
 constexpr int kMiniScrollContentEnd = 298;
@@ -459,8 +459,8 @@ HWND make_button(HWND root, LPCWSTR text, int id, int x, int y, int w, int h,
     // BN_SETFOCUS drives viewport scrolling for keyboard navigation.
     // Compact Windows-style controls centered inside existing layout slots.
     const bool dial_key = id >= kDigitStart && id < kDigitStart + 12;
-    const int inset_x = dial_key ? 12 : (w >= 80 ? 4 : 2);
-    const int inset_y = dial_key ? 5 : (h >= 36 ? 3 : 1);
+    const int inset_x = dial_key ? 0 : (w >= 80 ? 4 : 2);
+    const int inset_y = dial_key ? 0 : (h >= 36 ? 3 : 1);
     return make_control(root, L"BUTTON", text, WS_TABSTOP | BS_OWNERDRAW | BS_NOTIFY,
                         x + inset_x, y + inset_y, w - 2 * inset_x,
                         h - 2 * inset_y, id, page, font);
@@ -1356,32 +1356,32 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             const int col = i % 3;
             const int row = i / 3;
             make_button(window, dial_labels[i], kDigitStart + i,
-                        39 + col * 119, 329 + row * 66, 111, 59, 0);
+                        39 + col * 118, 329 + row * 48, 114, 44, 0);
         }
-        make_button(window, L"APAGAR", kBackspace, 39, 597, 170, 38, 0);
-        make_button(window, L"LIMPAR", kClear, 218, 597, 171, 38, 0);
+        make_button(window, L"APAGAR", kBackspace, 39, 530, 170, 38, 0);
+        make_button(window, L"LIMPAR", kClear, 218, 530, 171, 38, 0);
 #ifdef AXV_ENABLE_NATIVE_SIP
-        make_button(window,L"CHAMAR",kCallButton,39,651,170,51,0);
-        make_button(window,L"TRANSFERIR",kTransferFuture,219,651,170,51,0);
-        make_button(window,L"DTMF OFF",kDtmfButton,39,750,170,36,0);
-        make_button(window,L"TOQUE NORMAL",kIncomingRingtoneMuteButton,219,750,170,36,0);
+        make_button(window,L"CHAMAR",kCallButton,39,576,170,46,0);
+        make_button(window,L"TRANSFERIR",kTransferFuture,219,576,170,46,0);
+        make_button(window,L"DTMF OFF",kDtmfButton,39,685,170,36,0);
+        make_button(window,L"TOQUE NORMAL",kIncomingRingtoneMuteButton,219,685,170,36,0);
         EnableWindow(GetDlgItem(window,kDtmfButton),FALSE);
 #else
         make_button(window, L"CHAMAR  •  SIP INDISPONÍVEL", kCallButton,
-                    39, 651, 350, 51, 0);
+                    39, 576, 350, 46, 0);
 #endif
 #ifdef AXV_ENABLE_NATIVE_SIP
-        make_button(window,L"ATENDER",kAnswerNative,39,708,82,34,0);
+        make_button(window,L"ATENDER",kAnswerNative,39,638,82,34,0);
 #else
-        make_button(window, L"MUDO", kMuteFuture, 39, 708, 82, 34, 0);
+        make_button(window, L"MUDO", kMuteFuture, 39, 638, 82, 34, 0);
 #endif
-        make_button(window, L"ESPERA", kHoldFuture, 127, 708, 82, 34, 0);
+        make_button(window, L"ESPERA", kHoldFuture, 127, 638, 82, 34, 0);
 #ifdef AXV_ENABLE_NATIVE_SIP
-        make_button(window,L"MUDO",kMuteFuture,215,708,82,34,0);
+        make_button(window,L"MUDO",kMuteFuture,215,638,82,34,0);
 #else
-        make_button(window, L"TRANSF.", kTransferFuture, 215, 708, 82, 34, 0);
+        make_button(window, L"TRANSF.", kTransferFuture, 215, 638, 82, 34, 0);
 #endif
-        make_button(window, L"ENCERRAR", kHangupFuture, 303, 708, 86, 34, 0);
+        make_button(window, L"ENCERRAR", kHangupFuture, 303, 638, 86, 34, 0);
 
 #ifdef AXV_ENABLE_NATIVE_SIP
         make_label(window,L"CONTA SIP  •  CANDIDATO NATIVO",39,219,361,26,1,g_font_small);
@@ -2725,6 +2725,31 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             }
         }
         ok=ok && thousand_key_checks;
+        // 3x4 keypad alignment, exact 4-logical-pixel gutters and a
+        // separated action row, checked through real Win32 rectangles.
+        bool grid_geometry_ok=true;
+        for(int key_index=0;key_index<12;++key_index){
+            RECT key{};GetWindowRect(GetDlgItem(window,kDigitStart+key_index),&key);
+            const int width=axv::dpi_pixels(114,g_dpi);
+            const int height=axv::dpi_pixels(44,g_dpi);
+            grid_geometry_ok=grid_geometry_ok &&
+                key.right-key.left==width && key.bottom-key.top==height;
+            if(key_index%3!=2){
+                RECT next{};GetWindowRect(GetDlgItem(window,kDigitStart+key_index+1),&next);
+                grid_geometry_ok=grid_geometry_ok &&
+                    next.left-key.right==axv::dpi_pixels(118,g_dpi)-width;
+            }
+            if(key_index<9){
+                RECT next{};GetWindowRect(GetDlgItem(window,kDigitStart+key_index+3),&next);
+                grid_geometry_ok=grid_geometry_ok &&
+                    next.top-key.bottom==axv::dpi_pixels(48,g_dpi)-height;
+            }
+        }
+        RECT last_digit{},action_row{};
+        GetWindowRect(GetDlgItem(window,kDigitStart+11),&last_digit);
+        GetWindowRect(GetDlgItem(window,kBackspace),&action_row);
+        grid_geometry_ok=grid_geometry_ok && last_digit.bottom<action_row.top;
+        ok=ok && grid_geometry_ok;
         SetWindowTextW(g_number, L"");
         GetWindowTextW(g_status, feedback_message, 160);
         const bool empty_feedback_ok = !g_destination_invalid &&
