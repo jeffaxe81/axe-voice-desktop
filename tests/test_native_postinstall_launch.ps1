@@ -140,9 +140,9 @@ public static class NativePostinstallWindows {
                         [NativePostinstallWindows]::Class($Control) -notin @('TNewButton', 'TButton')) { continue }
                     $Caption = [NativePostinstallWindows]::Text($Control).Replace('&','').Trim()
                     # The checked-by-default postinstall checklist is untouched.
-                    # Only the stock English wizard navigation is automated;
+                    # Stock Inno 6 may render Next without the trailing arrow.\n                    # Only the stock English wizard navigation is automated;
                     # any unexpected/localized dialog fails within the deadline.
-                    if ($Caption -notin @('Next >', 'Install', 'Finish')) { continue }
+                    if ($Caption -notin @('Next', 'Next >', 'Install', 'Finish')) { continue }
                     $Action = "$Control/$Caption/$Page"
                     # Inno can keep the same visible page while its transition is busy.
                     # Retry an unchanged navigation after a bounded pause rather than
