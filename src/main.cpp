@@ -146,6 +146,9 @@ bool g_controls_ready = false;
 bool g_scrollbar_updating = false;
 constexpr int kCompactHeight = 365;
 constexpr int kDigitStart = 2100;
+constexpr ULONGLONG kDialFlashMs = 220;
+int g_dial_flash_id = -1;
+ULONGLONG g_dial_flash_end = 0;
 constexpr int kBackspace = 2201;
 constexpr int kClear = 2202;
 constexpr int kMuteFuture = 2301;
@@ -599,6 +602,15 @@ void draw_card(HDC dc, RECT rect, COLORREF color, int radius) {
     DeleteObject(border);
     DeleteObject(fill);
 }
+void flash_dial_key(HWND root, int id) {
+    if (id < kDigitStart || id >= kDigitStart + 12) return;
+    const int previous = g_dial_flash_id;
+    g_dial_flash_id = id;
+    g_dial_flash_end = GetTickCount64() + kDialFlashMs;
+    if (previous >= kDigitStart && previous < kDigitStart + 12 && previous != id)
+        InvalidateRect(GetDlgItem(root, previous), nullptr, FALSE);
+    InvalidateRect(GetDlgItem(root, id), nullptr, FALSE);
+}
 void paint_button(const DRAWITEMSTRUCT& item) {
     const int id = static_cast<int>(item.CtlID);
     const bool disabled = (item.itemState & ODS_DISABLED) != 0;
@@ -612,7 +624,10 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     if (!g_high_contrast && id == kCallButton) color = RGB(22, 163, 74);
     if (!g_high_contrast && id == kHangupFuture) color = RGB(220, 38, 38);
     if (id >= kDigitStart && id < kDigitStart + 12) color = field_color();
-    if (pressed) color = ui_color(axv::UiRole::Pressed);
+    if (pressed || (id == g_dial_flash_id && GetTickCount64() < g_dial_flash_end))
+        color = g_high_contrast ? ui_color(axv::UiRole::Pressed)
+                                : (id >= kDigitStart && id < kDigitStart + 12
+                                   ? accent_color() : ui_color(axv::UiRole::Pressed));
     if (disabled) color = ui_color(axv::UiRole::DisabledButton);
 
     RECT rect = item.rcItem;
@@ -1509,10 +1524,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                     const auto call=native_engine().observation();
                     const bool accepted=g_dtmf_mode.active(expected,call) && native_engine().send_dtmf(key,expected);
                     SetWindowTextW(g_status,accepted?L"Pedido DTMF via INFO enfileirado; recebimento pela central nao confirmado.":L"DTMF recusado: chamada mudou, esta em espera/transferencia ou comando ocupado. Tente novamente.");
+                    if (accepted) flash_dial_key(window, control);
                     return 0;
                 }
 #endif
                 edit_number(window, axv::dialpad_keys()[control - kDigitStart]);
+                flash_dial_key(window, control);
                 return 0;
             }
             if (control == kBackspace) { edit_number(window, L'\b'); return 0; }
@@ -1965,6 +1982,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         return 0;
     case WM_TIMER:
         if (wparam == kProcessTimer) {
+            if (g_dial_flash_id >= kDigitStart && g_dial_flash_id < kDigitStart + 12 &&
+                GetTickCount64() >= g_dial_flash_end) {
+                const int completed = g_dial_flash_id;
+                g_dial_flash_id = -1;
+                InvalidateRect(GetDlgItem(window, completed), nullptr, FALSE);
+            }
             poll_audio_notifications();
             poll_audio_inventory();
             // No Windows UI operations occur on the WASAPI worker thread.
