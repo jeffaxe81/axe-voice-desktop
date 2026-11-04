@@ -2627,8 +2627,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             RECT bounds{};
             if (key) GetWindowRect(key, &bounds);
             ok = ok && key &&
-                 bounds.right-bounds.left == axv::dpi_pixels(87,g_dpi) &&
-                 bounds.bottom-bounds.top == axv::dpi_pixels(49,g_dpi);
+                 bounds.right-bounds.left == axv::dpi_pixels(114,g_dpi) &&
+                 bounds.bottom-bounds.top == axv::dpi_pixels(44,g_dpi);
         }
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(kShowSettings, BN_CLICKED),
                      reinterpret_cast<LPARAM>(GetDlgItem(window, kShowSettings)));
