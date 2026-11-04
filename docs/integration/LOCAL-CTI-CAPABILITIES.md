@@ -29,6 +29,7 @@ Exemplo resumido:
     "cancel_queued_request": true,
     "idempotency_key": true,
     "idempotency_key_destination_bound": true,
+    "readiness_loss_rejects_queued": true,
     "sip_request_correlation": false,
     "call_completion_confirmation": false,
     "remote_webhooks": false,
@@ -79,6 +80,7 @@ telefone, identidades de agentes ou IDs internos das chamadas.
   **outro destino normalizado** retorna HTTP 409
   `idempotency_key_conflict`, sem criar uma nova solicitação.
   Para repetir após timeout, manter chave **e** destino idênticos.
+- Na candidata v0.83, perda de prontidão SIP rejeita pedidos ainda na fila. O estado `rejected` permanece consultável no histórico limitado; repetir a mesma chave e destino não disca automaticamente após reconexão.
 - O contrato de descoberta representa funcionalidades disponíveis
   no software, não a prontidão SIP em tempo real. Use
   `GET /v1/status` para consultar `ready` e cheque o resultado de cada

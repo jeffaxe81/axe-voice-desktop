@@ -110,7 +110,19 @@ void LocalCtiServer::stop() {
 }
 
 std::optional<CtiPendingRequest> LocalCtiServer::take() {
-    return requests_.take();
+    // A queued request must not be dispatched after SIP loses readiness.
+    if(!ready_.load(std::memory_order_acquire)) {
+        requests_.reject_pending();
+        return std::nullopt;
+    }
+    auto request=requests_.take();
+    // A loss after the first check is also rejected. The GUI independently
+    // revalidates the native SIP session before start_call().
+    if(request && !ready_.load(std::memory_order_acquire)) {
+        requests_.complete(request->id,false);
+        return std::nullopt;
+    }
+    return request;
 }
 
 void LocalCtiServer::run() {

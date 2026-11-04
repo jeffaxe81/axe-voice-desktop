@@ -120,6 +120,23 @@ public:
         return {CtiSubmitOutcome::Created,id,CtiRequestState::Queued};
     }
 
+    // Fail closed on SIP readiness loss before GUI dispatch. Preserve the
+    // terminal record and idempotency key to prevent silent redial on recovery.
+    bool reject_pending() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if(!pending_) return false;
+        const std::uint64_t id=pending_->id;
+        pending_.reset();
+        for(auto& record:records_) {
+            if(record.id==id && record.state==CtiRequestState::Queued) {
+                record.state=CtiRequestState::Rejected;
+                append_event_locked(id,CtiRequestState::Rejected);
+                return true;
+            }
+        }
+        return false;
+    }
+
     std::optional<CtiPendingRequest> take() {
         std::lock_guard<std::mutex> lock(mutex_);
         if(!pending_ || active_) return std::nullopt;

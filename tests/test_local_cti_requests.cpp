@@ -38,6 +38,35 @@ int main(){
     retries.clear();
     CHECK(retries.submit_idempotent(L"1003",key,true).id==3); // Old keys expire.
 
+    // Losing SIP readiness rejects only queued work and preserves a
+    // terminal result and a single rejected transition for safe retries.
+    CtiRequestQueue readiness;
+    const auto readiness_queued=readiness.submit_idempotent(
+        L"1009","readiness_0123456789abcd",true);
+    CHECK(readiness_queued.outcome==CtiSubmitOutcome::Created &&
+          readiness_queued.id==1);
+    CHECK(readiness.reject_pending());
+    CHECK(!readiness.reject_pending());
+    CHECK(!readiness.take());
+    CHECK(readiness.get(1)->state==CtiRequestState::Rejected);
+    CHECK(readiness.cancel(1)==CtiCancelOutcome::TooLate);
+    CHECK(readiness.events_after(0).events.size()==2);
+    CHECK(readiness.events_after(0).events.back().state==CtiRequestState::Rejected);
+    const auto replay_after_loss=readiness.submit_idempotent(
+        L"1009","readiness_0123456789abcd",true);
+    CHECK(replay_after_loss.outcome==CtiSubmitOutcome::Replayed &&
+          replay_after_loss.state==CtiRequestState::Rejected &&
+          replay_after_loss.id==1);
+    CHECK(readiness.submit_idempotent(
+        L"1010","readiness_0123456789abcd",true).outcome==CtiSubmitOutcome::KeyConflict);
+    CHECK(readiness.events_after(0).events.size()==2);
+    const auto recovered=readiness.submit_idempotent(
+        L"1010","recovered_0123456789abc",true);
+    CHECK(recovered.outcome==CtiSubmitOutcome::Created && recovered.id==2);
+    CHECK(readiness.take()->id==2);
+    CHECK(!readiness.reject_pending()); // Dispatching is not cancellable.
+    CHECK(readiness.complete(2,true));
+
     CtiRequestQueue cancel_queue;
     CHECK(cancel_queue.cancel(1)==CtiCancelOutcome::NotFound);
     auto cancel_id=cancel_queue.submit(L"confidential-number");
