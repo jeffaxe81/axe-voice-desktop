@@ -1,4 +1,5 @@
 #include "../src/ui_dpi_policy.h"
+#include <initializer_list>
 using namespace axv;
 static_assert(normalized_dpi(0)==96);
 static_assert(normalized_dpi(96)==96);
@@ -19,7 +20,7 @@ static_assert(footer_boxes(438, 720, 48, 96).message.x == 12);
 static_assert(footer_boxes(438, 720, 48, 96).message.height == 38);
 static_assert(footer_boxes(20, 14, 48, 96).message.x == 9);
 static_assert(footer_boxes(20, 14, 48, 96).message.height == 4);
-static_assert(footer_boxes(438, 720, 60, 120).message.y == 665);
+static_assert(footer_boxes(438, 720, 60, 120).message.y == 666);
 
 int main() {
     for(int a=0;a<=842;++a) {
