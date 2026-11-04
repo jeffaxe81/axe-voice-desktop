@@ -56,6 +56,7 @@
 #include "dialpad_model.h"
 #include "destination_feedback.h"
 #include "account_form_feedback.h"
+#include "sip_transport_port.h"
 #include "ui_help.h"
 #include "call_readiness.h"
 #include "diagnostic_export.h"
@@ -434,7 +435,7 @@ HWND make_edit(HWND root, LPCWSTR initial, int id, int x, int y, int w, int h,
         case kNumberEdit: hint = L"Ex.: 1001 ou sip:usuario@dominio"; break;
         case kServerEdit: hint = L"IP ou dominio: 192.168.1.10 / pbx.exemplo.com"; break;
         case kUserEdit: hint = L"Ex.: 1001"; break;
-        case kPortEdit: hint = L"5060"; break;
+        case kPortEdit: hint = L"UDP 5060 / TLS 5061"; break;
         default: break;
         }
         if (hint) SendMessageW(edit, EM_SETCUEBANNER, TRUE,
@@ -612,7 +613,7 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     HGDIOBJ brush_old = SelectObject(item.hDC, fill);
     HGDIOBJ pen_old = SelectObject(item.hDC, outline);
     const int offset=axv::dpi_pixels(1,g_dpi);
-    const int curve=axv::dpi_pixels(17,g_dpi);
+    const int curve=axv::dpi_pixels(24,g_dpi);
     RoundRect(item.hDC,rect.left+offset,rect.top+offset,
               rect.right-offset,rect.bottom-offset,curve,curve);
     SelectObject(item.hDC, pen_old);
@@ -1234,7 +1235,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_label(window, L"Servidor SIP", 39, 255, 340, 20, 1);
         g_server = make_edit(window, L"", kServerEdit, 39, 280, 350, 38, 1);
         make_label(window, L"Usuário SIP", 39, 329, 212, 20, 1);
-        make_label(window, L"Porta", 268, 329, 118, 20, 1);
+        make_label(window, L"Porta (auto)", 268, 329, 121, 20, 1);
         g_user = make_edit(window, L"", kUserEdit, 39, 355, 216, 38, 1);
         g_port = make_edit(window, L"5060", kPortEdit, 267, 355, 122, 38, 1);
 #ifdef AXV_ENABLE_NATIVE_SIP
@@ -1243,12 +1244,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         SetWindowLongPtrW(g_password,GWL_STYLE,GetWindowLongPtrW(g_password,GWL_STYLE)|ES_PASSWORD);
         SendMessageW(g_password,EM_SETPASSWORDCHAR,L'*',0);
         SendMessageW(g_password,EM_SETLIMITTEXT,256,0);
-        g_tls=make_control(window,L"BUTTON",L"TLS: exige CA confiavel; nao criptografa RTP",WS_TABSTOP|BS_AUTOCHECKBOX|BS_NOTIFY,39,464,350,28,kTlsCheckbox,1);
+        g_tls=make_control(window,L"BUTTON",L"TLS (desmarcado: UDP) - SIP seguro",WS_TABSTOP|BS_AUTOCHECKBOX|BS_NOTIFY,39,464,350,28,kTlsCheckbox,1);
         make_label(window,L"Arquivo CA PEM (obrigatorio para TLS)",39,497,350,20,1);
         g_ca_file=make_edit(window,L"",kCaEdit,39,520,350,32,1);
         make_button(window,L"VALIDAR DADOS",kValidateAccount,39,565,350,32,1);
 #else
-        g_tls = make_control(window, L"BUTTON", L"Usar TLS (quando suportado)",
+        g_tls = make_control(window, L"BUTTON", L"Usar TLS (desmarcado: UDP)",
                              WS_TABSTOP | BS_AUTOCHECKBOX | BS_NOTIFY, 39, 404, 340, 28,
                              kTlsCheckbox, 1);
         make_button(window, L"VALIDAR DADOS  /  SEM REGISTRAR", kValidateAccount,
@@ -1343,6 +1344,16 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         if (HIWORD(wparam) == EN_CHANGE &&
             (LOWORD(wparam) == kServerEdit || LOWORD(wparam) == kUserEdit ||
              LOWORD(wparam) == kPortEdit)) {
+            if (g_page == 1) refresh_account_feedback();
+            return 0;
+        }
+        if (LOWORD(wparam) == kTlsCheckbox && HIWORD(wparam) == BN_CLICKED) {
+            const bool tls = SendMessageW(g_tls, BM_GETCHECK, 0, 0) == BST_CHECKED;
+            wchar_t port_value[24] = {};
+            GetWindowTextW(g_port, port_value, 24);
+            // Do not replace user-configured ports when switching transport.
+            if (const wchar_t* suggested = axv::suggested_sip_port(tls, port_value))
+                SetWindowTextW(g_port, suggested);
             if (g_page == 1) refresh_account_feedback();
             return 0;
         }
