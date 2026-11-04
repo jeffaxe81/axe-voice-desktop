@@ -1,5 +1,7 @@
 #include <windows.h>
 #include <shlobj.h>
+#include <commdlg.h>
+#include <mutex>
 #include <shellapi.h>
 #include <commctrl.h>
 #include "baresip_profile.h"
@@ -121,6 +123,8 @@ constexpr int kContactsButton = 2013;
 constexpr int kInputAudioCombo = 2401;
 constexpr int kOutputAudioCombo = 2402;
 constexpr int kRingtoneAudioCombo = 2403;
+constexpr int kRingtonePresetCombo = 2404;
+constexpr int kRingtoneChooseMp3 = 2405;
 // Stable Win32 UI Automation IDs for real status labels.
 constexpr int kFeedbackLabel = 2501;
 constexpr int kRuntimeStatusLabel = 2502;
@@ -167,6 +171,10 @@ HWND g_runtime_banner = nullptr;
 HWND g_input_audio_combo = nullptr;
 HWND g_output_audio_combo = nullptr;
 HWND g_ringtone_audio_combo = nullptr;
+HWND g_ringtone_preset_combo = nullptr;
+std::atomic<int> g_ringtone_preset{2};
+std::mutex g_ringtone_mp3_mutex;
+std::wstring g_ringtone_custom_mp3;
 HWND g_headset_status = nullptr;
 std::vector<axv::AudioEndpoint> g_audio_inputs;
 std::vector<axv::AudioEndpoint> g_audio_outputs;
@@ -188,7 +196,11 @@ axv::MicrophoneTestState g_last_microphone_state = axv::MicrophoneTestState::Idl
 #ifdef AXV_ENABLE_NATIVE_SIP
 axv::IncomingRingtonePolicy g_ring_policy;
 axv::NativeDtmfMode g_dtmf_mode;
-axv::IncomingRingtonePlayer g_ring_player{[](const std::wstring& id,const std::atomic<bool>& cancel){return axv::play_windows_tone_on_endpoint(id,&cancel,true);}};
+axv::IncomingRingtonePlayer g_ring_player{[](const std::wstring& id,const std::atomic<bool>& cancel){
+    std::wstring mp3;
+    {std::lock_guard<std::mutex> lock(g_ringtone_mp3_mutex);mp3=g_ringtone_custom_mp3;}
+    return axv::play_windows_ringtone(id,&cancel,true,g_ringtone_preset.load(),mp3);
+}};
 axv::SipRuntimeObservation g_displayed_sip;
 bool g_ring_error_visible=false;
 #endif
@@ -259,6 +271,16 @@ void load_ui_preferences() {
                      nullptr, &value, &size) == ERROR_SUCCESS) {
         g_compact = value != 0;
     }
+    value = 2; size = sizeof(value);
+    if(RegGetValueW(HKEY_CURRENT_USER,kPrefsKey,L"RingtonePreset",RRF_RT_REG_DWORD,
+                    nullptr,&value,&size)==ERROR_SUCCESS && value<=5)
+        g_ringtone_preset.store(static_cast<int>(value));
+    wchar_t custom_path[2049]{};DWORD path_size=sizeof(custom_path);
+    if(RegGetValueW(HKEY_CURRENT_USER,kPrefsKey,L"RingtoneMp3",RRF_RT_REG_SZ,
+                    nullptr,custom_path,&path_size)==ERROR_SUCCESS){
+        std::lock_guard<std::mutex> lock(g_ringtone_mp3_mutex);
+        g_ringtone_custom_mp3=custom_path;
+    }
 }
 void save_ui_preferences() {
     if (g_smoke_mode) return; // Smoke may not write to the user's registry.
@@ -275,6 +297,14 @@ void save_ui_preferences() {
                    reinterpret_cast<const BYTE*>(&theme), sizeof(theme));
     RegSetValueExW(key, L"AlwaysOnTop", 0, REG_DWORD,
                    reinterpret_cast<const BYTE*>(&pinned), sizeof(pinned));
+    const DWORD preset=static_cast<DWORD>(g_ringtone_preset.load());
+    RegSetValueExW(key,L"RingtonePreset",0,REG_DWORD,
+                   reinterpret_cast<const BYTE*>(&preset),sizeof(preset));
+    std::wstring mp3;
+    {std::lock_guard<std::mutex> lock(g_ringtone_mp3_mutex);mp3=g_ringtone_custom_mp3;}
+    RegSetValueExW(key,L"RingtoneMp3",0,REG_SZ,
+                   reinterpret_cast<const BYTE*>(mp3.c_str()),
+                   static_cast<DWORD>((mp3.size()+1)*sizeof(wchar_t)));
     RegCloseKey(key);
 }
 
@@ -1329,14 +1359,20 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                     215, 507, 84, 43, 2);
         make_button(window, L"MICROFONE", kTestMicrophoneButton,
                     304, 507, 85, 43, 2);
-#ifdef AXV_ENABLE_NATIVE_SIP
-        make_label(window,L"Microfone e voz aplicados ao registrar. Pare o motor para alterar. Toque: chamada recebida.",39,566,350,40,2,g_font_small);
-#else
-        make_label(window, L"Preferencias locais. Ainda sem roteamento Baresip.",
-                   39, 566, 350, 40, 2, g_font_small);
-#endif
-        g_headset_status = make_label(window, L"Abra AUDIO para consultar o Windows.",
-                                     39, 613, 350, 59, 2, g_font_small);
+        make_label(window,L"ESTILO DO TOQUE DE CHAMADA",39,560,350,20,2,g_font_small);
+        g_ringtone_preset_combo=make_control(window,L"COMBOBOX",L"",
+            WS_TABSTOP|WS_VSCROLL|CBS_DROPDOWNLIST,
+            39,583,350,200,kRingtonePresetCombo,2);
+        const wchar_t* presets[]={
+            L"1 - Classico",L"2 - Suave",L"3 - Padrao",
+            L"4 - Moderno",L"5 - Agudo",L"Personalizado (MP3)"};
+        for(const auto* name:presets)
+            SendMessageW(g_ringtone_preset_combo,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(name));
+        SendMessageW(g_ringtone_preset_combo,CB_SETCURSEL,g_ringtone_preset.load(),0);
+        make_button(window,L"SELECIONAR MP3",kRingtoneChooseMp3,39,620,350,32,2);
+        g_headset_status=make_label(window,
+            L"Toques internos: saida escolhida. MP3: saida padrao Windows.",
+            39,658,350,30,2,g_font_small);
         make_button(window, L"PRONTIDAO (F2)",
                     kReadinessButton, 39, 690, 169, 42, 2);
         make_button(window, L"COPIAR STATUS",kCopyStatusButton,219,690,170,42,2);
