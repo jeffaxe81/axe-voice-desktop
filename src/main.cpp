@@ -1175,7 +1175,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         refresh_brushes();
         make_label(window, L"AXE  VOICE", 24, 16, 240, 37, -1, g_font_title);
         g_visual_identity_label = make_label(window,
-            L"AXE DESPACHO  |  DESIGN 2026.11  |  WINDOWS",
+            L"DESPACHO UI  |  BUILD 2026.11.04",
             25, 57, 276, 22, -1, g_font_small);
         make_button(window, g_compact ? L"MAX" : L"MINI", kCompact, 344, 65, 70, 29);
         make_button(window, L"?", kHelpButton, 301, 65, 34, 29);
@@ -2217,7 +2217,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             GetWindowTextW(g_visual_identity_label, visual_signature, 96);
         const bool design_signature_ok =
             std::wstring_view(visual_signature) ==
-                L"AXE DESPACHO  |  DESIGN 2026.11  |  WINDOWS";
+                L"DESPACHO UI  |  BUILD 2026.11.04";
         bool ok=design_signature_ok && g_password && g_ca_file && GetDlgItem(window,kAnswerNative) &&
             GetDlgItem(window,kMuteFuture) && GetDlgItem(window,kHoldFuture) && GetDlgItem(window,kTransferFuture) &&
             !IsWindowEnabled(GetDlgItem(window,kTransferFuture)) &&
