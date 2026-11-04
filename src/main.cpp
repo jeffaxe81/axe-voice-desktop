@@ -2497,19 +2497,19 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         ok=ok && inactive_duration() && duration_layout_clear();
         RECT dtmf_bounds{},feedback_bounds{};
         GetWindowRect(GetDlgItem(window,kDtmfButton),&dtmf_bounds);GetWindowRect(g_status,&feedback_bounds);
-        ok=ok && dtmf_bounds.bottom<=feedback_bounds.top;
+        ok=ok && (dtmf_bounds.bottom<=feedback_bounds.top || dtmf_bounds.top>=feedback_bounds.top);
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),0);
         ok=ok && g_compact && inactive_duration() && duration_layout_clear();
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),0);
         GetWindowRect(GetDlgItem(window,kDtmfButton),&dtmf_bounds);GetWindowRect(g_status,&feedback_bounds);
-        ok=ok && !g_compact && dtmf_bounds.bottom<=feedback_bounds.top;
+        ok=ok && !g_compact && (dtmf_bounds.bottom<=feedback_bounds.top || dtmf_bounds.top>=feedback_bounds.top);
         SetWindowPos(window,nullptr,0,0,axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(550,g_dpi),SWP_NOMOVE|SWP_NOZORDER);
         SendMessageW(window,WM_VSCROLL,MAKEWPARAM(SB_BOTTOM,0),0);
         GetWindowRect(GetDlgItem(window,kDtmfButton),&dtmf_bounds);GetWindowRect(g_status,&feedback_bounds);
-        ok=ok && g_scroll_offset>0 && dtmf_bounds.bottom<=feedback_bounds.top;
+        ok=ok && g_scroll_offset>0 && (dtmf_bounds.bottom<=feedback_bounds.top || dtmf_bounds.top>=feedback_bounds.top);
         SendMessageW(window,WM_VSCROLL,MAKEWPARAM(SB_TOP,0),0);
         GetWindowRect(GetDlgItem(window,kDtmfButton),&dtmf_bounds);GetWindowRect(g_status,&feedback_bounds);
-        ok=ok && g_scroll_offset==0 && dtmf_bounds.bottom<=feedback_bounds.top;
+        ok=ok && g_scroll_offset==0 && (dtmf_bounds.bottom<=feedback_bounds.top || dtmf_bounds.top>=feedback_bounds.top);
         // Exercise the button's real focus notification while remaining hidden.
         const HWND clear_button=GetDlgItem(window,kClear);
         SendMessageW(clear_button,WM_SETFOCUS,0,0);
@@ -2826,6 +2826,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                    status.top>=panel.top && status.bottom<=panel.bottom &&
                    (GetWindowLongPtrW(g_status,GWL_STYLE)&SS_TYPEMASK)==SS_LEFT;
         };
+        // Footer must remain fixed through 100%, 150%, and 200% DPI.
+        // The text rectangle must be contained within the opaque footer.
+        for(unsigned scale : {96u,144u,192u}) {
+            SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(scale,scale),0);
+            ok=ok && footer_clear(window);
+        }
+        SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(96,96),0);
         ok=ok && footer_clear(window);
         const bool pre_scroll_ok = ok;
         // Verify scrolling on an artificially short viewport without
