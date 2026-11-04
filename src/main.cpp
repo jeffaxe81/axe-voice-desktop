@@ -368,8 +368,8 @@ HFONT font_for_kind(UiFontKind kind) {
     return g_font_regular;
 }
 void rebuild_fonts() {
-    HFONT next[] = {create_font(17,FW_MEDIUM), create_font(27,FW_BOLD),
-                    create_font(13,FW_NORMAL), create_font(25,FW_SEMIBOLD)};
+    HFONT next[] = {create_font(15,FW_MEDIUM), create_font(27,FW_BOLD),
+                    create_font(13,FW_NORMAL), create_font(21,FW_SEMIBOLD)};
     for(HFONT font : next) if(!font) {
         for(HFONT allocated : next) if(allocated) DeleteObject(allocated);
         return;
@@ -421,8 +421,13 @@ HWND make_label(HWND root, LPCWSTR text, int x, int y, int w, int h,
 HWND make_button(HWND root, LPCWSTR text, int id, int x, int y, int w, int h,
                  int page = -1, HFONT font = nullptr) {
     // BN_SETFOCUS drives viewport scrolling for keyboard navigation.
+    // Compact Windows-style controls centered inside existing layout slots.
+    const bool dial_key = id >= kDigitStart && id < kDigitStart + 12;
+    const int inset_x = dial_key ? 12 : (w >= 80 ? 4 : 2);
+    const int inset_y = dial_key ? 5 : (h >= 36 ? 3 : 1);
     return make_control(root, L"BUTTON", text, WS_TABSTOP | BS_OWNERDRAW | BS_NOTIFY,
-                        x, y, w, h, id, page, font);
+                        x + inset_x, y + inset_y, w - 2 * inset_x,
+                        h - 2 * inset_y, id, page, font);
 }
 HWND make_edit(HWND root, LPCWSTR initial, int id, int x, int y, int w, int h,
                int page) {
@@ -622,7 +627,7 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     HGDIOBJ brush_old = SelectObject(item.hDC, fill);
     HGDIOBJ pen_old = SelectObject(item.hDC, outline);
     const int offset=axv::dpi_pixels(1,g_dpi);
-    const int curve=axv::dpi_pixels(13,g_dpi);
+    const int curve=axv::dpi_pixels(9,g_dpi);
     RoundRect(item.hDC,rect.left+offset,rect.top+offset,
               rect.right-offset,rect.bottom-offset,curve,curve);
     SelectObject(item.hDC, pen_old);
@@ -644,9 +649,9 @@ void paint_button(const DRAWITEMSTRUCT& item) {
         const auto digit = axv::dialpad_keys()[index];
         const wchar_t primary[2] = {digit, 0};
         RECT number = rect;
-        number.bottom = number.top + axv::dpi_pixels(37,g_dpi);
+        number.bottom = number.top + axv::dpi_pixels(29,g_dpi);
         RECT subtitle = rect;
-        subtitle.top += axv::dpi_pixels(36,g_dpi);
+        subtitle.top += axv::dpi_pixels(29,g_dpi);
         auto old = SelectObject(item.hDC, g_font_digit);
         DrawTextW(item.hDC, primary, -1, &number, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
         SelectObject(item.hDC, g_font_small);
@@ -1165,10 +1170,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_dpi=axv::normalized_dpi(GetDpiForWindow(window));
         load_ui_preferences();
         read_windows_contrast();
-        g_font_regular = create_font(17, FW_MEDIUM);
+        g_font_regular = create_font(15, FW_MEDIUM);
         g_font_title = create_font(27, FW_BOLD);
         g_font_small = create_font(13, FW_NORMAL);
-        g_font_digit = create_font(25, FW_SEMIBOLD);
+        g_font_digit = create_font(21, FW_SEMIBOLD);
         refresh_brushes();
         make_label(window, L"AXE  VOICE", 24, 16, 240, 37, -1, g_font_title);
         make_label(window, L"SOFTPHONE DESKTOP  /  LAB", 25, 57, 270, 22, -1, g_font_small);
@@ -2337,8 +2342,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             ok=ok && action &&
                 ((GetWindowLongPtrW(action,GWL_STYLE)&BS_TYPEMASK)==BS_OWNERDRAW);
         }
-        for (int i = 0; i != 12; ++i)
-            ok = ok && GetDlgItem(window, kDigitStart + i) != nullptr;
+        for (int i = 0; i != 12; ++i) {
+            const HWND key = GetDlgItem(window, kDigitStart + i);
+            RECT bounds{};
+            if (key) GetWindowRect(key, &bounds);
+            ok = ok && key &&
+                 bounds.right-bounds.left == axv::dpi_pixels(87,g_dpi) &&
+                 bounds.bottom-bounds.top == axv::dpi_pixels(49,g_dpi);
+        }
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(kShowSettings, BN_CLICKED),
                      reinterpret_cast<LPARAM>(GetDlgItem(window, kShowSettings)));
         ok = ok && (GetWindowLongW(g_server, GWL_STYLE) & WS_VISIBLE) &&
