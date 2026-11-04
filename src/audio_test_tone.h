@@ -30,8 +30,8 @@ inline std::uint32_t tone_total_frames(ToneFormat format) {
 // boundaries and 10ms cosine ramps avoid clicks on connect/disconnect.
 inline bool write_tone_packet(unsigned char* output, std::size_t capacity,
                               ToneFormat format, std::uint32_t first_frame,
-                              std::uint32_t count) {
-    if (!output || !tone_format_valid(format)) return false;
+                              std::uint32_t count, double frequency_hz = 660.0) {
+    if (!output || !tone_format_valid(format) || frequency_hz < 100.0 || frequency_hz > 4000.0) return false;
     const auto total = tone_total_frames(format);
     if (first_frame > total || count > total - first_frame) return false;
     const auto sample_bytes = tone_sample_bytes(format.type);
@@ -45,7 +45,7 @@ inline bool write_tone_packet(unsigned char* output, std::size_t capacity,
         const double fade_in = ramp > 0 ? std::min(1.0, index / ramp) : 0.0;
         const double fade_out = ramp > 0 ? std::min(1.0, remaining / ramp) : 0.0;
         const double gain = 0.08 * std::min(fade_in, fade_out);
-        const double sample = gain * std::sin(2.0 * kPi * 660.0 *
+        const double sample = gain * std::sin(2.0 * kPi * frequency_hz *
                                         static_cast<double>(index) / format.sample_rate);
         for (std::uint16_t ch = 0; ch < format.channels; ++ch) {
             auto* ptr = output + static_cast<std::size_t>(frame) * stride +
