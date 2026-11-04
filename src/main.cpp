@@ -2655,6 +2655,21 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         const_cast<ACCEL*>(shortcuts), static_cast<int>(sizeof(shortcuts)/sizeof(shortcuts[0])));
     MSG msg = {};
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
+        // Mirror physical digits in the on-screen dialpad without intercepting
+        // normal text input or synthesizing SIP/DTMF commands.
+        if (msg.hwnd == g_number && msg.message == WM_KEYDOWN && g_page == 0 &&
+            !(GetKeyState(VK_CONTROL) & 0x8000) &&
+            !(GetKeyState(VK_MENU) & 0x8000)) {
+            const auto key = static_cast<unsigned>(msg.wParam);
+            int index = -1;
+            if (key >= '1' && key <= '9') index = static_cast<int>(key - '1');
+            else if (key == '0') index = 10;
+            else if (key >= VK_NUMPAD1 && key <= VK_NUMPAD9)
+                index = static_cast<int>(key - VK_NUMPAD1);
+            else if (key == VK_NUMPAD0) index = 10;
+            else if (key == VK_MULTIPLY) index = 9;
+            if (index >= 0) flash_dial_key(window, kDigitStart + index);
+        }
 #ifdef AXV_ENABLE_NATIVE_SIP
         const bool contact_message=axv::contacts_owns_message(msg);
         if(contact_message && axv::translate_contacts_message(msg))continue;
