@@ -517,18 +517,15 @@ void position_footer(HWND window) {
     if(!g_status || !g_footer_panel || !window)return;
     RECT client{};
     GetClientRect(window,&client);
-    const int width=static_cast<int>(client.right-client.left);
-    const int client_height=static_cast<int>(client.bottom-client.top);
-    const int height=footer_height();
-    const int top=std::max(0,client_height-height);
-    SetWindowPos(g_footer_panel,HWND_TOP,0,top,
-                 std::max(1,width),std::min(height,client_height),
-                 SWP_NOACTIVATE);
-    const int margin=axv::dpi_pixels(12,g_dpi);
-    SetWindowPos(g_status,HWND_TOP,margin,top+axv::dpi_pixels(5,g_dpi),
-                 std::max(1,width-2*margin),
-                 std::max(1,height-axv::dpi_pixels(10,g_dpi)),
-                 SWP_NOACTIVATE);
+    const auto boxes=axv::footer_boxes(
+        static_cast<int>(client.right-client.left),
+        static_cast<int>(client.bottom-client.top),footer_height(),g_dpi);
+    const auto& panel=boxes.panel;
+    const auto& message=boxes.message;
+    SetWindowPos(g_footer_panel,HWND_TOP,panel.x,panel.y,
+                 panel.width,panel.height,SWP_NOACTIVATE);
+    SetWindowPos(g_status,HWND_TOP,message.x,message.y,
+                 message.width,message.height,SWP_NOACTIVATE);
 }
 
 void position_all_children() {
@@ -2872,10 +2869,22 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                    status.top>=panel.top && status.bottom<=panel.bottom &&
                    (GetWindowLongPtrW(g_status,GWL_STYLE)&SS_TYPEMASK)==SS_LEFT;
         };
-        // Footer must remain fixed through 100%, 150%, and 200% DPI.
-        // The text rectangle must be contained within the opaque footer.
-        for(unsigned scale : {96u,144u,192u}) {
+        // Exercise 100%, 125%, 150%, and 200% DPI, including a client
+        // smaller than the footer. Both opaque panel and text must stay inside.
+        for(unsigned scale : {96u,120u,144u,192u}) {
             SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(scale,scale),0);
+            ok=ok && footer_clear(window);
+            RECT original{};
+            GetWindowRect(window,&original);
+            SetWindowPos(window,nullptr,0,0,
+                         original.right-original.left,
+                         axv::dpi_pixels(70,g_dpi),
+                         SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
+            ok=ok && footer_clear(window);
+            SetWindowPos(window,nullptr,0,0,
+                         original.right-original.left,
+                         original.bottom-original.top,
+                         SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
             ok=ok && footer_clear(window);
         }
         SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(96,96),0);
