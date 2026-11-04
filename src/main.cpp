@@ -132,14 +132,15 @@ constexpr int kWindowWidth = 438;
 unsigned g_dpi = axv::kBaseDpi;
 #ifdef AXV_ENABLE_NATIVE_SIP
 constexpr int kFullHeight = 886;
-constexpr int kFullScrollContentEnd = 848;
+constexpr int kFullScrollContentEnd = 800;
 constexpr int kFullFeedbackY = 806;
 #else
 constexpr int kFullHeight = 842;
-constexpr int kFullScrollContentEnd = 804;
+constexpr int kFullScrollContentEnd = 752;
 constexpr int kFullFeedbackY = 762;
 #endif
-constexpr int kMiniScrollContentEnd = 340;
+constexpr int kMiniScrollContentEnd = 298;
+constexpr int kFooterHeight = 48;
 int g_scroll_offset = 0;
 int g_scroll_max = 0;
 int g_wheel_remainder = 0;
@@ -165,6 +166,7 @@ constexpr UINT kTrayExit = 3002;
 HWND g_number = nullptr;
 HWND g_number_label = nullptr;
 HWND g_status = nullptr;
+HWND g_footer_panel = nullptr;
 HWND g_server = nullptr;
 HWND g_user = nullptr;
 HWND g_port = nullptr;
@@ -449,7 +451,7 @@ HWND make_control(HWND root, LPCWSTR type, LPCWSTR title, DWORD style,
 }
 HWND make_label(HWND root, LPCWSTR text, int x, int y, int w, int h,
                 int page = -1, HFONT font = nullptr, int automation_id = 0) {
-    return make_control(root, L"STATIC", text, SS_LEFT | SS_NOPREFIX,
+    return make_control(root, L"STATIC", text, SS_LEFT | SS_NOPREFIX | SS_ENDELLIPSIS,
                         x, y, w, h, automation_id, page, font);
 }
 HWND make_button(HWND root, LPCWSTR text, int id, int x, int y, int w, int h,
@@ -503,6 +505,28 @@ void refresh_account_feedback() {
 }
 // Content beyond the available client height is reachable by scrollbar,
 // mouse wheel and keyboard focus without cropping or changing SIP state.
+// Explanatory feedback is anchored in a dedicated bottom bar.
+int footer_height() { return axv::dpi_pixels(kFooterHeight,g_dpi); }
+int content_viewport_height(HWND window) {
+    RECT client{};
+    GetClientRect(window,&client);
+    return std::max(1,client.bottom-client.top-footer_height());
+}
+void position_footer(HWND window) {
+    if(!g_status || !g_footer_panel || !window)return;
+    RECT client{};
+    GetClientRect(window,&client);
+    const int height=footer_height();
+    const int top=std::max(0,client.bottom-height);
+    SetWindowPos(g_footer_panel,HWND_TOP,0,top,
+                 std::max(1,client.right),std::min(height,client.bottom),
+                 SWP_NOACTIVATE);
+    const int margin=axv::dpi_pixels(12,g_dpi);
+    SetWindowPos(g_status,HWND_TOP,margin,top+axv::dpi_pixels(5,g_dpi),
+                 std::max(1,client.right-2*margin),
+                 std::max(1,height-axv::dpi_pixels(10,g_dpi)),
+                 SWP_NOACTIVATE);
+}
 void position_all_children() {
     // One deferred batch avoids dozens of synchronous redraws per scroll tick.
     // Never allow an invalid batch to leave controls stranded: fall back to
@@ -510,6 +534,7 @@ void position_all_children() {
     HDWP batch = BeginDeferWindowPos(static_cast<int>(g_layout.size()));
     if(batch) {
         for (const auto& child : g_layout) {
+            if(child.handle==g_status)continue;
             auto r=child.logical;
             if (child.handle==g_number_label) r.y=g_compact?218:246;
             if (child.handle==g_number) r.y=g_compact?242:272;
@@ -520,15 +545,17 @@ void position_all_children() {
                 SWP_NOACTIVATE|SWP_NOZORDER|SWP_NOREDRAW);
             if(!batch)break;
         }
-        if(batch && EndDeferWindowPos(batch))return;
+        if(batch && EndDeferWindowPos(batch)){position_footer(GetParent(g_status));return;}
     }
     for(const auto& child:g_layout) {
+        if(child.handle==g_status)continue;
         auto r=child.logical;
         if(child.handle==g_number_label)r.y=g_compact?218:246;
         if(child.handle==g_number)r.y=g_compact?242:272;
         if(child.handle==g_status)r.y=g_compact?298:kFullFeedbackY;
         position_logical(child.handle,r.x,r.y,r.width,r.height);
     }
+    position_footer(GetParent(g_status));
 }
 
 int viewport_content_height() {
@@ -541,7 +568,7 @@ void sync_viewport_scroll(HWND window) {
     RECT client{};
     GetClientRect(window, &client);
     const int content = viewport_content_height();
-    const int available = client.bottom-client.top;
+    const int available = content_viewport_height(window);
     const int previous = g_scroll_offset;
     g_scroll_max = axv::max_scroll_offset(content, available);
     g_scroll_offset = axv::clamp_scroll_offset(g_scroll_offset, content, available);
@@ -564,7 +591,7 @@ void set_viewport_scroll(HWND window, int desired) {
     RECT client{};
     GetClientRect(window, &client);
     const int target = axv::clamp_scroll_offset(desired, viewport_content_height(),
-                                                 client.bottom-client.top);
+                                                 content_viewport_height(window));
     if (target == g_scroll_offset) return;
     g_scroll_offset = target;
     sync_viewport_scroll(window);
@@ -585,7 +612,7 @@ void bring_focused_control_into_view(HWND window, HWND control) {
         const int top = axv::dpi_pixels(y,g_dpi);
         const int bottom = top + axv::dpi_pixels(child.logical.height,g_dpi);
         const int target = axv::scroll_for_visible_range(
-            g_scroll_offset, viewport_content_height(), client.bottom-client.top,
+            g_scroll_offset, viewport_content_height(), content_viewport_height(window),
             top, bottom, axv::dpi_pixels(8,g_dpi));
         set_viewport_scroll(window, target);
         break;
@@ -622,7 +649,7 @@ void apply_compact_layout(HWND root) {
     if (g_compact && g_page != 0) show_page(root, 0);
     position_logical(g_number_label,39,g_compact?218:246,320,20);
     position_logical(g_number,39,g_compact?242:272,350,43);
-    position_logical(g_status,24,g_compact?298:kFullFeedbackY,390,30);
+    position_footer(root);
     SetWindowTextW(GetDlgItem(root, kCompact), g_compact ? L"MAX" : L"MINI");
     const int desired_height = axv::dpi_pixels(g_compact?kCompactHeight:kFullHeight,g_dpi);
     int fitted_height = desired_height;
@@ -639,6 +666,7 @@ void apply_compact_layout(HWND root) {
                  SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     show_page(root, g_page);
     sync_viewport_scroll(root);
+    position_footer(root);
 }
 void draw_card(HDC dc, RECT rect, COLORREF color, int radius) {
     HBRUSH fill = CreateSolidBrush(color);
@@ -1432,8 +1460,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_button(window, L"PRONTIDAO (F2)",
                     kReadinessButton, 39, 690, 169, 42, 2);
         make_button(window, L"COPIAR STATUS",kCopyStatusButton,219,690,170,42,2);
+        g_footer_panel=CreateWindowExW(0,L"STATIC",L"",
+            WS_CHILD|WS_VISIBLE|SS_LEFT,0,0,1,1,window,nullptr,
+            GetModuleHandleW(nullptr),nullptr);
         g_status = make_label(window, L"Digite um ramal ou endereço SIP.",
                               24, kFullFeedbackY, 390, 30, -1, g_font_small, kFeedbackLabel);
+        position_footer(window);
         refresh_destination_feedback();
 
         EnableWindow(g_input_audio_combo, FALSE);
@@ -1999,7 +2031,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         return 0;
     }
     case WM_SIZE:
-        if (wparam != SIZE_MINIMIZED) sync_viewport_scroll(window);
+        if (wparam != SIZE_MINIMIZED) {
+            position_footer(window);
+            sync_viewport_scroll(window);
+        }
         if (wparam == SIZE_MINIMIZED && install_tray(window)) {
             ShowWindow(window, SW_HIDE);
             return 0;
@@ -2048,8 +2083,14 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
     }
     case WM_CTLCOLORSTATIC: {
         HDC dc = reinterpret_cast<HDC>(wparam);
-        SetTextColor(dc, text_color());
-        SetBkMode(dc, TRANSPARENT);
+        const HWND label=reinterpret_cast<HWND>(lparam);
+        SetTextColor(dc,text_color());
+        if(label==g_footer_panel || label==g_status){
+            SetBkColor(dc,field_color());
+            SetBkMode(dc,OPAQUE);
+            return reinterpret_cast<LRESULT>(g_field_brush);
+        }
+        SetBkMode(dc,TRANSPARENT);
         return reinterpret_cast<LRESULT>(GetStockObject(NULL_BRUSH));
     }
     case WM_CTLCOLOREDIT: {
