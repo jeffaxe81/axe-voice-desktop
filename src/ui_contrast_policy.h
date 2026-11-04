@@ -37,20 +37,20 @@ constexpr UiColor theme_color(UiRole role, bool dark, bool high_contrast,
         }
     }
     switch (role) {
-    case UiRole::Background: return dark ? rgb(14,22,38) : rgb(245,248,252);
-    case UiRole::Panel: return dark ? rgb(25,38,58) : rgb(255,255,255);
-    case UiRole::Field: return dark ? rgb(31,48,73) : rgb(238,244,249);
-    case UiRole::InvalidField: return dark ? rgb(79,39,53) : rgb(255,231,235);
-    case UiRole::Text: return dark ? rgb(236,244,255) : rgb(20,38,62);
-    case UiRole::Muted: return dark ? rgb(157,176,200) : rgb(91,108,128);
-    case UiRole::Accent: return rgb(38,178,198);
-    case UiRole::Border: return dark ? rgb(57,74,97) : rgb(207,218,230);
-    case UiRole::Button: return dark ? rgb(25,38,58) : rgb(255,255,255);
-    case UiRole::Pressed: return dark ? rgb(44,91,111) : rgb(206,227,239);
-    case UiRole::DisabledButton: return dark ? rgb(42,53,70) : rgb(222,228,235);
-    case UiRole::SelectedText: return rgb(5,25,38);
-    case UiRole::DisabledText: return dark ? rgb(157,176,200) : rgb(91,108,128);
-    case UiRole::ButtonText: return dark ? rgb(236,244,255) : rgb(20,38,62);
+    case UiRole::Background: return dark ? rgb(20,24,32) : rgb(248,250,252);
+    case UiRole::Panel: return dark ? rgb(31,37,48) : rgb(255,255,255);
+    case UiRole::Field: return dark ? rgb(43,51,65) : rgb(241,245,249);
+    case UiRole::InvalidField: return dark ? rgb(78,41,49) : rgb(254,226,226);
+    case UiRole::Text: return dark ? rgb(236,240,246) : rgb(30,41,59);
+    case UiRole::Muted: return dark ? rgb(163,174,191) : rgb(100,116,139);
+    case UiRole::Accent: return dark ? rgb(60,174,198) : rgb(30,116,149);
+    case UiRole::Border: return dark ? rgb(65,76,92) : rgb(226,232,240);
+    case UiRole::Button: return dark ? rgb(39,47,60) : rgb(255,255,255);
+    case UiRole::Pressed: return dark ? rgb(41,99,120) : rgb(215,237,244);
+    case UiRole::DisabledButton: return dark ? rgb(56,63,76) : rgb(226,232,240);
+    case UiRole::SelectedText: return rgb(255,255,255);
+    case UiRole::DisabledText: return dark ? rgb(163,174,191) : rgb(100,116,139);
+    case UiRole::ButtonText: return dark ? rgb(236,240,246) : rgb(30,41,59);
     }
     return os.window_text;
 }

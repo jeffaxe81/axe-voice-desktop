@@ -19,10 +19,13 @@ int main() {
         if (theme_color(roles[i], false, true, os) != expected[i]) return 1;
         if (theme_color(roles[i], true, true, os) != expected[i]) return 2;
     }
-    if (theme_color(UiRole::Background, true, false, os) != rgb(14,22,38)) return 3;
-    if (theme_color(UiRole::Background, false, false, os) != rgb(245,248,252)) return 4;
-    if (theme_color(UiRole::InvalidField, false, false, os) != rgb(255,231,235)) return 5;
-    if (theme_color(UiRole::Accent, true, false, os) != rgb(38,178,198)) return 6;
-    if (theme_color(UiRole::SelectedText, true, false, os) != rgb(5,25,38)) return 7;
+    if (theme_color(UiRole::Background, true, false, os) != rgb(20,24,32)) return 3;
+    if (theme_color(UiRole::Background, false, false, os) != rgb(248,250,252)) return 4;
+    if (theme_color(UiRole::InvalidField, false, false, os) != rgb(254,226,226)) return 5;
+    if (theme_color(UiRole::Accent, true, false, os) != rgb(60,174,198)) return 6;
+    if (theme_color(UiRole::SelectedText, true, false, os) != rgb(255,255,255)) return 7;
+    if (theme_color(UiRole::Accent, false, false, os) != rgb(30,116,149)) return 8;
+    if (theme_color(UiRole::Border, false, false, os) != rgb(226,232,240)) return 9;
+    if (theme_color(UiRole::Panel, false, false, os) != rgb(255,255,255)) return 10;
     return 0;
 }
