@@ -1,4 +1,5 @@
 #include "../src/account_form_feedback.h"
+#include "../src/sip_transport_port.h"
 #include <string>
 
 int main() {
@@ -39,5 +40,11 @@ int main() {
         result = evaluate_account_form(server, L"1001", L"5060");
         if (result.valid() || result.error != AccountError::InvalidServer) return 11;
     }
+    if (std::wstring_view(suggested_sip_port(true,L"5060")) != L"5061") return 12;
+    if (std::wstring_view(suggested_sip_port(false,L"5061")) != L"5060") return 13;
+    if (std::wstring_view(suggested_sip_port(true,L"")) != L"5061") return 14;
+    if (std::wstring_view(suggested_sip_port(false,L"")) != L"5060") return 15;
+    if (suggested_sip_port(true,L"5070") != nullptr) return 16;
+    if (suggested_sip_port(false,L"5080") != nullptr) return 17;
     return 0;
 }
