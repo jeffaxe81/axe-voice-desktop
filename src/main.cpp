@@ -2381,6 +2381,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         for (int id : tabs)
             ok = ok && reinterpret_cast<HFONT>(SendMessageW(GetDlgItem(window,id),
                           WM_GETFONT,0,0)) == g_font_small;
+        // Revealed SIP credentials must be masked automatically on tab switch.
+        show_page(window,1);
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kPasswordVisibility,BN_CLICKED),
+                     reinterpret_cast<LPARAM>(GetDlgItem(window,kPasswordVisibility)));
+        ok = ok && g_password_visible &&
+            SendMessageW(g_password,EM_GETPASSWORDCHAR,0,0)==0;
+        show_page(window,0);
+        ok = ok && !g_password_visible &&
+            SendMessageW(g_password,EM_GETPASSWORDCHAR,0,0)==static_cast<LRESULT>(L'*');
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kShowGeneral,BN_CLICKED),
                      reinterpret_cast<LPARAM>(GetDlgItem(window,kShowGeneral)));
         ok = ok && g_page==3 &&
