@@ -2448,6 +2448,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         GetWindowRect(GetDlgItem(window,kContactsButton),&contact_bounds);
         ok=ok && GetDlgItem(window,kContactsButton) && IsWindowEnabled(GetDlgItem(window,kContactsButton)) &&
             contact_bounds.right<=recents_bounds.left && contact_bounds.bottom<=number_label_bounds.top;
+        if(!ok){DestroyWindow(window);return 31;} // Native baseline geometry.
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kContactsButton,BN_CLICKED),0);
         HWND contacts=FindWindowW(L"AXVContactBookV1",nullptr);
         ok=ok && contacts && IsWindowEnabled(window) && GetDlgItem(contacts,101) && GetDlgItem(contacts,103) &&
@@ -2466,6 +2467,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         // Empty/synthetic commands never open a popup or create a dial request.
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kRecentDestinationsButton,BN_CLICKED),0);
         ok=ok && g_recent_destinations.size()==0 && !IsWindowEnabled(GetDlgItem(window,kCallButton));
+        if(!ok){DestroyWindow(window);return 32;} // Contacts and shared SIP state.
         const auto before_sound_mode=native_engine().observation();
         const auto same_sound_observation=[&] {
             const auto after=native_engine().observation();
@@ -2530,6 +2532,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         ok=ok && !native_engine().media_state().available && native_engine().status()==axv::SipStatus::Disconnected;
         refresh_runtime_banner(g_baresip_process.poll());
         ok=ok && inactive_duration() && duration_layout_clear();
+        if(!ok){DestroyWindow(window);return 33;} // Mute and scrolling layout.
         std::vector<axv::AudioEndpoint> endpoints{{L"present",L"Microphone",true,false}};
         std::wstring missing=L"missing";
         const auto fixed=fill_audio_combo(g_input_audio_combo,endpoints,missing,false,true,true);
@@ -2566,6 +2569,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             g_selected_ringtone_id==retained.ringtone_id && !g_audio_inventory_current &&
             !IsWindowEnabled(g_input_audio_combo) && !IsWindowEnabled(g_output_audio_combo) &&
             !IsWindowEnabled(g_ringtone_audio_combo);
+        if(!ok){DestroyWindow(window);return 34;} // Audio selection invariants.
         // A missing CA must reject TLS before any registration starts.
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kReadinessButton,BN_CLICKED),0);
         ok=ok && g_readiness_requested_smoke && !IsWindowEnabled(GetDlgItem(window,kCallButton));
