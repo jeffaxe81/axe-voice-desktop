@@ -672,7 +672,7 @@ void paint_button(const DRAWITEMSTRUCT& item) {
         SelectObject(item.hDC,g_font_digit);
         SetTextColor(item.hDC,foreground);
         DrawTextW(item.hDC,primary,-1,&number,
-                  DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_NOCLIP);
+                  DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
         if (draw_letters) {
             RECT subtitle{rect.left+padding,number.bottom+gap,
                           rect.right-padding,number.bottom+gap+letter_metrics.tmHeight};
