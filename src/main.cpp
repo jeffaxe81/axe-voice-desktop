@@ -2493,6 +2493,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kIncomingRingtoneMuteButton,BN_CLICKED),0);
         ok=ok && g_incoming_ringtone_muted && sound_button_matches() && sound_badge() && same_sound_observation() &&
             !g_ring_player.snapshot().request.active() && !IsWindowEnabled(GetDlgItem(window,kCallButton));
+        if(!ok){DestroyWindow(window);return 35;} // Mute-button first toggle.
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),0);
         ok=ok && g_compact && sound_badge() && duration_layout_clear() &&
             (GetWindowLongPtrW(g_call_duration_label,GWL_STYLE)&WS_VISIBLE) && !(GetWindowLongPtrW(sound_button,GWL_STYLE)&WS_VISIBLE);
@@ -2509,6 +2510,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),0);
         GetWindowRect(GetDlgItem(window,kDtmfButton),&dtmf_bounds);GetWindowRect(g_status,&feedback_bounds);
         ok=ok && !g_compact && (dtmf_bounds.bottom<=feedback_bounds.top || dtmf_bounds.top>=feedback_bounds.top);
+        if(!ok){DestroyWindow(window);return 36;} // Compact / duration.
         SetWindowPos(window,nullptr,0,0,axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(550,g_dpi),SWP_NOMOVE|SWP_NOZORDER);
         SendMessageW(window,WM_VSCROLL,MAKEWPARAM(SB_BOTTOM,0),0);
         GetWindowRect(GetDlgItem(window,kDtmfButton),&dtmf_bounds);GetWindowRect(g_status,&feedback_bounds);
@@ -2516,6 +2518,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         SendMessageW(window,WM_VSCROLL,MAKEWPARAM(SB_TOP,0),0);
         GetWindowRect(GetDlgItem(window,kDtmfButton),&dtmf_bounds);GetWindowRect(g_status,&feedback_bounds);
         ok=ok && g_scroll_offset==0 && (dtmf_bounds.bottom<=feedback_bounds.top || dtmf_bounds.top>=feedback_bounds.top);
+        if(!ok){DestroyWindow(window);return 37;} // Scroll top/bottom.
         // Exercise the button's real focus notification while remaining hidden.
         const HWND clear_button=GetDlgItem(window,kClear);
         SendMessageW(clear_button,WM_SETFOCUS,0,0);
@@ -2530,6 +2533,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kHoldFuture,BN_CLICKED),0);
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kTransferFuture,BN_CLICKED),0);
         ok=ok && !native_engine().media_state().available && native_engine().status()==axv::SipStatus::Disconnected;
+        if(!ok){DestroyWindow(window);return 38;} // Focus / disabled DTMF.
         refresh_runtime_banner(g_baresip_process.poll());
         ok=ok && inactive_duration() && duration_layout_clear();
         if(!ok){DestroyWindow(window);return 33;} // Mute and scrolling layout.
