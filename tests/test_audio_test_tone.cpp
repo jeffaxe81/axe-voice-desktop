@@ -62,6 +62,29 @@ int main() {
         tone_format_valid({48000,0,ToneSampleType::Float32}) ||
         tone_format_valid({48000,9,ToneSampleType::Float32})) return 12;
 
+    // Five deterministic ringtone pitches with identical safe amplitude limits.
+    // Verify they produce distinct samples but do not exceed the fixed gain.
+    std::vector<float> signatures;
+    for(const double hz : {440.0,550.0,660.0,820.0,1040.0}) {
+        std::vector<unsigned char> pulse(1024u*8u);
+        if(!write_tone_packet(pulse.data(),pulse.size(),float_stereo,1000,1024,hz))
+            return 17;
+        float sample=0.0f;
+        std::memcpy(&sample,pulse.data()+23u*8u,sizeof(sample));
+        if(!std::isfinite(sample) || std::abs(sample)>0.081f)return 18;
+        signatures.push_back(sample);
+    }
+    for(std::size_t i=0;i<signatures.size();++i)
+        for(std::size_t j=i+1;j<signatures.size();++j)
+            if(std::abs(signatures[i]-signatures[j])<0.00001f)return 19;
+    if(write_tone_packet(bytes.data(),bytes.size(),float_stereo,0,100,10.0) ||
+       write_tone_packet(bytes.data(),bytes.size(),float_stereo,0,100,5000.0))
+        return 20;
+    if(play_windows_ringtone(L"",nullptr,true,6,L"")!=TonePreviewState::UnsupportedFormat ||
+       play_windows_ringtone(L"",nullptr,true,5,L"")!=TonePreviewState::UnsupportedFormat ||
+       play_windows_ringtone(L"",nullptr,true,5,L"bad.wav")!=TonePreviewState::UnsupportedFormat ||
+       play_windows_ringtone(L"",nullptr,true,5,std::wstring(L"bad.mp3")+wchar_t(34)+L"unsafe")!=TonePreviewState::UnsupportedFormat)
+        return 21;
     // No hardware-dependent audio playback is required on GitHub runners.
     if (play_windows_tone_on_endpoint(L"") != TonePreviewState::MissingDevice)
         return 13;

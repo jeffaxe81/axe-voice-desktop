@@ -12,6 +12,9 @@
 #include <algorithm>
 #include <cstdint>
 #include <utility>
+#include <mmsystem.h>
+#include <cwctype>
+#include <string_view>
 
 namespace axv {
 namespace {
@@ -28,7 +31,7 @@ struct ScopedFormat {
     ~ScopedFormat() { if (ptr) CoTaskMemFree(ptr); }
 };
 
-TonePreviewState render_preview(const std::wstring& endpoint_id,const std::atomic<bool>* cancel,bool multimedia_default) {
+TonePreviewState render_preview(const std::wstring& endpoint_id,const std::atomic<bool>* cancel,bool multimedia_default,int preset=2) {
     const auto cancelled=[cancel]{return cancel && cancel->load();};
     if(cancelled())return TonePreviewState::Cancelled;
     if ((endpoint_id.empty() && !multimedia_default) || endpoint_id.size() > 4096 || endpoint_id.find(L'\0')!=std::wstring::npos)
@@ -120,7 +123,9 @@ TonePreviewState render_preview(const std::wstring& endpoint_id,const std::atomi
                 const bool filled = write_tone_packet(
                     samples,
                     static_cast<std::size_t>(chunk) * wfx->nBlockAlign,
-                    spec, submitted, chunk);
+                    spec, submitted, chunk,
+                    preset == 0 ? 440.0 : preset == 1 ? 550.0 : preset == 2 ? 660.0 :
+                    preset == 3 ? 820.0 : 1040.0);
                 const HRESULT released = sink->ReleaseBuffer(
                     chunk, filled ? 0 : AUDCLNT_BUFFERFLAGS_SILENT);
                 if (!filled || FAILED(released)) break;
@@ -150,6 +155,48 @@ TonePreviewState play_windows_tone_on_endpoint(const std::wstring& endpoint_id,c
     return render_preview(endpoint_id,cancel,multimedia_default);
 }
 
+// MCI provides built-in Windows MP3 decoding without installing codecs or
+// passing user-selected media to SIP. It plays via the Windows default output.
+// Reject command delimiters because MCI uses a command-string interface.
+TonePreviewState play_windows_ringtone(const std::wstring& id,
+        const std::atomic<bool>* cancel,bool multimedia_default,
+        int preset,const std::wstring& mp3) {
+    if(preset < 0 || preset > 5) return TonePreviewState::UnsupportedFormat;
+    if(preset != 5) return render_preview(id,cancel,multimedia_default,preset);
+    if(mp3.empty() || mp3.size() > 2048 || mp3.find(L'"') != std::wstring::npos ||
+       mp3.find(wchar_t(10)) != std::wstring::npos || mp3.find(wchar_t(13)) != std::wstring::npos ||
+       mp3.find(wchar_t(0)) != std::wstring::npos) return TonePreviewState::UnsupportedFormat;
+    const auto extension=mp3.find_last_of(L'.');
+    if(extension==mp3.npos) return TonePreviewState::UnsupportedFormat;
+    std::wstring suffix=mp3.substr(extension);
+    for(auto& ch:suffix)ch=static_cast<wchar_t>(std::towlower(ch));
+    if(suffix!=L".mp3" || (GetFileAttributesW(mp3.c_str())&FILE_ATTRIBUTE_DIRECTORY) ||
+       GetFileAttributesW(mp3.c_str())==INVALID_FILE_ATTRIBUTES)
+        return TonePreviewState::UnsupportedFormat;
+    if(cancel && cancel->load()) return TonePreviewState::Cancelled;
+    const std::wstring alias=L"axvring"+std::to_wstring(GetCurrentThreadId());
+    const std::wstring open=L"open \"" + mp3 + L"\" type mpegvideo alias " + alias;
+    if(mciSendStringW(open.c_str(),nullptr,0,nullptr)!=0) return TonePreviewState::Failed;
+    const auto close=[&]{(void)mciSendStringW((L"close "+alias).c_str(),nullptr,0,nullptr);};
+    if(mciSendStringW((L"play "+alias+L" from 0").c_str(),nullptr,0,nullptr)!=0){
+        close();return TonePreviewState::Failed;
+    }
+    TonePreviewState result=TonePreviewState::Played;
+    // One bounded ring per repeat; incoming call worker handles cadence.
+    for(int i=0;i<80;++i){
+        if(cancel && cancel->load()){result=TonePreviewState::Cancelled;break;}
+        wchar_t mode[48]{};
+        if(mciSendStringW((L"status "+alias+L" mode").c_str(),mode,48,nullptr)!=0){
+            result=TonePreviewState::Failed;break;
+        }
+        if(std::wstring_view(mode)==L"stopped")break;
+        Sleep(25);
+    }
+    (void)mciSendStringW((L"stop "+alias).c_str(),nullptr,0,nullptr);
+    close();
+    return result;
+}
+
 TonePreviewPlayer::~TonePreviewPlayer() {
     request_stop();
     if (worker_.joinable()) worker_.join();
@@ -171,6 +218,22 @@ bool TonePreviewPlayer::start(const std::wstring& endpoint_id,bool multimedia_de
         state_.store(TonePreviewState::Failed);
         return false;
     }
+    return true;
+}
+bool TonePreviewPlayer::start_ringtone(const std::wstring& id,bool multimedia_default,
+        int preset,const std::wstring& mp3) {
+    if(preset<0 || preset>5 || state_.load()==TonePreviewState::Playing)return false;
+    if(worker_.joinable())worker_.join();
+    cancel_.store(false);
+    state_.store(TonePreviewState::Playing);
+    try{
+        worker_=std::thread([this,id,multimedia_default,preset,mp3]{
+            TonePreviewState result=TonePreviewState::Failed;
+            try{result=play_windows_ringtone(id,&cancel_,multimedia_default,preset,mp3);}
+            catch(...){result=TonePreviewState::Failed;}
+            state_.store(cancel_.load()?TonePreviewState::Cancelled:result);
+        });
+    }catch(...){state_.store(TonePreviewState::Failed);return false;}
     return true;
 }
 const wchar_t* tone_preview_feedback(TonePreviewState state) {
