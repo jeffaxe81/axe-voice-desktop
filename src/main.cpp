@@ -1729,6 +1729,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
 #endif
                 g_ringtone_preset.store(selected);
                 save_ui_preferences();
+                refresh_audio_test_actions(window);
                 SetWindowTextW(g_headset_status,selected==5
                     ? L"MP3: saida padrao multimidia do Windows."
                     : L"Toque interno: dispositivo selecionado.");
@@ -1763,6 +1764,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 g_ringtone_preset.store(5);
                 SendMessageW(g_ringtone_preset_combo,CB_SETCURSEL,5,0);
                 save_ui_preferences();
+                refresh_audio_test_actions(window);
                 SetWindowTextW(g_headset_status,L"MP3 selecionado. Saida padrao multimidia Windows.");
                 refresh_runtime_banner(g_baresip_process.poll());
             }
