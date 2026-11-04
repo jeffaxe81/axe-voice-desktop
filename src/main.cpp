@@ -558,10 +558,25 @@ void bring_focused_control_into_view(HWND window, HWND control) {
     }
 }
 
+#ifdef AXV_ENABLE_NATIVE_SIP
+void conceal_sip_password(HWND root) {
+    if (!g_password || !g_password_visible) return;
+    g_password_visible = false;
+    SendMessageW(g_password, EM_SETPASSWORDCHAR, static_cast<WPARAM>(L'*'), 0);
+    const HWND toggle = GetDlgItem(root,kPasswordVisibility);
+    if(toggle) SetWindowTextW(toggle,L"MOSTRAR");
+    InvalidateRect(g_password,nullptr,TRUE);
+}
+#endif
 void show_page(HWND root, int page) {
     if (g_page != page) {
         if (g_page == 2) { g_microphone_test.request_stop(); g_audio_change_policy.leave(); g_audio_worker.cancel(); g_audio_retry.reset(); g_audio_inventory_current=false; }
-        if (g_page == 1) { g_settings_audio_worker.cancel(); g_settings_audio_retry.reset(); }
+        if (g_page == 1) {
+            g_settings_audio_worker.cancel(); g_settings_audio_retry.reset();
+#ifdef AXV_ENABLE_NATIVE_SIP
+            conceal_sip_password(root); // Never leave SIP secret visible in another tab.
+#endif
+        }
     }
     if (g_page != page && page == 2) g_audio_change_policy.enter(GetTickCount64());
     if (g_page != page) set_viewport_scroll(root, 0);
@@ -642,8 +657,12 @@ void paint_button(const DRAWITEMSTRUCT& item) {
                               (id == kShowSettings && g_page == 1) ||
                               (id == kShowAudio && g_page == 2) ||
                               (id == kShowGeneral && g_page == 3);
+    const bool selected_size =
+        (id == kSizeComfort && g_window_size == 0) ||
+        (id == kSizeStandard && g_window_size == 1) ||
+        (id == kSizeExpanded && g_window_size == 2);
     COLORREF color = ui_color(axv::UiRole::Button);
-    if (selected_tab || id == kCallButton) color = accent_color();
+    if (selected_tab || selected_size || id == kCallButton) color = accent_color();
     // Dedicated call-action hierarchy, aligned with AXE Despacho action buttons.
     if (!g_high_contrast && id == kCallButton) color = RGB(22, 163, 74);
     if (!g_high_contrast && id == kHangupFuture) color = RGB(220, 38, 38);
@@ -656,7 +675,7 @@ void paint_button(const DRAWITEMSTRUCT& item) {
 
     RECT rect = item.rcItem;
     HBRUSH fill = CreateSolidBrush(color);
-    HPEN outline = CreatePen(PS_SOLID, 1, selected_tab ? accent_color() : line_color());
+    HPEN outline = CreatePen(PS_SOLID, 1, (selected_tab || selected_size) ? accent_color() : line_color());
     HGDIOBJ brush_old = SelectObject(item.hDC, fill);
     HGDIOBJ pen_old = SelectObject(item.hDC, outline);
     const int offset=axv::dpi_pixels(1,g_dpi);
@@ -669,7 +688,7 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     DeleteObject(fill);
 
     const COLORREF foreground = disabled ? ui_color(axv::UiRole::DisabledText)
-        : (selected_tab || id == kCallButton || (!g_high_contrast && id == kHangupFuture)
+        : (selected_tab || selected_size || id == kCallButton || (!g_high_contrast && id == kHangupFuture)
            ? ui_color(axv::UiRole::SelectedText) : ui_color(axv::UiRole::ButtonText));
     SetBkMode(item.hDC, TRANSPARENT);
     SetTextColor(item.hDC, foreground);
@@ -701,8 +720,10 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     } else {
         // Button captions honor each control's own font. In particular, the
         // navigation labels are deliberately smaller to prevent clipping.
-        HGDIOBJ old_font = SelectObject(item.hDC,
-            reinterpret_cast<HFONT>(SendMessageW(item.hwndItem, WM_GETFONT, 0, 0)));
+        HFONT caption_font = reinterpret_cast<HFONT>(
+            SendMessageW(item.hwndItem, WM_GETFONT, 0, 0));
+        if (!caption_font) caption_font = g_font_regular;
+        HGDIOBJ old_font = SelectObject(item.hDC, caption_font);
         RECT caption_rect = rect;
         InflateRect(&caption_rect, -axv::dpi_pixels(6,g_dpi),
                     -axv::dpi_pixels(2,g_dpi));
@@ -1476,6 +1497,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 apply_compact_layout(window);
                 save_ui_preferences();
                 InvalidateRect(window,nullptr,TRUE);
+                for (int id : {kSizeComfort,kSizeStandard,kSizeExpanded})
+                    InvalidateRect(GetDlgItem(window,id),nullptr,FALSE);
+                SetWindowTextW(g_status,
+                    g_window_size==0 ? L"Janela compacta selecionada. Use a rolagem para acessar todos os controles."
+                    : g_window_size==2 ? L"Janela ampliada selecionada. Preferencia salva neste Windows."
+                    : L"Janela padrao selecionada. Preferencia salva neste Windows.");
                 return 0;
             }
             if(control==kCopyStatusButton){
