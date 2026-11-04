@@ -79,8 +79,9 @@ namespace {
 #ifdef AXV_ENABLE_NATIVE_SIP
 // Retain through process exit, including detached audio probes after owner teardown.
 axv::NativeInstallGuard g_native_install_guard{axv::NativeInstallGuardLifetime::Process};
-constexpr int kPasswordEdit=1016,kCaEdit=1017,kAnswerNative=1018;
+constexpr int kPasswordEdit=1016,kCaEdit=1017,kAnswerNative=1018,kPasswordVisibility=1020;
 HWND g_password=nullptr,g_ca_file=nullptr;
+bool g_password_visible=false;
 axv::NativeCallMediaState g_displayed_media;
 constexpr int kCallDurationLabel = 2503;
 HWND g_call_duration_label = nullptr;
@@ -1199,7 +1200,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         if (g_pinned) SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0,
                                    SWP_NOMOVE | SWP_NOSIZE);
         make_button(window, L"TECLADO", kShowDial, 24, 103, 122, 42);
-        make_button(window, L"AJUSTES", kShowSettings, 153, 103, 123, 42);
+        make_button(window, L"CONTA SIP", kShowSettings, 153, 103, 123, 42);
         make_button(window, L"AUDIO", kShowAudio, 283, 103, 131, 42);
         g_runtime_banner = make_label(window, L"MOTOR PARADO  |  SIP NAO REGISTRADO",
                                      77, 164, 312, 25, -1, g_font_small, kRuntimeStatusLabel);
@@ -1257,27 +1258,28 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_button(window, L"ENCERRAR", kHangupFuture, 303, 708, 86, 34, 0);
 
 #ifdef AXV_ENABLE_NATIVE_SIP
-        make_label(window,L"CONTA SIP  •  CANDIDATO NATIVO",39,219,361,26,1,g_font_small);
+        make_label(window,L"CONTA SIP  /  REGISTRO E AUTENTICACAO",39,219,361,26,1,g_font_small);
 #else
-        make_label(window, L"CONFIGURAÇÃO DE CONTA  •  SEM REGISTRO", 39, 219, 361, 26,
+        make_label(window, L"CONTA SIP  /  CONFIGURACAO LOCAL", 39, 219, 361, 26,
                    1, g_font_small);
 #endif
-        make_label(window, L"Servidor SIP", 39, 255, 340, 20, 1);
+        make_label(window, L"Servidor SIP (IPv4 ou dominio DNS)", 39, 255, 350, 20, 1);
         g_server = make_edit(window, L"", kServerEdit, 39, 280, 350, 38, 1);
         make_label(window, L"Usuário SIP", 39, 329, 212, 20, 1);
         make_label(window, L"Porta (auto)", 268, 329, 121, 20, 1);
         g_user = make_edit(window, L"", kUserEdit, 39, 355, 216, 38, 1);
         g_port = make_edit(window, L"5060", kPortEdit, 267, 355, 122, 38, 1);
 #ifdef AXV_ENABLE_NATIVE_SIP
-        make_label(window,L"Senha (somente nesta sessao)",39,402,350,20,1);
-        g_password=make_edit(window,L"",kPasswordEdit,39,425,350,32,1);
+        make_label(window,L"Senha de autenticacao (apenas nesta sessao)",39,402,350,20,1);
+        g_password=make_edit(window,L"",kPasswordEdit,39,425,253,32,1);
+        make_button(window,L"MOSTRAR",kPasswordVisibility,300,425,89,32,1);
         SetWindowLongPtrW(g_password,GWL_STYLE,GetWindowLongPtrW(g_password,GWL_STYLE)|ES_PASSWORD);
         SendMessageW(g_password,EM_SETPASSWORDCHAR,L'*',0);
         SendMessageW(g_password,EM_SETLIMITTEXT,256,0);
-        g_tls=make_control(window,L"BUTTON",L"TLS (desmarcado: UDP) - SIP seguro",WS_TABSTOP|BS_AUTOCHECKBOX|BS_NOTIFY,39,464,350,28,kTlsCheckbox,1);
-        make_label(window,L"Arquivo CA PEM (obrigatorio para TLS)",39,497,350,20,1);
+        g_tls=make_control(window,L"BUTTON",L"TRANSPORTE: TLS (desmarcado = UDP)",WS_TABSTOP|BS_AUTOCHECKBOX|BS_NOTIFY,39,464,350,28,kTlsCheckbox,1);
+        make_label(window,L"Certificado CA PEM (obrigatorio no TLS)",39,497,350,20,1);
         g_ca_file=make_edit(window,L"",kCaEdit,39,520,350,32,1);
-        make_button(window,L"VALIDAR DADOS",kValidateAccount,39,565,350,32,1);
+        make_button(window,L"VALIDAR CONTA SIP",kValidateAccount,39,565,350,32,1);
 #else
         g_tls = make_control(window, L"BUTTON", L"Usar TLS (desmarcado: UDP)",
                              WS_TABSTOP | BS_AUTOCHECKBOX | BS_NOTIFY, 39, 404, 340, 28,
@@ -1351,7 +1353,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             EnableWindow(GetDlgItem(window, id), FALSE);
         }
 #ifdef AXV_ENABLE_NATIVE_SIP
-        SetWindowTextW(GetDlgItem(window,kStartBaresipButton),L"REGISTRAR");
+        SetWindowTextW(GetDlgItem(window,kStartBaresipButton),L"REGISTRAR SIP");
         SetWindowTextW(g_process_status,L"Candidato nativo. Conta nao registrada; midia nao homologada.");
 #endif
         show_page(window, 0);
@@ -1409,6 +1411,17 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         // Combo selection uses code 1 too; accelerator commands have lParam == 0.
         if (HIWORD(wparam) == BN_CLICKED || (HIWORD(wparam) == 1 && lparam == 0)) {
             const int control = LOWORD(wparam);
+#ifdef AXV_ENABLE_NATIVE_SIP
+            if (control == kPasswordVisibility) {
+                g_password_visible = !g_password_visible;
+                SendMessageW(g_password, EM_SETPASSWORDCHAR,
+                             g_password_visible ? 0 : static_cast<WPARAM>(L'*'), 0);
+                SetWindowTextW(GetDlgItem(window,kPasswordVisibility),
+                               g_password_visible ? L"OCULTAR" : L"MOSTRAR");
+                InvalidateRect(g_password, nullptr, TRUE);
+                return 0;
+            }
+#endif
             if (control == kShowDial || control == kFocusNumber) { show_page(window, 0); return 0; }
             if(control==kCopyStatusButton){
                 const auto status=collect_call_readiness();
@@ -2241,7 +2254,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         const bool design_signature_ok =
             std::wstring_view(visual_signature) ==
                 L"DESPACHO UI  |  BUILD 2026.11.04";
-        bool ok=design_signature_ok && g_password && g_ca_file && GetDlgItem(window,kAnswerNative) &&
+        bool ok=design_signature_ok && g_password && g_ca_file &&
+            GetDlgItem(window,kPasswordVisibility) &&
+            GetDlgItem(window,kAnswerNative) &&
             GetDlgItem(window,kMuteFuture) && GetDlgItem(window,kHoldFuture) && GetDlgItem(window,kTransferFuture) &&
             !IsWindowEnabled(GetDlgItem(window,kTransferFuture)) &&
             !IsWindowEnabled(GetDlgItem(window,kMuteFuture)) && !IsWindowEnabled(GetDlgItem(window,kHoldFuture)) &&
