@@ -167,6 +167,7 @@ HWND g_tls = nullptr;
 HWND g_audio_status = nullptr;
 HWND g_process_status = nullptr;
 HWND g_runtime_banner = nullptr;
+HWND g_visual_identity_label = nullptr;
 axv::SipLamp g_sip_lamp = axv::SipLamp::Idle;
 HWND g_input_audio_combo = nullptr;
 HWND g_output_audio_combo = nullptr;
@@ -620,7 +621,7 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     HGDIOBJ brush_old = SelectObject(item.hDC, fill);
     HGDIOBJ pen_old = SelectObject(item.hDC, outline);
     const int offset=axv::dpi_pixels(1,g_dpi);
-    const int curve=axv::dpi_pixels(id >= kDigitStart && id < kDigitStart + 12 ? 38 : 24,g_dpi);
+    const int curve=axv::dpi_pixels(id >= kDigitStart && id < kDigitStart + 12 ? 56 : 32,g_dpi);
     RoundRect(item.hDC,rect.left+offset,rect.top+offset,
               rect.right-offset,rect.bottom-offset,curve,curve);
     SelectObject(item.hDC, pen_old);
@@ -1173,7 +1174,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_font_digit = create_font(25, FW_SEMIBOLD);
         refresh_brushes();
         make_label(window, L"AXE  VOICE", 24, 16, 240, 37, -1, g_font_title);
-        make_label(window, L"SOFTPHONE DESKTOP  /  LAB", 25, 57, 270, 22, -1, g_font_small);
+        g_visual_identity_label = make_label(window,
+            L"AXE DESPACHO  |  DESIGN 2026.11  |  WINDOWS",
+            25, 57, 276, 22, -1, g_font_small);
         make_button(window, g_compact ? L"MAX" : L"MINI", kCompact, 344, 65, 70, 29);
         make_button(window, L"?", kHelpButton, 301, 65, 34, 29);
         make_button(window, g_pinned ? L"SOLTAR" : L"FIXAR", kPin, 265, 18, 70, 36);
@@ -1211,7 +1214,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             const int col = i % 3;
             const int row = i / 3;
             make_button(window, dial_labels[i], kDigitStart + i,
-                        39 + col * 119, 329 + row * 66, 111, 59, 0);
+                        53 + col * 114, 329 + row * 66, 98, 59, 0);
         }
         make_button(window, L"APAGAR", kBackspace, 39, 597, 170, 38, 0);
         make_button(window, L"LIMPAR", kClear, 218, 597, 171, 38, 0);
@@ -1918,7 +1921,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         // AXE Despacho visual signature: slim teal header rule (DPI-aware).
         // Paint-only decoration; no focus, control position or SIP behavior changes.
         if (!g_high_contrast) {
-            RECT header_rule = {rect.left, rect.top, rect.right, axv::dpi_pixels(4,g_dpi)};
+            RECT header_rule = {rect.left, rect.top, rect.right, axv::dpi_pixels(7,g_dpi)};
             HBRUSH brand_brush = CreateSolidBrush(accent_color());
             FillRect(dc, &header_rule, brand_brush);
             DeleteObject(brand_brush);
@@ -2209,7 +2212,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
 #ifdef AXV_ENABLE_NATIVE_SIP
     if(command_line && std::wcscmp(command_line,L"--native-ui-smoke")==0) {
         if(g_compact){g_compact=false;apply_compact_layout(window);}
-        bool ok=g_password && g_ca_file && GetDlgItem(window,kAnswerNative) &&
+        wchar_t visual_signature[96]{};
+        if (g_visual_identity_label)
+            GetWindowTextW(g_visual_identity_label, visual_signature, 96);
+        const bool design_signature_ok =
+            std::wstring_view(visual_signature) ==
+                L"AXE DESPACHO  |  DESIGN 2026.11  |  WINDOWS";
+        bool ok=design_signature_ok && g_password && g_ca_file && GetDlgItem(window,kAnswerNative) &&
             GetDlgItem(window,kMuteFuture) && GetDlgItem(window,kHoldFuture) && GetDlgItem(window,kTransferFuture) &&
             !IsWindowEnabled(GetDlgItem(window,kTransferFuture)) &&
             !IsWindowEnabled(GetDlgItem(window,kMuteFuture)) && !IsWindowEnabled(GetDlgItem(window,kHoldFuture)) &&
