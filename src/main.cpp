@@ -145,6 +145,8 @@ int g_scroll_max = 0;
 int g_wheel_remainder = 0;
 bool g_controls_ready = false;
 bool g_scrollbar_updating = false;
+bool g_scroll_message_queued = false;
+int g_pending_scroll_offset = 0;
 constexpr int kCompactHeight = 365;
 constexpr int kDigitStart = 2100;
 constexpr int kBackspace = 2201;
@@ -155,6 +157,7 @@ constexpr int kTransferFuture = 2303;
 constexpr int kHangupFuture = 2304;
 constexpr int kFocusNumber = 2305;
 constexpr UINT kTrayCallback = WM_APP + 41;
+constexpr UINT kAsyncScrollMessage = WM_APP + 43;
 constexpr UINT kTrayIconId = 1;
 constexpr UINT kTrayOpen = 3001;
 constexpr UINT kTrayExit = 3002;
@@ -500,12 +503,32 @@ void refresh_account_feedback() {
 // Content beyond the available client height is reachable by scrollbar,
 // mouse wheel and keyboard focus without cropping or changing SIP state.
 void position_all_children() {
-    for (const auto& child : g_layout) {
-        auto r = child.logical;
-        if (child.handle == g_number_label) r.y = g_compact ? 218 : 246;
-        if (child.handle == g_number) r.y = g_compact ? 242 : 272;
-        if (child.handle == g_status) r.y = g_compact ? 298 : kFullFeedbackY;
-        position_logical(child.handle, r.x, r.y, r.width, r.height);
+    // One deferred batch avoids dozens of synchronous redraws per scroll tick.
+    // Never allow an invalid batch to leave controls stranded: fall back to
+    // the existing individual positioning behavior.
+    HDWP batch = BeginDeferWindowPos(static_cast<int>(g_layout.size()));
+    const bool batched = batch != nullptr;
+    if(batch) {
+        for (const auto& child : g_layout) {
+            auto r=child.logical;
+            if (child.handle==g_number_label) r.y=g_compact?218:246;
+            if (child.handle==g_number) r.y=g_compact?242:272;
+            if (child.handle==g_status) r.y=g_compact?298:kFullFeedbackY;
+            const auto box=axv::scaled_box(r,g_dpi);
+            batch=DeferWindowPos(batch,child.handle,nullptr,
+                box.x,box.y-g_scroll_offset,box.width,box.height,
+                SWP_NOACTIVATE|SWP_NOZORDER|SWP_NOREDRAW);
+            if(!batch)break;
+        }
+        if(batch && EndDeferWindowPos(batch))return;
+    }
+    (void)batched;
+    for(const auto& child:g_layout) {
+        auto r=child.logical;
+        if(child.handle==g_number_label)r.y=g_compact?218:246;
+        if(child.handle==g_number)r.y=g_compact?242:272;
+        if(child.handle==g_status)r.y=g_compact?298:kFullFeedbackY;
+        position_logical(child.handle,r.x,r.y,r.width,r.height);
     }
 }
 
@@ -547,7 +570,8 @@ void set_viewport_scroll(HWND window, int desired) {
     g_scroll_offset = target;
     sync_viewport_scroll(window);
     position_all_children();
-    InvalidateRect(window, nullptr, TRUE);
+    InvalidateRect(window, nullptr, FALSE);
+    RedrawWindow(window,nullptr,nullptr,RDW_INVALIDATE|RDW_ALLCHILDREN|RDW_NOERASE);
 }
 void bring_focused_control_into_view(HWND window, HWND control) {
     if (!g_controls_ready || !control) return;
@@ -1918,9 +1942,26 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         }
         default: return 0;
         }
-        set_viewport_scroll(window, desired);
+        // Dragging can generate hundreds of requests. Keep only the newest
+        // thumb position and drain it through one posted GUI message.
+        if(LOWORD(wparam)==SB_THUMBTRACK){
+            g_pending_scroll_offset=desired;
+            if(!g_scroll_message_queued){
+                g_scroll_message_queued=PostMessageW(window,kAsyncScrollMessage,0,0)!=FALSE;
+                if(!g_scroll_message_queued)set_viewport_scroll(window,desired);
+            }
+        }else{
+            g_scroll_message_queued=false;
+            set_viewport_scroll(window,desired);
+        }
         return 0;
     }
+    case kAsyncScrollMessage:
+        if(g_scroll_message_queued){
+            g_scroll_message_queued=false;
+            set_viewport_scroll(window,g_pending_scroll_offset);
+        }
+        return 0;
     case WM_MOUSEWHEEL: {
         g_wheel_remainder += GET_WHEEL_DELTA_WPARAM(wparam);
         const int steps = g_wheel_remainder / WHEEL_DELTA;
@@ -2010,24 +2051,40 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         break;
     }
     case WM_PAINT: {
-        PAINTSTRUCT paint = {};
-        HDC dc = BeginPaint(window, &paint);
-        RECT rect = {};
-        GetClientRect(window, &rect);
-        FillRect(dc, &rect, g_background_brush);
+        PAINTSTRUCT paint{};
+        const HDC window_dc=BeginPaint(window,&paint);
+        RECT rect{};
+        GetClientRect(window,&rect);
+        // Offscreen painting avoids flashing the background between panels.
+        const int width=rect.right-rect.left,height=rect.bottom-rect.top;
+        HDC back_dc=CreateCompatibleDC(window_dc);
+        HBITMAP bitmap=(back_dc && width>0 && height>0)
+            ? CreateCompatibleBitmap(window_dc,width,height):nullptr;
+        HGDIOBJ old_bitmap=bitmap?SelectObject(back_dc,bitmap):nullptr;
+        HDC dc=old_bitmap?back_dc:window_dc;
+        FillRect(dc,&rect,g_background_brush);
         draw_card(dc,logical_rect(24,151,414,198),panel_color(),16);
         draw_card(dc,g_compact?logical_rect(24,206,414,289)
                                :logical_rect(24,206,414,742),panel_color(),18);
-        HPEN rule = CreatePen(PS_SOLID, 1, line_color());
-        HGDIOBJ old = SelectObject(dc, rule);
-        const int divider_y = g_compact ? 294 : 747;
+        HPEN rule=CreatePen(PS_SOLID,1,line_color());
+        HGDIOBJ old=SelectObject(dc,rule);
+        const int divider_y=g_compact?294:747;
         MoveToEx(dc,axv::dpi_pixels(24,g_dpi),
                  axv::dpi_pixels(divider_y,g_dpi)-g_scroll_offset,nullptr);
         LineTo(dc,axv::dpi_pixels(414,g_dpi),
                axv::dpi_pixels(divider_y,g_dpi)-g_scroll_offset);
-        SelectObject(dc, old);
+        SelectObject(dc,old);
         DeleteObject(rule);
-        EndPaint(window, &paint);
+        if(old_bitmap){
+            BitBlt(window_dc,paint.rcPaint.left,paint.rcPaint.top,
+                paint.rcPaint.right-paint.rcPaint.left,
+                paint.rcPaint.bottom-paint.rcPaint.top,
+                back_dc,paint.rcPaint.left,paint.rcPaint.top,SRCCOPY);
+            SelectObject(back_dc,old_bitmap);
+        }
+        if(bitmap)DeleteObject(bitmap);
+        if(back_dc)DeleteDC(back_dc);
+        EndPaint(window,&paint);
         return 0;
     }
     case WM_DEVICECHANGE:
@@ -2227,7 +2284,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
 #endif
     HWND window = CreateWindowExW(0, className, title,
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VSCROLL,
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VSCROLL | WS_CLIPCHILDREN,
         CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi)+GetSystemMetricsForDpi(SM_CXVSCROLL,g_dpi),
         axv::dpi_pixels(kFullHeight,g_dpi),
