@@ -8,6 +8,7 @@
 #include "sip_account.h"
 #include "sip_status.h"
 #include "sip_runtime_observation.h"
+#include "sip_lamp.h"
 #include "baresip_event_mailbox.h"
 #include "sip_event_projection.h"
 #include "sip_runtime_session_guard.h"
@@ -56,6 +57,7 @@
 #include "dialpad_model.h"
 #include "destination_feedback.h"
 #include "account_form_feedback.h"
+#include "sip_transport_port.h"
 #include "ui_help.h"
 #include "call_readiness.h"
 #include "diagnostic_export.h"
@@ -77,8 +79,9 @@ namespace {
 #ifdef AXV_ENABLE_NATIVE_SIP
 // Retain through process exit, including detached audio probes after owner teardown.
 axv::NativeInstallGuard g_native_install_guard{axv::NativeInstallGuardLifetime::Process};
-constexpr int kPasswordEdit=1016,kCaEdit=1017,kAnswerNative=1018;
+constexpr int kPasswordEdit=1016,kCaEdit=1017,kAnswerNative=1018,kPasswordVisibility=1020;
 HWND g_password=nullptr,g_ca_file=nullptr;
+bool g_password_visible=false;
 axv::NativeCallMediaState g_displayed_media;
 constexpr int kCallDurationLabel = 2503;
 HWND g_call_duration_label = nullptr;
@@ -117,6 +120,8 @@ constexpr int kDtmfButton = 2010;
 constexpr int kRecentDestinationsButton = 2011;
 constexpr int kIncomingRingtoneMuteButton = 2012;
 constexpr int kContactsButton = 2013;
+constexpr int kAnswerShortcut = 2014;
+constexpr int kHangupShortcut = 2015;
 constexpr int kInputAudioCombo = 2401;
 constexpr int kOutputAudioCombo = 2402;
 constexpr int kRingtoneAudioCombo = 2403;
@@ -142,6 +147,9 @@ bool g_controls_ready = false;
 bool g_scrollbar_updating = false;
 constexpr int kCompactHeight = 365;
 constexpr int kDigitStart = 2100;
+constexpr ULONGLONG kDialFlashMs = 220;
+int g_dial_flash_id = -1;
+ULONGLONG g_dial_flash_end = 0;
 constexpr int kBackspace = 2201;
 constexpr int kClear = 2202;
 constexpr int kMuteFuture = 2301;
@@ -163,6 +171,8 @@ HWND g_tls = nullptr;
 HWND g_audio_status = nullptr;
 HWND g_process_status = nullptr;
 HWND g_runtime_banner = nullptr;
+HWND g_visual_identity_label = nullptr;
+axv::SipLamp g_sip_lamp = axv::SipLamp::Idle;
 HWND g_input_audio_combo = nullptr;
 HWND g_output_audio_combo = nullptr;
 HWND g_ringtone_audio_combo = nullptr;
@@ -208,7 +218,7 @@ axv::SipEventProjection g_sip_projection;
 axv::SipRuntimeSessionGuard g_sip_session_guard;
 
 
-bool g_dark = true;
+bool g_dark = false; // AXE Despacho-inspired light theme, with optional dark mode
 bool g_high_contrast = false;
 axv::UiSystemColors g_system_colors{};
 bool g_pinned = false;
@@ -432,9 +442,9 @@ HWND make_edit(HWND root, LPCWSTR initial, int id, int x, int y, int w, int h,
         const wchar_t* hint = nullptr;
         switch (id) {
         case kNumberEdit: hint = L"Ex.: 1001 ou sip:usuario@dominio"; break;
-        case kServerEdit: hint = L"pbx.exemplo.com"; break;
+        case kServerEdit: hint = L"IP ou dominio: 192.168.1.10 / pbx.exemplo.com"; break;
         case kUserEdit: hint = L"Ex.: 1001"; break;
-        case kPortEdit: hint = L"5060"; break;
+        case kPortEdit: hint = L"UDP 5060 / TLS 5061"; break;
         default: break;
         }
         if (hint) SendMessageW(edit, EM_SETCUEBANNER, TRUE,
@@ -593,6 +603,15 @@ void draw_card(HDC dc, RECT rect, COLORREF color, int radius) {
     DeleteObject(border);
     DeleteObject(fill);
 }
+void flash_dial_key(HWND root, int id) {
+    if (id < kDigitStart || id >= kDigitStart + 12) return;
+    const int previous = g_dial_flash_id;
+    g_dial_flash_id = id;
+    g_dial_flash_end = GetTickCount64() + kDialFlashMs;
+    if (previous >= kDigitStart && previous < kDigitStart + 12 && previous != id)
+        InvalidateRect(GetDlgItem(root, previous), nullptr, FALSE);
+    InvalidateRect(GetDlgItem(root, id), nullptr, FALSE);
+}
 void paint_button(const DRAWITEMSTRUCT& item) {
     const int id = static_cast<int>(item.CtlID);
     const bool disabled = (item.itemState & ODS_DISABLED) != 0;
@@ -602,8 +621,14 @@ void paint_button(const DRAWITEMSTRUCT& item) {
                               (id == kShowAudio && g_page == 2);
     COLORREF color = ui_color(axv::UiRole::Button);
     if (selected_tab || id == kCallButton) color = accent_color();
+    // Dedicated call-action hierarchy, aligned with AXE Despacho action buttons.
+    if (!g_high_contrast && id == kCallButton) color = RGB(22, 163, 74);
+    if (!g_high_contrast && id == kHangupFuture) color = RGB(220, 38, 38);
     if (id >= kDigitStart && id < kDigitStart + 12) color = field_color();
-    if (pressed) color = ui_color(axv::UiRole::Pressed);
+    if (pressed || (id == g_dial_flash_id && GetTickCount64() < g_dial_flash_end))
+        color = g_high_contrast ? ui_color(axv::UiRole::Pressed)
+                                : (id >= kDigitStart && id < kDigitStart + 12
+                                   ? accent_color() : ui_color(axv::UiRole::Pressed));
     if (disabled) color = ui_color(axv::UiRole::DisabledButton);
 
     RECT rect = item.rcItem;
@@ -612,7 +637,7 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     HGDIOBJ brush_old = SelectObject(item.hDC, fill);
     HGDIOBJ pen_old = SelectObject(item.hDC, outline);
     const int offset=axv::dpi_pixels(1,g_dpi);
-    const int curve=axv::dpi_pixels(13,g_dpi);
+    const int curve=axv::dpi_pixels(id >= kDigitStart && id < kDigitStart + 12 ? 56 : 32,g_dpi);
     RoundRect(item.hDC,rect.left+offset,rect.top+offset,
               rect.right-offset,rect.bottom-offset,curve,curve);
     SelectObject(item.hDC, pen_old);
@@ -621,7 +646,7 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     DeleteObject(fill);
 
     const COLORREF foreground = disabled ? ui_color(axv::UiRole::DisabledText)
-        : (selected_tab || id == kCallButton
+        : (selected_tab || id == kCallButton || (!g_high_contrast && id == kHangupFuture)
            ? ui_color(axv::UiRole::SelectedText) : ui_color(axv::UiRole::ButtonText));
     SetBkMode(item.hDC, TRANSPARENT);
     SetTextColor(item.hDC, foreground);
@@ -958,6 +983,11 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     // Thread-safe receive boundary is active, but not connected to Baresip C API.
     // Bind native event lifetime to actual process lifetime, not to a timer tick.
     const auto observed=current_sip_observation(state);
+    const auto next_lamp = axv::sip_lamp_state(observed);
+    if (next_lamp != g_sip_lamp) {
+        g_sip_lamp = next_lamp;
+        InvalidateRect(GetParent(g_runtime_banner), nullptr, FALSE);
+    }
 #ifdef AXV_ENABLE_NATIVE_SIP
     g_cti_server.set_ready(
         observed.call_id == 0 &&
@@ -1160,7 +1190,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_font_digit = create_font(25, FW_SEMIBOLD);
         refresh_brushes();
         make_label(window, L"AXE  VOICE", 24, 16, 240, 37, -1, g_font_title);
-        make_label(window, L"SOFTPHONE DESKTOP  /  LAB", 25, 57, 270, 22, -1, g_font_small);
+        g_visual_identity_label = make_label(window,
+            L"DESPACHO UI  |  BUILD 2026.11.04",
+            25, 57, 276, 22, -1, g_font_small);
         make_button(window, g_compact ? L"MAX" : L"MINI", kCompact, 344, 65, 70, 29);
         make_button(window, L"?", kHelpButton, 301, 65, 34, 29);
         make_button(window, g_pinned ? L"SOLTAR" : L"FIXAR", kPin, 265, 18, 70, 36);
@@ -1168,10 +1200,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         if (g_pinned) SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0,
                                    SWP_NOMOVE | SWP_NOSIZE);
         make_button(window, L"TECLADO", kShowDial, 24, 103, 122, 42);
-        make_button(window, L"AJUSTES", kShowSettings, 153, 103, 123, 42);
+        make_button(window, L"CONTA SIP", kShowSettings, 153, 103, 123, 42);
         make_button(window, L"AUDIO", kShowAudio, 283, 103, 131, 42);
         g_runtime_banner = make_label(window, L"MOTOR PARADO  |  SIP NAO REGISTRADO",
-                                     42, 164, 347, 25, -1, g_font_regular, kRuntimeStatusLabel);
+                                     77, 164, 312, 25, -1, g_font_small, kRuntimeStatusLabel);
 
 #ifdef AXV_ENABLE_NATIVE_SIP
         g_call_duration_label = make_label(window, L"DURACAO --:--:--",
@@ -1198,7 +1230,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             const int col = i % 3;
             const int row = i / 3;
             make_button(window, dial_labels[i], kDigitStart + i,
-                        39 + col * 119, 329 + row * 66, 111, 59, 0);
+                        53 + col * 114, 329 + row * 66, 98, 59, 0);
         }
         make_button(window, L"APAGAR", kBackspace, 39, 597, 170, 38, 0);
         make_button(window, L"LIMPAR", kClear, 218, 597, 171, 38, 0);
@@ -1226,29 +1258,30 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_button(window, L"ENCERRAR", kHangupFuture, 303, 708, 86, 34, 0);
 
 #ifdef AXV_ENABLE_NATIVE_SIP
-        make_label(window,L"CONTA SIP  •  CANDIDATO NATIVO",39,219,361,26,1,g_font_small);
+        make_label(window,L"CONTA SIP  /  REGISTRO E AUTENTICACAO",39,219,361,26,1,g_font_small);
 #else
-        make_label(window, L"CONFIGURAÇÃO DE CONTA  •  SEM REGISTRO", 39, 219, 361, 26,
+        make_label(window, L"CONTA SIP  /  CONFIGURACAO LOCAL", 39, 219, 361, 26,
                    1, g_font_small);
 #endif
-        make_label(window, L"Servidor SIP", 39, 255, 340, 20, 1);
+        make_label(window, L"Servidor SIP (IPv4 ou dominio DNS)", 39, 255, 350, 20, 1);
         g_server = make_edit(window, L"", kServerEdit, 39, 280, 350, 38, 1);
         make_label(window, L"Usuário SIP", 39, 329, 212, 20, 1);
-        make_label(window, L"Porta", 268, 329, 118, 20, 1);
+        make_label(window, L"Porta (auto)", 268, 329, 121, 20, 1);
         g_user = make_edit(window, L"", kUserEdit, 39, 355, 216, 38, 1);
         g_port = make_edit(window, L"5060", kPortEdit, 267, 355, 122, 38, 1);
 #ifdef AXV_ENABLE_NATIVE_SIP
-        make_label(window,L"Senha (somente nesta sessao)",39,402,350,20,1);
-        g_password=make_edit(window,L"",kPasswordEdit,39,425,350,32,1);
+        make_label(window,L"Senha de autenticacao (apenas nesta sessao)",39,402,350,20,1);
+        g_password=make_edit(window,L"",kPasswordEdit,39,425,253,32,1);
+        make_button(window,L"MOSTRAR",kPasswordVisibility,300,425,89,32,1);
         SetWindowLongPtrW(g_password,GWL_STYLE,GetWindowLongPtrW(g_password,GWL_STYLE)|ES_PASSWORD);
         SendMessageW(g_password,EM_SETPASSWORDCHAR,L'*',0);
         SendMessageW(g_password,EM_SETLIMITTEXT,256,0);
-        g_tls=make_control(window,L"BUTTON",L"TLS: exige CA confiavel; nao criptografa RTP",WS_TABSTOP|BS_AUTOCHECKBOX|BS_NOTIFY,39,464,350,28,kTlsCheckbox,1);
-        make_label(window,L"Arquivo CA PEM (obrigatorio para TLS)",39,497,350,20,1);
+        g_tls=make_control(window,L"BUTTON",L"TRANSPORTE: TLS (desmarcado = UDP)",WS_TABSTOP|BS_AUTOCHECKBOX|BS_NOTIFY,39,464,350,28,kTlsCheckbox,1);
+        make_label(window,L"Certificado CA PEM (obrigatorio no TLS)",39,497,350,20,1);
         g_ca_file=make_edit(window,L"",kCaEdit,39,520,350,32,1);
-        make_button(window,L"VALIDAR DADOS",kValidateAccount,39,565,350,32,1);
+        make_button(window,L"VALIDAR CONTA SIP",kValidateAccount,39,565,350,32,1);
 #else
-        g_tls = make_control(window, L"BUTTON", L"Usar TLS (quando suportado)",
+        g_tls = make_control(window, L"BUTTON", L"Usar TLS (desmarcado: UDP)",
                              WS_TABSTOP | BS_AUTOCHECKBOX | BS_NOTIFY, 39, 404, 340, 28,
                              kTlsCheckbox, 1);
         make_button(window, L"VALIDAR DADOS  /  SEM REGISTRAR", kValidateAccount,
@@ -1320,7 +1353,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             EnableWindow(GetDlgItem(window, id), FALSE);
         }
 #ifdef AXV_ENABLE_NATIVE_SIP
-        SetWindowTextW(GetDlgItem(window,kStartBaresipButton),L"REGISTRAR");
+        SetWindowTextW(GetDlgItem(window,kStartBaresipButton),L"REGISTRAR SIP");
         SetWindowTextW(g_process_status,L"Candidato nativo. Conta nao registrada; midia nao homologada.");
 #endif
         show_page(window, 0);
@@ -1332,6 +1365,25 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         return 0;
     }
     case WM_COMMAND:
+#ifdef AXV_ENABLE_NATIVE_SIP
+        if (lparam == 0 && HIWORD(wparam) == 1 &&
+            (LOWORD(wparam) == kAnswerShortcut || LOWORD(wparam) == kHangupShortcut)) {
+            const bool answering = LOWORD(wparam) == kAnswerShortcut;
+            const auto current = native_engine().observation();
+            const auto action = answering ? axv::CallAction::Answer : axv::CallAction::Hangup;
+            const auto permit = axv::authorize_call_command(
+                current, current.session, g_sip_selection, action, g_displayed_sip.call_id);
+            if (permit.allowed() && current.session == g_displayed_sip.session &&
+                current.call_id == g_displayed_sip.call_id &&
+                current.sip == g_displayed_sip.sip) {
+                const int control = answering ? kAnswerNative : kHangupFuture;
+                SendMessageW(window, WM_COMMAND, MAKEWPARAM(control, BN_CLICKED),
+                             reinterpret_cast<LPARAM>(GetDlgItem(window, control)));
+            }
+            // F2/F4 never dial or affect an unrelated/old call.
+            return 0;
+        }
+#endif
         if (lparam && (HIWORD(wparam) == EN_SETFOCUS ||
                        HIWORD(wparam) == BN_SETFOCUS ||
                        HIWORD(wparam) == CBN_SETFOCUS))
@@ -1346,9 +1398,30 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             if (g_page == 1) refresh_account_feedback();
             return 0;
         }
+        if (LOWORD(wparam) == kTlsCheckbox && HIWORD(wparam) == BN_CLICKED) {
+            const bool tls = SendMessageW(g_tls, BM_GETCHECK, 0, 0) == BST_CHECKED;
+            wchar_t port_value[24] = {};
+            GetWindowTextW(g_port, port_value, 24);
+            // Do not replace user-configured ports when switching transport.
+            if (const wchar_t* suggested = axv::suggested_sip_port(tls, port_value))
+                SetWindowTextW(g_port, suggested);
+            if (g_page == 1) refresh_account_feedback();
+            return 0;
+        }
         // Combo selection uses code 1 too; accelerator commands have lParam == 0.
         if (HIWORD(wparam) == BN_CLICKED || (HIWORD(wparam) == 1 && lparam == 0)) {
             const int control = LOWORD(wparam);
+#ifdef AXV_ENABLE_NATIVE_SIP
+            if (control == kPasswordVisibility) {
+                g_password_visible = !g_password_visible;
+                SendMessageW(g_password, EM_SETPASSWORDCHAR,
+                             g_password_visible ? 0 : static_cast<WPARAM>(L'*'), 0);
+                SetWindowTextW(GetDlgItem(window,kPasswordVisibility),
+                               g_password_visible ? L"OCULTAR" : L"MOSTRAR");
+                InvalidateRect(g_password, nullptr, TRUE);
+                return 0;
+            }
+#endif
             if (control == kShowDial || control == kFocusNumber) { show_page(window, 0); return 0; }
             if(control==kCopyStatusButton){
                 const auto status=collect_call_readiness();
@@ -1464,10 +1537,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                     const auto call=native_engine().observation();
                     const bool accepted=g_dtmf_mode.active(expected,call) && native_engine().send_dtmf(key,expected);
                     SetWindowTextW(g_status,accepted?L"Pedido DTMF via INFO enfileirado; recebimento pela central nao confirmado.":L"DTMF recusado: chamada mudou, esta em espera/transferencia ou comando ocupado. Tente novamente.");
+                    if (accepted) flash_dial_key(window, control);
                     return 0;
                 }
 #endif
                 edit_number(window, axv::dialpad_keys()[control - kDigitStart]);
+                flash_dial_key(window, control);
                 return 0;
             }
             if (control == kBackspace) { edit_number(window, L'\b'); return 0; }
@@ -1873,7 +1948,33 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         RECT rect = {};
         GetClientRect(window, &rect);
         FillRect(dc, &rect, g_background_brush);
+        // AXE Despacho visual signature: slim teal header rule (DPI-aware).
+        // Paint-only decoration; no focus, control position or SIP behavior changes.
+        if (!g_high_contrast) {
+            RECT header_rule = {rect.left, rect.top, rect.right, axv::dpi_pixels(7,g_dpi)};
+            HBRUSH brand_brush = CreateSolidBrush(accent_color());
+            FillRect(dc, &header_rule, brand_brush);
+            DeleteObject(brand_brush);
+        }
         draw_card(dc,logical_rect(24,151,414,198),panel_color(),16);
+        // Compact native status lamp: gray idle, amber registering,
+        // green only after verified SIP registration, red on failure.
+        COLORREF lamp = g_high_contrast ? GetSysColor(COLOR_HIGHLIGHT) : RGB(148,163,184);
+        switch (g_sip_lamp) {
+        case axv::SipLamp::Idle: break;
+        case axv::SipLamp::Connecting: if (!g_high_contrast) lamp = RGB(234,179,8); break;
+        case axv::SipLamp::Connected: if (!g_high_contrast) lamp = RGB(22,163,74); break;
+        case axv::SipLamp::Error: if (!g_high_contrast) lamp = RGB(220,38,38); break;
+        }
+        const RECT dot = logical_rect(46,165,66,185);
+        HBRUSH dot_brush = CreateSolidBrush(lamp);
+        HPEN dot_outline = CreatePen(PS_SOLID,axv::dpi_pixels(2,g_dpi),
+                                   g_high_contrast ? GetSysColor(COLOR_WINDOWTEXT) : panel_color());
+        const auto prior_brush = SelectObject(dc,dot_brush);
+        const auto prior_pen = SelectObject(dc,dot_outline);
+        Ellipse(dc,dot.left,dot.top,dot.right,dot.bottom);
+        SelectObject(dc,prior_pen); SelectObject(dc,prior_brush);
+        DeleteObject(dot_outline); DeleteObject(dot_brush);
         draw_card(dc,g_compact?logical_rect(24,206,414,289)
                                :logical_rect(24,206,414,742),panel_color(),18);
         HPEN rule = CreatePen(PS_SOLID, 1, line_color());
@@ -1894,6 +1995,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         return 0;
     case WM_TIMER:
         if (wparam == kProcessTimer) {
+            if (g_dial_flash_id >= kDigitStart && g_dial_flash_id < kDigitStart + 12 &&
+                GetTickCount64() >= g_dial_flash_end) {
+                const int completed = g_dial_flash_id;
+                g_dial_flash_id = -1;
+                InvalidateRect(GetDlgItem(window, completed), nullptr, FALSE);
+            }
             poll_audio_notifications();
             poll_audio_inventory();
             // No Windows UI operations occur on the WASAPI worker thread.
@@ -2141,7 +2248,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
 #ifdef AXV_ENABLE_NATIVE_SIP
     if(command_line && std::wcscmp(command_line,L"--native-ui-smoke")==0) {
         if(g_compact){g_compact=false;apply_compact_layout(window);}
-        bool ok=g_password && g_ca_file && GetDlgItem(window,kAnswerNative) &&
+        wchar_t visual_signature[96]{};
+        if (g_visual_identity_label)
+            GetWindowTextW(g_visual_identity_label, visual_signature, 96);
+        const bool design_signature_ok =
+            std::wstring_view(visual_signature) ==
+                L"DESPACHO UI  |  BUILD 2026.11.04";
+        bool ok=design_signature_ok && g_password && g_ca_file &&
+            GetDlgItem(window,kPasswordVisibility) &&
+            GetDlgItem(window,kAnswerNative) &&
             GetDlgItem(window,kMuteFuture) && GetDlgItem(window,kHoldFuture) && GetDlgItem(window,kTransferFuture) &&
             !IsWindowEnabled(GetDlgItem(window,kTransferFuture)) &&
             !IsWindowEnabled(GetDlgItem(window,kMuteFuture)) && !IsWindowEnabled(GetDlgItem(window,kHoldFuture)) &&
@@ -2544,13 +2659,32 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
 #endif
         {FVIRTKEY, VK_ESCAPE, kShowDial},
         {FVIRTKEY, VK_F1, kHelpButton},
-        {FVIRTKEY, VK_F2, kReadinessButton},
+        {FVIRTKEY | FCONTROL, VK_F2, kReadinessButton},
+#ifdef AXV_ENABLE_NATIVE_SIP
+        {FVIRTKEY, VK_F2, kAnswerShortcut},
+        {FVIRTKEY, VK_F4, kHangupShortcut},
+#endif
         {FVIRTKEY | FCONTROL | FSHIFT, L'D', kCopyStatusButton}
     };
     HACCEL accelerator = CreateAcceleratorTableW(
         const_cast<ACCEL*>(shortcuts), static_cast<int>(sizeof(shortcuts)/sizeof(shortcuts[0])));
     MSG msg = {};
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
+        // Mirror physical digits in the on-screen dialpad without intercepting
+        // normal text input or synthesizing SIP/DTMF commands.
+        if (msg.hwnd == g_number && msg.message == WM_KEYDOWN && g_page == 0 &&
+            !(GetKeyState(VK_CONTROL) & 0x8000) &&
+            !(GetKeyState(VK_MENU) & 0x8000)) {
+            const auto key = static_cast<unsigned>(msg.wParam);
+            int index = -1;
+            if (key >= '1' && key <= '9') index = static_cast<int>(key - '1');
+            else if (key == '0') index = 10;
+            else if (key >= VK_NUMPAD1 && key <= VK_NUMPAD9)
+                index = static_cast<int>(key - VK_NUMPAD1);
+            else if (key == VK_NUMPAD0) index = 10;
+            else if (key == VK_MULTIPLY) index = 9;
+            if (index >= 0) flash_dial_key(window, kDigitStart + index);
+        }
 #ifdef AXV_ENABLE_NATIVE_SIP
         const bool contact_message=axv::contacts_owns_message(msg);
         if(contact_message && axv::translate_contacts_message(msg))continue;

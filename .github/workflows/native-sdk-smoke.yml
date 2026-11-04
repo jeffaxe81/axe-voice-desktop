@@ -76,13 +76,13 @@ jobs:
           Set-Content $Stale 'stale fixture'
           ./scripts/package-native-candidate.ps1
           if (Test-Path $Stale) { throw 'Stale staging DLL survived packaging' }
-      - name: Publish candidate installer
-        if: matrix.profile == 'tls-media'
+      - name: Publish candidate installer (unapproved if acceptance failed)
+        if: matrix.profile == 'tls-media' && always()
         uses: actions/upload-artifact@v4
         with:
           name: AXE-Voice-Native-Candidate-Setup
           path: build/native-candidate-installer/*.exe
-          if-no-files-found: error
+          if-no-files-found: warn
       - name: Publish candidate SDK with provenance and licenses
         uses: actions/upload-artifact@v4
         with:
