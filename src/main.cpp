@@ -2305,6 +2305,32 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             (GetWindowLongPtrW(g_password,GWL_STYLE)&ES_PASSWORD) &&
             !IsWindowEnabled(GetDlgItem(window,kCallButton));
         ok=ok && GetDlgItem(window,kDtmfButton) && !IsWindowEnabled(GetDlgItem(window,kDtmfButton));
+        // Four navigation tabs must never overlap, including native DPI scaling.
+        const int tabs[] = {kShowDial,kShowSettings,kShowAudio,kShowGeneral};
+        for (int i=0;i<4;++i) {
+            RECT left{};
+            ok = ok && GetWindowRect(GetDlgItem(window,tabs[i]),&left);
+            if(i) {
+                RECT prior{};
+                GetWindowRect(GetDlgItem(window,tabs[i-1]),&prior);
+                ok = ok && prior.right < left.left;
+            }
+        }
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kShowGeneral,BN_CLICKED),
+                     reinterpret_cast<LPARAM>(GetDlgItem(window,kShowGeneral)));
+        ok = ok && g_page==3 &&
+            (GetWindowLongPtrW(GetDlgItem(window,kSizeComfort),GWL_STYLE)&WS_VISIBLE) &&
+            (GetWindowLongPtrW(GetDlgItem(window,kSizeStandard),GWL_STYLE)&WS_VISIBLE) &&
+            (GetWindowLongPtrW(GetDlgItem(window,kSizeExpanded),GWL_STYLE)&WS_VISIBLE);
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kSizeComfort,BN_CLICKED),
+                     reinterpret_cast<LPARAM>(GetDlgItem(window,kSizeComfort)));
+        ok = ok && g_window_size==0 && !g_compact;
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kSizeExpanded,BN_CLICKED),
+                     reinterpret_cast<LPARAM>(GetDlgItem(window,kSizeExpanded)));
+        ok = ok && g_window_size==2 && !g_compact;
+        g_window_size=1;
+        apply_compact_layout(window);
+        show_page(window,0);
         const auto inactive_duration=[] {
             wchar_t text[80]{};
             GetWindowTextW(g_call_duration_label,text,80);
