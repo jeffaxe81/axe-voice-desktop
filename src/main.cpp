@@ -119,6 +119,8 @@ constexpr int kDtmfButton = 2010;
 constexpr int kRecentDestinationsButton = 2011;
 constexpr int kIncomingRingtoneMuteButton = 2012;
 constexpr int kContactsButton = 2013;
+constexpr int kAnswerShortcut = 2014;
+constexpr int kHangupShortcut = 2015;
 constexpr int kInputAudioCombo = 2401;
 constexpr int kOutputAudioCombo = 2402;
 constexpr int kRingtoneAudioCombo = 2403;
@@ -1343,6 +1345,25 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         return 0;
     }
     case WM_COMMAND:
+#ifdef AXV_ENABLE_NATIVE_SIP
+        if (lparam == 0 && HIWORD(wparam) == 1 &&
+            (LOWORD(wparam) == kAnswerShortcut || LOWORD(wparam) == kHangupShortcut)) {
+            const bool answering = LOWORD(wparam) == kAnswerShortcut;
+            const auto current = native_engine().observation();
+            const auto action = answering ? axv::CallAction::Answer : axv::CallAction::Hangup;
+            const auto permit = axv::authorize_call_command(
+                current, current.session, g_sip_selection, action, g_displayed_sip.call_id);
+            if (permit.allowed() && current.session == g_displayed_sip.session &&
+                current.call_id == g_displayed_sip.call_id &&
+                current.sip == g_displayed_sip.sip) {
+                const int control = answering ? kAnswerNative : kHangupFuture;
+                SendMessageW(window, WM_COMMAND, MAKEWPARAM(control, BN_CLICKED),
+                             reinterpret_cast<LPARAM>(GetDlgItem(window, control)));
+            }
+            // F2/F4 never dial or affect an unrelated/old call.
+            return 0;
+        }
+#endif
         if (lparam && (HIWORD(wparam) == EN_SETFOCUS ||
                        HIWORD(wparam) == BN_SETFOCUS ||
                        HIWORD(wparam) == CBN_SETFOCUS))
@@ -2591,7 +2612,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
 #endif
         {FVIRTKEY, VK_ESCAPE, kShowDial},
         {FVIRTKEY, VK_F1, kHelpButton},
-        {FVIRTKEY, VK_F2, kReadinessButton},
+        {FVIRTKEY | FCONTROL, VK_F2, kReadinessButton},
+#ifdef AXV_ENABLE_NATIVE_SIP
+        {FVIRTKEY, VK_F2, kAnswerShortcut},
+        {FVIRTKEY, VK_F4, kHangupShortcut},
+#endif
         {FVIRTKEY | FCONTROL | FSHIFT, L'D', kCopyStatusButton}
     };
     HACCEL accelerator = CreateAcceleratorTableW(
