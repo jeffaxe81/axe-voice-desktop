@@ -83,7 +83,7 @@ int main() {
     if(play_windows_ringtone(L"",nullptr,true,6,L"")!=TonePreviewState::UnsupportedFormat ||
        play_windows_ringtone(L"",nullptr,true,5,L"")!=TonePreviewState::UnsupportedFormat ||
        play_windows_ringtone(L"",nullptr,true,5,L"bad.wav")!=TonePreviewState::UnsupportedFormat ||
-       play_windows_ringtone(L"",nullptr,true,5,L"bad.mp3\\"unsafe")!=TonePreviewState::UnsupportedFormat)
+       play_windows_ringtone(L"",nullptr,true,5,std::wstring(L"bad.mp3")+wchar_t(34)+L"unsafe")!=TonePreviewState::UnsupportedFormat)
         return 21;
     // No hardware-dependent audio playback is required on GitHub runners.
     if (play_windows_tone_on_endpoint(L"") != TonePreviewState::MissingDevice)
