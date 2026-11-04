@@ -123,6 +123,7 @@ public static class NativePostinstallWindows {
         }
         $Deadline = [DateTime]::UtcNow.AddSeconds(120)
         $LastAction = ''
+        $LastActionAt = [DateTime]::MinValue
         do {
             Update-OwnedProcesses
             foreach ($Window in [NativePostinstallWindows]::Windows([IntPtr]::Zero)) {
@@ -143,10 +144,15 @@ public static class NativePostinstallWindows {
                     # any unexpected/localized dialog fails within the deadline.
                     if ($Caption -notin @('Next >', 'Install', 'Finish')) { continue }
                     $Action = "$Control/$Caption/$Page"
-                    if ($Action -eq $LastAction) { continue }
+                    # Inno can keep the same visible page while its transition is busy.
+                    # Retry an unchanged navigation after a bounded pause rather than
+                    # deadlocking until the global deadline after one missed click.
+                    if ($Action -eq $LastAction -and
+                        ([DateTime]::UtcNow - $LastActionAt).TotalSeconds -lt 2) { continue }
                     if ($Caption -eq 'Finish') { $SawFinish = $true }
                     [NativePostinstallWindows]::Click($Control)
                     $LastAction = $Action
+                    $LastActionAt = [DateTime]::UtcNow
                     break
                 }
             }
