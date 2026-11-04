@@ -8,6 +8,7 @@
 #include "sip_account.h"
 #include "sip_status.h"
 #include "sip_runtime_observation.h"
+#include "sip_indicator_tone.h"
 #include "baresip_event_mailbox.h"
 #include "sip_event_projection.h"
 #include "sip_runtime_session_guard.h"
@@ -163,6 +164,7 @@ HWND g_tls = nullptr;
 HWND g_audio_status = nullptr;
 HWND g_process_status = nullptr;
 HWND g_runtime_banner = nullptr;
+axv::SipIndicatorTone g_sip_indicator_tone = axv::SipIndicatorTone::Red;
 HWND g_input_audio_combo = nullptr;
 HWND g_output_audio_combo = nullptr;
 HWND g_ringtone_audio_combo = nullptr;
@@ -981,6 +983,11 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
         SetWindowTextW(g_call_duration_label,duration_text.c_str());
 #endif
     const auto current_session = observed.session;
+    const auto next_tone = axv::sip_indicator_tone(observed, current_session);
+    if (next_tone != g_sip_indicator_tone) {
+        g_sip_indicator_tone = next_tone;
+        InvalidateRect(g_runtime_banner, nullptr, TRUE);
+    }
     // No audited native producer is linked; process state never implies SIP proof.
     // Without a native verified producer the UI cannot claim SIP registration.
     const wchar_t* banner = axv::runtime_status_banner(observed, current_session);
@@ -1838,7 +1845,21 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
     }
     case WM_CTLCOLORSTATIC: {
         HDC dc = reinterpret_cast<HDC>(wparam);
-        SetTextColor(dc, text_color());
+        COLORREF foreground = text_color();
+        if (reinterpret_cast<HWND>(lparam) == g_runtime_banner) {
+            switch (g_sip_indicator_tone) {
+            case axv::SipIndicatorTone::Green:
+                foreground = g_dark ? RGB(105, 232, 151) : RGB(0, 111, 47);
+                break;
+            case axv::SipIndicatorTone::Amber:
+                foreground = g_dark ? RGB(255, 206, 107) : RGB(139, 86, 0);
+                break;
+            case axv::SipIndicatorTone::Red:
+                foreground = g_dark ? RGB(255, 128, 128) : RGB(174, 24, 24);
+                break;
+            }
+        }
+        SetTextColor(dc, foreground);
         SetBkMode(dc, TRANSPARENT);
         return reinterpret_cast<LRESULT>(GetStockObject(NULL_BRUSH));
     }
