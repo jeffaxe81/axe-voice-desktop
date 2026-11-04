@@ -1703,6 +1703,61 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 return 0;
             }
         }
+        if (LOWORD(wparam)==kRingtonePresetCombo && HIWORD(wparam)==CBN_SELCHANGE) {
+            const int selected=static_cast<int>(SendMessageW(g_ringtone_preset_combo,CB_GETCURSEL,0,0));
+            if(selected>=0 && selected<=5){
+                std::wstring custom;
+                {std::lock_guard<std::mutex> lock(g_ringtone_mp3_mutex);custom=g_ringtone_custom_mp3;}
+                if(selected==5 && custom.empty()){
+                    SetWindowTextW(g_headset_status,L"Escolha um MP3 antes de ativar o toque personalizado.");
+                    SendMessageW(g_ringtone_preset_combo,CB_SETCURSEL,g_ringtone_preset.load(),0);
+                    return 0;
+                }
+                g_tone_preview.request_stop();
+#ifdef AXV_ENABLE_NATIVE_SIP
+                g_ring_player.stop();
+#endif
+                g_ringtone_preset.store(selected);
+                save_ui_preferences();
+                SetWindowTextW(g_headset_status,selected==5
+                    ? L"MP3: saida padrao multimidia do Windows."
+                    : L"Toque interno: dispositivo selecionado.");
+                refresh_runtime_banner(g_baresip_process.poll());
+            }
+            return 0;
+        }
+        if(LOWORD(wparam)==kRingtoneChooseMp3 && HIWORD(wparam)==BN_CLICKED){
+            if(g_smoke_mode)return 0;
+            wchar_t filename[2049]{};
+            OPENFILENAMEW picker{};
+            picker.lStructSize=sizeof(picker);
+            picker.hwndOwner=window;
+            picker.lpstrFile=filename;
+            picker.nMaxFile=2049;
+            picker.lpstrFilter=L"Arquivos MP3 (*.mp3)\0*.mp3\0\0";
+            picker.nFilterIndex=1;
+            picker.Flags=OFN_FILEMUSTEXIST|OFN_PATHMUSTEXIST|OFN_NOCHANGEDIR;
+            if(GetOpenFileNameW(&picker)){
+                std::wstring chosen=filename;
+                const auto dot=chosen.find_last_of(L'.');
+                if(dot==chosen.npos || _wcsicmp(chosen.c_str()+dot,L".mp3")!=0){
+                    SetWindowTextW(g_headset_status,L"Formato invalido. Escolha arquivo .mp3.");
+                    return 0;
+                }
+                g_tone_preview.request_stop();
+#ifdef AXV_ENABLE_NATIVE_SIP
+                g_ring_player.stop();
+#endif
+                {std::lock_guard<std::mutex> lock(g_ringtone_mp3_mutex);
+                 g_ringtone_custom_mp3=std::move(chosen);}
+                g_ringtone_preset.store(5);
+                SendMessageW(g_ringtone_preset_combo,CB_SETCURSEL,5,0);
+                save_ui_preferences();
+                SetWindowTextW(g_headset_status,L"MP3 selecionado. Saida padrao multimidia Windows.");
+                refresh_runtime_banner(g_baresip_process.poll());
+            }
+            return 0;
+        }
         if (LOWORD(wparam) == kTestRingtoneButton && HIWORD(wparam) == BN_CLICKED) {
             // Explicit manual preview only; never overlap a verified incoming alert.
             if(!can_preview_selected_ringtone()){
@@ -1713,7 +1768,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
 #else
                 const bool multimedia_default=false;
 #endif
-                if(g_tone_preview.start(g_selected_ringtone_id,multimedia_default)){
+                std::wstring mp3;
+                {std::lock_guard<std::mutex> lock(g_ringtone_mp3_mutex);mp3=g_ringtone_custom_mp3;}
+                if(g_tone_preview.start_ringtone(g_selected_ringtone_id,multimedia_default,
+                       g_ringtone_preset.load(),mp3)){
                     g_preview_is_conversation=false;
                     g_last_tone_state=axv::TonePreviewState::Playing;
                     SetWindowTextW(g_headset_status,axv::tone_preview_feedback(g_last_tone_state));
