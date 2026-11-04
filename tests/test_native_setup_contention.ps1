@@ -88,6 +88,12 @@ public static class NativeSetupContentionWindows {
             }
         }
         foreach ($Row in @(Get-CimInstance Win32_Process)) {
+            # Only follow the Inno bootstrap/engine and candidate GUI children.
+            # Shared runners can recycle parent PIDs for unrelated MSBuild/conhost
+            # processes; those must never be adopted or shutdown by this fixture.
+            if ($Row.Name -notin @('AXE-Voice-Native-Candidate-Setup.exe',
+                                   'AXE-Voice-Native-Candidate-Setup.tmp',
+                                   'AXE-Voice.exe', 'unins000.exe', 'unins000.tmp')) { continue }
             if ($LiveIds.ContainsKey([int]$Row.ParentProcessId) -and !$Identities.ContainsKey([int]$Row.ProcessId)) {
                 try { Add-KnownProcess (Get-Process -Id $Row.ProcessId -ErrorAction Stop) }
                 catch [Microsoft.PowerShell.Commands.ProcessCommandException] { }
