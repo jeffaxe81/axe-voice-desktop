@@ -633,15 +633,19 @@ void show_page(HWND root, int page) {
         ShowWindow(child, visible ? SW_SHOW : SW_HIDE);
     }
     for (auto child : g_settings_controls) ShowWindow(child, page == 1 ? SW_SHOW : SW_HIDE);
-    for (auto child : g_audio_controls) ShowWindow(child, page == 2 ? SW_SHOW : SW_HIDE);
+    for (auto child : g_audio_controls)
+        ShowWindow(child, page == 2 && child != g_headset_status ? SW_SHOW : SW_HIDE);
     sync_viewport_scroll(root);
     InvalidateRect(root, nullptr, TRUE);
     HWND target = page == 0 ? g_number : (page == 1 ? g_server : g_input_audio_combo);
     if (target) SetFocus(target);
     if (page == 0) refresh_destination_feedback();
     else if (page == 1) refresh_account_feedback();
-    else if (g_status) SetWindowTextW(g_status,
-        L"Dispositivos inspecionados localmente. Sem audio SIP ativo.");
+    else if(g_status && g_headset_status) {
+        wchar_t explanation[512]{};
+        GetWindowTextW(g_headset_status,explanation,512);
+        SetWindowTextW(g_status,explanation);
+    }
 }
 
 // Mini mode keeps only the target and true SIP state, without fake call actions.
@@ -1457,6 +1461,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_headset_status=make_label(window,
             L"Toques internos: saida escolhida. MP3: saida padrao Windows.",
             39,658,350,30,2,g_font_small);
+        // The audio explanation is displayed in the fixed footer, not among
+        // the audio controls. The hidden label retains worker feedback text.
+        ShowWindow(g_headset_status,SW_HIDE);
         make_button(window, L"PRONTIDAO (F2)",
                     kReadinessButton, 39, 690, 169, 42, 2);
         make_button(window, L"COPIAR STATUS",kCopyStatusButton,219,690,170,42,2);
@@ -2163,6 +2170,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         if (wparam == kProcessTimer) {
             poll_audio_notifications();
             poll_audio_inventory();
+            if(g_page==2 && g_headset_status && g_status){
+                wchar_t explanation[512]{},current[512]{};
+                GetWindowTextW(g_headset_status,explanation,512);
+                GetWindowTextW(g_status,current,512);
+                if(std::wcscmp(explanation,current)!=0)SetWindowTextW(g_status,explanation);
+            }
             // No Windows UI operations occur on the WASAPI worker thread.
             const auto microphone_state = g_microphone_test.state();
             if (microphone_state != g_last_microphone_state) {
@@ -2801,6 +2814,19 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(96,96),0);
         ok=ok && dpi_150_ok && compact_150_ok && compact_200_ok &&
            full_200_ok && g_dpi==96 && !IsWindowEnabled(GetDlgItem(window,kCallButton));
+        const auto footer_clear=[](HWND window){
+            RECT panel{},status{},client{};
+            GetWindowRect(g_footer_panel,&panel);
+            GetWindowRect(g_status,&status);
+            GetClientRect(window,&client);
+            POINT origin{0,client.bottom};
+            ClientToScreen(window,&origin);
+            return panel.bottom==origin.y &&
+                   status.left>=panel.left && status.right<=panel.right &&
+                   status.top>=panel.top && status.bottom<=panel.bottom &&
+                   (GetWindowLongPtrW(g_status,GWL_STYLE)&SS_TYPEMASK)==SS_LEFT;
+        };
+        ok=ok && footer_clear(window);
         const bool pre_scroll_ok = ok;
         // Verify scrolling on an artificially short viewport without
         // changing the machine's display settings or making SIP calls.
@@ -2827,6 +2853,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         SendMessageW(window,WM_VSCROLL,SB_TOP,0);
         async_scroll_ok=async_scroll_ok && g_scroll_offset==0;
         ok=ok && async_scroll_ok;
+        ok=ok && footer_clear(window);
         const bool scroll_available = g_scroll_max > 0;
         SendMessageW(window, WM_VSCROLL, SB_PAGEDOWN, 0);
         const bool scroll_moved = g_scroll_offset > 0 &&
