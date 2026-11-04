@@ -1,4 +1,5 @@
 #include "../src/sip_runtime_observation.h"
+#include "../src/sip_lamp.h"
 #include <string_view>
 int main() {
     using namespace axv;
@@ -28,5 +29,21 @@ int main() {
     o.process = RuntimeProcess::Stopped;
     if (effective_sip_status(o, 21) != SipStatus::Unavailable) return 16;
     if (!is_stale_session(0, 21) || !is_stale_session(20, 21) || is_stale_session(21, 21)) return 17;
+    o = {};
+    if (sip_lamp_state(o) != SipLamp::Idle) return 18;
+    o.process = RuntimeProcess::Running; o.sip = SipStatus::Registering;
+    if (sip_lamp_state(o) != SipLamp::Connecting) return 19;
+    o.sip = SipStatus::Registered;
+    if (sip_lamp_state(o) == SipLamp::Connected) return 20; // No unverified green.
+    o.evidence = SipEvidence::VerifiedNativeApi; o.session=31;
+    if (sip_lamp_state(o) != SipLamp::Connected) return 21;
+    o.sip = SipStatus::InCall;
+    if (sip_lamp_state(o) != SipLamp::Connected) return 22;
+    o.sip = SipStatus::Disconnected;
+    if (sip_lamp_state(o) != SipLamp::Error) return 23;
+    o.process = RuntimeProcess::Stopped;
+    if (sip_lamp_state(o) != SipLamp::Idle) return 24;
+    o.process = RuntimeProcess::Failed;
+    if (sip_lamp_state(o) != SipLamp::Error) return 25;
     return 0;
 }
