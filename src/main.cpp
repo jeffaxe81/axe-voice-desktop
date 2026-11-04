@@ -507,7 +507,6 @@ void position_all_children() {
     // Never allow an invalid batch to leave controls stranded: fall back to
     // the existing individual positioning behavior.
     HDWP batch = BeginDeferWindowPos(static_cast<int>(g_layout.size()));
-    const bool batched = batch != nullptr;
     if(batch) {
         for (const auto& child : g_layout) {
             auto r=child.logical;
@@ -522,7 +521,6 @@ void position_all_children() {
         }
         if(batch && EndDeferWindowPos(batch))return;
     }
-    (void)batched;
     for(const auto& child:g_layout) {
         auto r=child.logical;
         if(child.handle==g_number_label)r.y=g_compact?218:246;
@@ -2757,6 +2755,23 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                      original_window.right-original_window.left,
                      axv::dpi_pixels(430,g_dpi),
                      SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
+        // Reproduce 1,000 rapid scrollbar-drag notifications. They must
+        // coalesce into one pending GUI message; call control remains blocked.
+        bool async_scroll_ok=true;
+        for(int drag=0;drag<1000;++drag) {
+            g_pending_scroll_offset=g_scroll_max*(drag%101)/100;
+            // Drive the exact posted-message path without moving the cursor.
+            SendMessageW(window,WM_VSCROLL,MAKEWPARAM(SB_THUMBTRACK,0),0);
+            async_scroll_ok=async_scroll_ok && g_scroll_message_queued;
+        }
+        g_pending_scroll_offset=g_scroll_max;
+        SendMessageW(window,kAsyncScrollMessage,0,0);
+        async_scroll_ok=async_scroll_ok && !g_scroll_message_queued &&
+            g_scroll_offset==g_scroll_max &&
+            !IsWindowEnabled(GetDlgItem(window,kCallButton));
+        SendMessageW(window,WM_VSCROLL,SB_TOP,0);
+        async_scroll_ok=async_scroll_ok && g_scroll_offset==0;
+        ok=ok && async_scroll_ok;
         const bool scroll_available = g_scroll_max > 0;
         SendMessageW(window, WM_VSCROLL, SB_PAGEDOWN, 0);
         const bool scroll_moved = g_scroll_offset > 0 &&
