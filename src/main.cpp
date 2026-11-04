@@ -691,13 +691,23 @@ void paint_button(const DRAWITEMSTRUCT& item) {
             L"", L"ABC", L"DEF", L"GHI", L"JKL", L"MNO",
             L"PQRS", L"TUV", L"WXYZ", L"", L"", L""
         };
-        SetTextColor(item.hDC, muted_color());
-        DrawTextW(item.hDC, letters[index], -1, &subtitle, DT_CENTER | DT_SINGLELINE);
+        // The flash must preserve readable labels on saturated key backgrounds.
+        const bool lit = id == g_dial_flash_id && GetTickCount64() < g_dial_flash_end;
+        SetTextColor(item.hDC, lit && !g_high_contrast
+            ? ui_color(axv::UiRole::SelectedText) : muted_color());
+        DrawTextW(item.hDC, letters[index], -1, &subtitle,
+                  DT_CENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
         SelectObject(item.hDC, old);
     } else {
-        HGDIOBJ old_font = SelectObject(item.hDC, g_font_regular);
-        DrawTextW(item.hDC, title, -1, &rect,
-                  DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        // Button captions honor each control's own font. In particular, the
+        // navigation labels are deliberately smaller to prevent clipping.
+        HGDIOBJ old_font = SelectObject(item.hDC,
+            reinterpret_cast<HFONT>(SendMessageW(item.hwndItem, WM_GETFONT, 0, 0)));
+        RECT caption_rect = rect;
+        InflateRect(&caption_rect, -axv::dpi_pixels(6,g_dpi),
+                    -axv::dpi_pixels(2,g_dpi));
+        DrawTextW(item.hDC, title, -1, &caption_rect,
+                  DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
         SelectObject(item.hDC, old_font);
     }
     if (item.itemState & ODS_FOCUS) {
@@ -1217,8 +1227,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_visual_identity_label = make_label(window,
             L"DESPACHO UI  |  BUILD 2026.11.04",
             25, 57, 276, 22, -1, g_font_small);
-        make_button(window, g_compact ? L"MAX" : L"MINI", kCompact, 344, 65, 70, 29);
-        make_button(window, L"?", kHelpButton, 301, 65, 34, 29);
+        make_button(window, g_compact ? L"MAX" : L"MINI", kCompact, 344, 62, 70, 36);
+        make_button(window, L"?", kHelpButton, 301, 63, 34, 34);
         make_button(window, g_pinned ? L"SOLTAR" : L"FIXAR", kPin, 265, 18, 70, 36);
         make_button(window, g_dark ? L"CLARO" : L"ESCURO", kTheme, 344, 18, 70, 36);
         if (g_pinned) SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0,
@@ -1237,12 +1247,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
 
 #ifdef AXV_ENABLE_NATIVE_SIP
         make_label(window, L"DISCAGEM", 39, 220, 100, 23, 0, g_font_small);
-        make_button(window,L"CONTATOS",kContactsButton,154,216,108,28,0);
+        make_button(window,L"CONTATOS",kContactsButton,154,213,108,32,0,g_font_small);
 #else
         make_label(window, L"DISCAGEM", 39, 220, 200, 23, 0, g_font_small);
 #endif
 #ifdef AXV_ENABLE_NATIVE_SIP
-        make_button(window,L"RECENTES",kRecentDestinationsButton,270,216,119,28,0);
+        make_button(window,L"RECENTES",kRecentDestinationsButton,270,213,119,32,0,g_font_small);
         EnableWindow(GetDlgItem(window,kRecentDestinationsButton),FALSE);
 #endif
         g_number_label = make_label(window, L"Número ou endereço SIP", 39, 246, 320, 20, 0, g_font_regular);
