@@ -22,6 +22,12 @@ public:
     ~LocalCtiServer();
     bool start(std::string token);
     void stop();
+    // Worker posts one nonblocking notification to the registered GUI window.
+    // The GUI remains the sole authority to authorize and dispatch SIP calls.
+    void set_notification_target(std::uintptr_t window,unsigned int message) {
+        notification_message_.store(message,std::memory_order_release);
+        notification_window_.store(window,std::memory_order_release);
+    }
     bool active() const { return running_.load(); }
     void set_ready(bool ready) {
         ready_.store(ready,std::memory_order_release);
@@ -41,5 +47,7 @@ private:
     std::atomic<bool> ready_{false};
     CtiEventJournal journal_;
     CtiRequestQueue requests_;
+    std::atomic<std::uintptr_t> notification_window_{0};
+    std::atomic<unsigned int> notification_message_{0};
 };
 } // namespace axv

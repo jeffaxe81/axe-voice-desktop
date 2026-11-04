@@ -95,6 +95,7 @@ bool LocalCtiServer::start(std::string token) {
 }
 
 void LocalCtiServer::stop() {
+    notification_window_.store(0,std::memory_order_release);
     stopping_.store(true);
     ready_.store(false);
     if (worker_.joinable()) worker_.join();
@@ -421,6 +422,11 @@ void LocalCtiServer::handle_client(std::uintptr_t handle) {
         reply(client,200,"OK",prior.substr(0,prior.size()-1)+",\"replayed\":true}");
         return;
     }
+    // Never make the network worker wait for a GUI action. Posted messages
+    // can coalesce; the UI also retains its timer-based fallback polling.
+    const auto wake=notification_window_.load(std::memory_order_acquire);
+    const auto message=notification_message_.load(std::memory_order_acquire);
+    if(wake && message) (void)PostMessageW(reinterpret_cast<HWND>(wake),message,0,0);
     reply(client,202,"Accepted",cti_request_json({submitted.id,CtiRequestState::Queued}));
 }
 } // namespace axv

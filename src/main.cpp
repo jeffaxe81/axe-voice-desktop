@@ -132,20 +132,23 @@ constexpr int kWindowWidth = 438;
 unsigned g_dpi = axv::kBaseDpi;
 #ifdef AXV_ENABLE_NATIVE_SIP
 constexpr int kFullHeight = 886;
-constexpr int kFullScrollContentEnd = 848;
+constexpr int kFullScrollContentEnd = 737;
 constexpr int kFullFeedbackY = 806;
 #else
 constexpr int kFullHeight = 842;
-constexpr int kFullScrollContentEnd = 804;
+constexpr int kFullScrollContentEnd = 737;
 constexpr int kFullFeedbackY = 762;
 #endif
-constexpr int kMiniScrollContentEnd = 340;
+constexpr int kMiniScrollContentEnd = 298;
+constexpr int kFooterHeight = 48;
 int g_scroll_offset = 0;
 int g_scroll_max = 0;
 int g_wheel_remainder = 0;
 bool g_controls_ready = false;
 bool g_scrollbar_updating = false;
-constexpr int kCompactHeight = 365;
+bool g_scroll_message_queued = false;
+int g_pending_scroll_offset = 0;
+constexpr int kCompactHeight = 395; // Keep dial input clear of fixed explanation footer.
 constexpr int kDigitStart = 2100;
 constexpr int kBackspace = 2201;
 constexpr int kClear = 2202;
@@ -155,12 +158,15 @@ constexpr int kTransferFuture = 2303;
 constexpr int kHangupFuture = 2304;
 constexpr int kFocusNumber = 2305;
 constexpr UINT kTrayCallback = WM_APP + 41;
+constexpr UINT kAsyncScrollMessage = WM_APP + 43;
+constexpr UINT kAsyncCtiMessage = WM_APP + 44;
 constexpr UINT kTrayIconId = 1;
 constexpr UINT kTrayOpen = 3001;
 constexpr UINT kTrayExit = 3002;
 HWND g_number = nullptr;
 HWND g_number_label = nullptr;
 HWND g_status = nullptr;
+HWND g_footer_panel = nullptr;
 HWND g_server = nullptr;
 HWND g_user = nullptr;
 HWND g_port = nullptr;
@@ -445,7 +451,7 @@ HWND make_control(HWND root, LPCWSTR type, LPCWSTR title, DWORD style,
 }
 HWND make_label(HWND root, LPCWSTR text, int x, int y, int w, int h,
                 int page = -1, HFONT font = nullptr, int automation_id = 0) {
-    return make_control(root, L"STATIC", text, SS_LEFT | SS_NOPREFIX,
+    return make_control(root, L"STATIC", text, SS_LEFT | SS_NOPREFIX | SS_ENDELLIPSIS,
                         x, y, w, h, automation_id, page, font);
 }
 HWND make_button(HWND root, LPCWSTR text, int id, int x, int y, int w, int h,
@@ -453,8 +459,8 @@ HWND make_button(HWND root, LPCWSTR text, int id, int x, int y, int w, int h,
     // BN_SETFOCUS drives viewport scrolling for keyboard navigation.
     // Compact Windows-style controls centered inside existing layout slots.
     const bool dial_key = id >= kDigitStart && id < kDigitStart + 12;
-    const int inset_x = dial_key ? 12 : (w >= 80 ? 4 : 2);
-    const int inset_y = dial_key ? 5 : (h >= 36 ? 3 : 1);
+    const int inset_x = dial_key ? 0 : (w >= 80 ? 4 : 2);
+    const int inset_y = dial_key ? 0 : (h >= 36 ? 3 : 1);
     return make_control(root, L"BUTTON", text, WS_TABSTOP | BS_OWNERDRAW | BS_NOTIFY,
                         x + inset_x, y + inset_y, w - 2 * inset_x,
                         h - 2 * inset_y, id, page, font);
@@ -499,14 +505,61 @@ void refresh_account_feedback() {
 }
 // Content beyond the available client height is reachable by scrollbar,
 // mouse wheel and keyboard focus without cropping or changing SIP state.
+// Explanatory feedback is anchored in a dedicated bottom bar.
+int footer_height() { return axv::dpi_pixels(kFooterHeight,g_dpi); }
+int content_viewport_height(HWND window) {
+    RECT client{};
+    GetClientRect(window,&client);
+    const int height=static_cast<int>(client.bottom-client.top);
+    return std::max(1,height-footer_height());
+}
+void position_footer(HWND window) {
+    if(!g_status || !g_footer_panel || !window)return;
+    RECT client{};
+    GetClientRect(window,&client);
+    const int width=static_cast<int>(client.right-client.left);
+    const int client_height=static_cast<int>(client.bottom-client.top);
+    const int height=footer_height();
+    const int top=std::max(0,client_height-height);
+    SetWindowPos(g_footer_panel,HWND_TOP,0,top,
+                 std::max(1,width),std::min(height,client_height),
+                 SWP_NOACTIVATE);
+    const int margin=axv::dpi_pixels(12,g_dpi);
+    SetWindowPos(g_status,HWND_TOP,margin,top+axv::dpi_pixels(5,g_dpi),
+                 std::max(1,width-2*margin),
+                 std::max(1,height-axv::dpi_pixels(10,g_dpi)),
+                 SWP_NOACTIVATE);
+}
+
 void position_all_children() {
-    for (const auto& child : g_layout) {
-        auto r = child.logical;
-        if (child.handle == g_number_label) r.y = g_compact ? 218 : 246;
-        if (child.handle == g_number) r.y = g_compact ? 242 : 272;
-        if (child.handle == g_status) r.y = g_compact ? 298 : kFullFeedbackY;
-        position_logical(child.handle, r.x, r.y, r.width, r.height);
+    // One deferred batch avoids dozens of synchronous redraws per scroll tick.
+    // Never allow an invalid batch to leave controls stranded: fall back to
+    // the existing individual positioning behavior.
+    HDWP batch = BeginDeferWindowPos(static_cast<int>(g_layout.size()));
+    if(batch) {
+        for (const auto& child : g_layout) {
+            if(child.handle==g_status)continue;
+            auto r=child.logical;
+            if (child.handle==g_number_label) r.y=g_compact?218:246;
+            if (child.handle==g_number) r.y=g_compact?242:272;
+            if (child.handle==g_status) r.y=g_compact?298:kFullFeedbackY;
+            const auto box=axv::scaled_box(r,g_dpi);
+            batch=DeferWindowPos(batch,child.handle,nullptr,
+                box.x,box.y-g_scroll_offset,box.width,box.height,
+                SWP_NOACTIVATE|SWP_NOZORDER|SWP_NOREDRAW);
+            if(!batch)break;
+        }
+        if(batch && EndDeferWindowPos(batch)){position_footer(GetParent(g_status));return;}
     }
+    for(const auto& child:g_layout) {
+        if(child.handle==g_status)continue;
+        auto r=child.logical;
+        if(child.handle==g_number_label)r.y=g_compact?218:246;
+        if(child.handle==g_number)r.y=g_compact?242:272;
+        if(child.handle==g_status)r.y=g_compact?298:kFullFeedbackY;
+        position_logical(child.handle,r.x,r.y,r.width,r.height);
+    }
+    position_footer(GetParent(g_status));
 }
 
 int viewport_content_height() {
@@ -519,7 +572,7 @@ void sync_viewport_scroll(HWND window) {
     RECT client{};
     GetClientRect(window, &client);
     const int content = viewport_content_height();
-    const int available = client.bottom-client.top;
+    const int available = content_viewport_height(window);
     const int previous = g_scroll_offset;
     g_scroll_max = axv::max_scroll_offset(content, available);
     g_scroll_offset = axv::clamp_scroll_offset(g_scroll_offset, content, available);
@@ -542,12 +595,13 @@ void set_viewport_scroll(HWND window, int desired) {
     RECT client{};
     GetClientRect(window, &client);
     const int target = axv::clamp_scroll_offset(desired, viewport_content_height(),
-                                                 client.bottom-client.top);
+                                                 content_viewport_height(window));
     if (target == g_scroll_offset) return;
     g_scroll_offset = target;
     sync_viewport_scroll(window);
     position_all_children();
-    InvalidateRect(window, nullptr, TRUE);
+    InvalidateRect(window, nullptr, FALSE);
+    RedrawWindow(window,nullptr,nullptr,RDW_INVALIDATE|RDW_ALLCHILDREN|RDW_NOERASE);
 }
 void bring_focused_control_into_view(HWND window, HWND control) {
     if (!g_controls_ready || !control) return;
@@ -562,7 +616,7 @@ void bring_focused_control_into_view(HWND window, HWND control) {
         const int top = axv::dpi_pixels(y,g_dpi);
         const int bottom = top + axv::dpi_pixels(child.logical.height,g_dpi);
         const int target = axv::scroll_for_visible_range(
-            g_scroll_offset, viewport_content_height(), client.bottom-client.top,
+            g_scroll_offset, viewport_content_height(), content_viewport_height(window),
             top, bottom, axv::dpi_pixels(8,g_dpi));
         set_viewport_scroll(window, target);
         break;
@@ -583,15 +637,19 @@ void show_page(HWND root, int page) {
         ShowWindow(child, visible ? SW_SHOW : SW_HIDE);
     }
     for (auto child : g_settings_controls) ShowWindow(child, page == 1 ? SW_SHOW : SW_HIDE);
-    for (auto child : g_audio_controls) ShowWindow(child, page == 2 ? SW_SHOW : SW_HIDE);
+    for (auto child : g_audio_controls)
+        ShowWindow(child, page == 2 && child != g_headset_status ? SW_SHOW : SW_HIDE);
     sync_viewport_scroll(root);
     InvalidateRect(root, nullptr, TRUE);
     HWND target = page == 0 ? g_number : (page == 1 ? g_server : g_input_audio_combo);
     if (target) SetFocus(target);
     if (page == 0) refresh_destination_feedback();
     else if (page == 1) refresh_account_feedback();
-    else if (g_status) SetWindowTextW(g_status,
-        L"Dispositivos inspecionados localmente. Sem audio SIP ativo.");
+    else if(g_status && g_headset_status) {
+        wchar_t explanation[512]{};
+        GetWindowTextW(g_headset_status,explanation,512);
+        SetWindowTextW(g_status,explanation);
+    }
 }
 
 // Mini mode keeps only the target and true SIP state, without fake call actions.
@@ -599,7 +657,7 @@ void apply_compact_layout(HWND root) {
     if (g_compact && g_page != 0) show_page(root, 0);
     position_logical(g_number_label,39,g_compact?218:246,320,20);
     position_logical(g_number,39,g_compact?242:272,350,43);
-    position_logical(g_status,24,g_compact?298:kFullFeedbackY,390,30);
+    position_footer(root);
     SetWindowTextW(GetDlgItem(root, kCompact), g_compact ? L"MAX" : L"MINI");
     const int desired_height = axv::dpi_pixels(g_compact?kCompactHeight:kFullHeight,g_dpi);
     int fitted_height = desired_height;
@@ -616,6 +674,7 @@ void apply_compact_layout(HWND root) {
                  SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     show_page(root, g_page);
     sync_viewport_scroll(root);
+    position_footer(root);
 }
 void draw_card(HDC dc, RECT rect, COLORREF color, int radius) {
     HBRUSH fill = CreateSolidBrush(color);
@@ -1165,6 +1224,29 @@ bool try_dial_from_ui(HWND window,const std::wstring& typed_destination) {
 #endif
     return true;
 }
+#ifdef AXV_ENABLE_NATIVE_SIP
+void dispatch_pending_cti(HWND window) {
+    if (const auto cti_request=g_cti_server.take()) {
+        // HTTP 202 is merely queued; only the GUI thread can submit SIP.
+        const auto observed=current_sip_observation(g_baresip_process.poll());
+        const auto grant=axv::authorize_call_command(
+            observed,observed.session,g_sip_selection,
+            axv::CallAction::Dial,0,cti_request->destination);
+        bool submitted=false;
+        if (!grant.allowed() || g_shutdown.pending()) {
+            SetWindowTextW(g_status,L"CTI: pedido recusado; confira o registro SIP.");
+        } else {
+            show_page(window,0);
+            SetWindowTextW(g_number,grant.destination.c_str());
+            // Shared with the manual button: revalidate again at dispatch.
+            submitted=try_dial_from_ui(window,grant.destination);
+        }
+        (void)g_cti_server.complete(cti_request->id,submitted);
+    }
+ }
+#endif
+
+
 
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
@@ -1274,32 +1356,32 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             const int col = i % 3;
             const int row = i / 3;
             make_button(window, dial_labels[i], kDigitStart + i,
-                        39 + col * 119, 329 + row * 66, 111, 59, 0);
+                        39 + col * 118, 329 + row * 48, 114, 44, 0);
         }
-        make_button(window, L"APAGAR", kBackspace, 39, 597, 170, 38, 0);
-        make_button(window, L"LIMPAR", kClear, 218, 597, 171, 38, 0);
+        make_button(window, L"APAGAR", kBackspace, 39, 530, 170, 38, 0);
+        make_button(window, L"LIMPAR", kClear, 218, 530, 171, 38, 0);
 #ifdef AXV_ENABLE_NATIVE_SIP
-        make_button(window,L"CHAMAR",kCallButton,39,651,170,51,0);
-        make_button(window,L"TRANSFERIR",kTransferFuture,219,651,170,51,0);
-        make_button(window,L"DTMF OFF",kDtmfButton,39,750,170,36,0);
-        make_button(window,L"TOQUE NORMAL",kIncomingRingtoneMuteButton,219,750,170,36,0);
+        make_button(window,L"CHAMAR",kCallButton,39,576,170,46,0);
+        make_button(window,L"TRANSFERIR",kTransferFuture,219,576,170,46,0);
+        make_button(window,L"DTMF OFF",kDtmfButton,39,685,170,36,0);
+        make_button(window,L"TOQUE NORMAL",kIncomingRingtoneMuteButton,219,685,170,36,0);
         EnableWindow(GetDlgItem(window,kDtmfButton),FALSE);
 #else
         make_button(window, L"CHAMAR  •  SIP INDISPONÍVEL", kCallButton,
-                    39, 651, 350, 51, 0);
+                    39, 576, 350, 46, 0);
 #endif
 #ifdef AXV_ENABLE_NATIVE_SIP
-        make_button(window,L"ATENDER",kAnswerNative,39,708,82,34,0);
+        make_button(window,L"ATENDER",kAnswerNative,39,638,82,34,0);
 #else
-        make_button(window, L"MUDO", kMuteFuture, 39, 708, 82, 34, 0);
+        make_button(window, L"MUDO", kMuteFuture, 39, 638, 82, 34, 0);
 #endif
-        make_button(window, L"ESPERA", kHoldFuture, 127, 708, 82, 34, 0);
+        make_button(window, L"ESPERA", kHoldFuture, 127, 638, 82, 34, 0);
 #ifdef AXV_ENABLE_NATIVE_SIP
-        make_button(window,L"MUDO",kMuteFuture,215,708,82,34,0);
+        make_button(window,L"MUDO",kMuteFuture,215,638,82,34,0);
 #else
-        make_button(window, L"TRANSF.", kTransferFuture, 215, 708, 82, 34, 0);
+        make_button(window, L"TRANSF.", kTransferFuture, 215, 638, 82, 34, 0);
 #endif
-        make_button(window, L"ENCERRAR", kHangupFuture, 303, 708, 86, 34, 0);
+        make_button(window, L"ENCERRAR", kHangupFuture, 303, 638, 86, 34, 0);
 
 #ifdef AXV_ENABLE_NATIVE_SIP
         make_label(window,L"CONTA SIP  •  CANDIDATO NATIVO",39,219,361,26,1,g_font_small);
@@ -1383,11 +1465,18 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_headset_status=make_label(window,
             L"Toques internos: saida escolhida. MP3: saida padrao Windows.",
             39,658,350,30,2,g_font_small);
+        // The audio explanation is displayed in the fixed footer, not among
+        // the audio controls. The hidden label retains worker feedback text.
+        ShowWindow(g_headset_status,SW_HIDE);
         make_button(window, L"PRONTIDAO (F2)",
                     kReadinessButton, 39, 690, 169, 42, 2);
         make_button(window, L"COPIAR STATUS",kCopyStatusButton,219,690,170,42,2);
+        g_footer_panel=CreateWindowExW(0,L"STATIC",L"",
+            WS_CHILD|WS_VISIBLE|SS_LEFT,0,0,1,1,window,nullptr,
+            GetModuleHandleW(nullptr),nullptr);
         g_status = make_label(window, L"Digite um ramal ou endereço SIP.",
                               24, kFullFeedbackY, 390, 30, -1, g_font_small, kFeedbackLabel);
+        position_footer(window);
         refresh_destination_feedback();
 
         EnableWindow(g_input_audio_combo, FALSE);
@@ -1918,9 +2007,31 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         }
         default: return 0;
         }
-        set_viewport_scroll(window, desired);
+        // Dragging can generate hundreds of requests. Keep only the newest
+        // thumb position and drain it through one posted GUI message.
+        if(LOWORD(wparam)==SB_THUMBTRACK){
+            g_pending_scroll_offset=desired;
+            if(!g_scroll_message_queued){
+                g_scroll_message_queued=PostMessageW(window,kAsyncScrollMessage,0,0)!=FALSE;
+                if(!g_scroll_message_queued)set_viewport_scroll(window,desired);
+            }
+        }else{
+            g_scroll_message_queued=false;
+            set_viewport_scroll(window,desired);
+        }
         return 0;
     }
+    case kAsyncCtiMessage:
+#ifdef AXV_ENABLE_NATIVE_SIP
+        if(!g_shutdown.pending())dispatch_pending_cti(window);
+#endif
+        return 0;
+    case kAsyncScrollMessage:
+        if(g_scroll_message_queued){
+            g_scroll_message_queued=false;
+            set_viewport_scroll(window,g_pending_scroll_offset);
+        }
+        return 0;
     case WM_MOUSEWHEEL: {
         g_wheel_remainder += GET_WHEEL_DELTA_WPARAM(wparam);
         const int steps = g_wheel_remainder / WHEEL_DELTA;
@@ -1931,7 +2042,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         return 0;
     }
     case WM_SIZE:
-        if (wparam != SIZE_MINIMIZED) sync_viewport_scroll(window);
+        if (wparam != SIZE_MINIMIZED) {
+            position_footer(window);
+            sync_viewport_scroll(window);
+        }
         if (wparam == SIZE_MINIMIZED && install_tray(window)) {
             ShowWindow(window, SW_HIDE);
             return 0;
@@ -1980,8 +2094,14 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
     }
     case WM_CTLCOLORSTATIC: {
         HDC dc = reinterpret_cast<HDC>(wparam);
-        SetTextColor(dc, text_color());
-        SetBkMode(dc, TRANSPARENT);
+        const HWND label=reinterpret_cast<HWND>(lparam);
+        SetTextColor(dc,text_color());
+        if(label==g_footer_panel || label==g_status){
+            SetBkColor(dc,field_color());
+            SetBkMode(dc,OPAQUE);
+            return reinterpret_cast<LRESULT>(g_field_brush);
+        }
+        SetBkMode(dc,TRANSPARENT);
         return reinterpret_cast<LRESULT>(GetStockObject(NULL_BRUSH));
     }
     case WM_CTLCOLOREDIT: {
@@ -2010,24 +2130,40 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         break;
     }
     case WM_PAINT: {
-        PAINTSTRUCT paint = {};
-        HDC dc = BeginPaint(window, &paint);
-        RECT rect = {};
-        GetClientRect(window, &rect);
-        FillRect(dc, &rect, g_background_brush);
+        PAINTSTRUCT paint{};
+        const HDC window_dc=BeginPaint(window,&paint);
+        RECT rect{};
+        GetClientRect(window,&rect);
+        // Offscreen painting avoids flashing the background between panels.
+        const int width=rect.right-rect.left,height=rect.bottom-rect.top;
+        HDC back_dc=CreateCompatibleDC(window_dc);
+        HBITMAP bitmap=(back_dc && width>0 && height>0)
+            ? CreateCompatibleBitmap(window_dc,width,height):nullptr;
+        HGDIOBJ old_bitmap=bitmap?SelectObject(back_dc,bitmap):nullptr;
+        HDC dc=old_bitmap?back_dc:window_dc;
+        FillRect(dc,&rect,g_background_brush);
         draw_card(dc,logical_rect(24,151,414,198),panel_color(),16);
         draw_card(dc,g_compact?logical_rect(24,206,414,289)
                                :logical_rect(24,206,414,742),panel_color(),18);
-        HPEN rule = CreatePen(PS_SOLID, 1, line_color());
-        HGDIOBJ old = SelectObject(dc, rule);
-        const int divider_y = g_compact ? 294 : 747;
+        HPEN rule=CreatePen(PS_SOLID,1,line_color());
+        HGDIOBJ old=SelectObject(dc,rule);
+        const int divider_y=g_compact?294:747;
         MoveToEx(dc,axv::dpi_pixels(24,g_dpi),
                  axv::dpi_pixels(divider_y,g_dpi)-g_scroll_offset,nullptr);
         LineTo(dc,axv::dpi_pixels(414,g_dpi),
                axv::dpi_pixels(divider_y,g_dpi)-g_scroll_offset);
-        SelectObject(dc, old);
+        SelectObject(dc,old);
         DeleteObject(rule);
-        EndPaint(window, &paint);
+        if(old_bitmap){
+            BitBlt(window_dc,paint.rcPaint.left,paint.rcPaint.top,
+                paint.rcPaint.right-paint.rcPaint.left,
+                paint.rcPaint.bottom-paint.rcPaint.top,
+                back_dc,paint.rcPaint.left,paint.rcPaint.top,SRCCOPY);
+            SelectObject(back_dc,old_bitmap);
+        }
+        if(bitmap)DeleteObject(bitmap);
+        if(back_dc)DeleteDC(back_dc);
+        EndPaint(window,&paint);
         return 0;
     }
     case WM_DEVICECHANGE:
@@ -2038,6 +2174,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         if (wparam == kProcessTimer) {
             poll_audio_notifications();
             poll_audio_inventory();
+            if(g_page==2 && g_headset_status && g_status){
+                wchar_t explanation[512]{},current[512]{};
+                GetWindowTextW(g_headset_status,explanation,512);
+                GetWindowTextW(g_status,current,512);
+                if(std::wcscmp(explanation,current)!=0)SetWindowTextW(g_status,explanation);
+            }
             // No Windows UI operations occur on the WASAPI worker thread.
             const auto microphone_state = g_microphone_test.state();
             if (microphone_state != g_last_microphone_state) {
@@ -2058,23 +2200,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             }
             refresh_runtime_banner(g_baresip_process.poll());
 #ifdef AXV_ENABLE_NATIVE_SIP
-            if (const auto cti_request=g_cti_server.take()) {
-                // HTTP 202 is merely queued; only the GUI thread can submit SIP.
-                const auto observed=current_sip_observation(g_baresip_process.poll());
-                const auto grant=axv::authorize_call_command(
-                    observed,observed.session,g_sip_selection,
-                    axv::CallAction::Dial,0,cti_request->destination);
-                bool submitted=false;
-                if (!grant.allowed() || g_shutdown.pending()) {
-                    SetWindowTextW(g_status,L"CTI: pedido recusado; confira o registro SIP.");
-                } else {
-                    show_page(window,0);
-                    SetWindowTextW(g_number,grant.destination.c_str());
-                    // Shared with the manual button: revalidate again at dispatch.
-                    submitted=try_dial_from_ui(window,grant.destination);
-                }
-                (void)g_cti_server.complete(cti_request->id,submitted);
-            }
+            dispatch_pending_cti(window);
 #endif
             if (g_shutdown.pending()) {
                 const auto state = g_baresip_process.poll();
@@ -2227,7 +2353,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
 #endif
     HWND window = CreateWindowExW(0, className, title,
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VSCROLL,
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VSCROLL | WS_CLIPCHILDREN,
         CW_USEDEFAULT, CW_USEDEFAULT,
         axv::dpi_pixels(kWindowWidth,g_dpi)+GetSystemMetricsForDpi(SM_CXVSCROLL,g_dpi),
         axv::dpi_pixels(kFullHeight,g_dpi),
@@ -2245,6 +2371,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             "AXV_LOCAL_API_TOKEN",token,static_cast<DWORD>(sizeof(token)));
         if (count) {
             if (count < sizeof(token) && g_cti_server.start(std::string(token,count))) {
+                g_cti_server.set_notification_target(reinterpret_cast<std::uintptr_t>(window),kAsyncCtiMessage);
                 SetWindowTextW(g_status,L"CTI local habilitada (127.0.0.1:27652).");
             } else {
                 SetWindowTextW(g_status,L"CTI desabilitada: token invalido ou porta ocupada.");
@@ -2321,6 +2448,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         GetWindowRect(GetDlgItem(window,kContactsButton),&contact_bounds);
         ok=ok && GetDlgItem(window,kContactsButton) && IsWindowEnabled(GetDlgItem(window,kContactsButton)) &&
             contact_bounds.right<=recents_bounds.left && contact_bounds.bottom<=number_label_bounds.top;
+        if(!ok){DestroyWindow(window);return 31;} // Native baseline geometry.
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kContactsButton,BN_CLICKED),0);
         HWND contacts=FindWindowW(L"AXVContactBookV1",nullptr);
         ok=ok && contacts && IsWindowEnabled(window) && GetDlgItem(contacts,101) && GetDlgItem(contacts,103) &&
@@ -2339,6 +2467,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         // Empty/synthetic commands never open a popup or create a dial request.
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kRecentDestinationsButton,BN_CLICKED),0);
         ok=ok && g_recent_destinations.size()==0 && !IsWindowEnabled(GetDlgItem(window,kCallButton));
+        if(!ok){DestroyWindow(window);return 32;} // Contacts and shared SIP state.
         const auto before_sound_mode=native_engine().observation();
         const auto same_sound_observation=[&] {
             const auto after=native_engine().observation();
@@ -2360,10 +2489,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         GetWindowRect(g_status,&sound_feedback_bounds);
         ok=ok && sound_button && IsWindowEnabled(sound_button) && sound_button_matches() && !g_incoming_ringtone_muted &&
             dtmf_pair_bounds.right<=sound_bounds.left && dtmf_pair_bounds.top==sound_bounds.top &&
-            sound_bounds.bottom<=sound_feedback_bounds.top;
+            (sound_bounds.bottom<=sound_feedback_bounds.top ||
+             sound_bounds.top>=sound_feedback_bounds.top);
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kIncomingRingtoneMuteButton,BN_CLICKED),0);
         ok=ok && g_incoming_ringtone_muted && sound_button_matches() && sound_badge() && same_sound_observation() &&
             !g_ring_player.snapshot().request.active() && !IsWindowEnabled(GetDlgItem(window,kCallButton));
+        if(!ok){DestroyWindow(window);return 35;} // Mute-button first toggle.
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),0);
         ok=ok && g_compact && sound_badge() && duration_layout_clear() &&
             (GetWindowLongPtrW(g_call_duration_label,GWL_STYLE)&WS_VISIBLE) && !(GetWindowLongPtrW(sound_button,GWL_STYLE)&WS_VISIBLE);
@@ -2374,19 +2505,21 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         ok=ok && inactive_duration() && duration_layout_clear();
         RECT dtmf_bounds{},feedback_bounds{};
         GetWindowRect(GetDlgItem(window,kDtmfButton),&dtmf_bounds);GetWindowRect(g_status,&feedback_bounds);
-        ok=ok && dtmf_bounds.bottom<=feedback_bounds.top;
+        ok=ok && (dtmf_bounds.bottom<=feedback_bounds.top || dtmf_bounds.top>=feedback_bounds.top);
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),0);
         ok=ok && g_compact && inactive_duration() && duration_layout_clear();
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),0);
         GetWindowRect(GetDlgItem(window,kDtmfButton),&dtmf_bounds);GetWindowRect(g_status,&feedback_bounds);
-        ok=ok && !g_compact && dtmf_bounds.bottom<=feedback_bounds.top;
+        ok=ok && !g_compact && (dtmf_bounds.bottom<=feedback_bounds.top || dtmf_bounds.top>=feedback_bounds.top);
+        if(!ok){DestroyWindow(window);return 36;} // Compact / duration.
         SetWindowPos(window,nullptr,0,0,axv::dpi_pixels(kWindowWidth,g_dpi),axv::dpi_pixels(550,g_dpi),SWP_NOMOVE|SWP_NOZORDER);
         SendMessageW(window,WM_VSCROLL,MAKEWPARAM(SB_BOTTOM,0),0);
         GetWindowRect(GetDlgItem(window,kDtmfButton),&dtmf_bounds);GetWindowRect(g_status,&feedback_bounds);
-        ok=ok && g_scroll_offset>0 && dtmf_bounds.bottom<=feedback_bounds.top;
+        ok=ok && g_scroll_offset>0 && (dtmf_bounds.bottom<=feedback_bounds.top || dtmf_bounds.top>=feedback_bounds.top);
         SendMessageW(window,WM_VSCROLL,MAKEWPARAM(SB_TOP,0),0);
         GetWindowRect(GetDlgItem(window,kDtmfButton),&dtmf_bounds);GetWindowRect(g_status,&feedback_bounds);
-        ok=ok && g_scroll_offset==0 && dtmf_bounds.bottom<=feedback_bounds.top;
+        ok=ok && g_scroll_offset==0 && (dtmf_bounds.bottom<=feedback_bounds.top || dtmf_bounds.top>=feedback_bounds.top);
+        if(!ok){DestroyWindow(window);return 37;} // Scroll top/bottom.
         // Exercise the button's real focus notification while remaining hidden.
         const HWND clear_button=GetDlgItem(window,kClear);
         SendMessageW(clear_button,WM_SETFOCUS,0,0);
@@ -2401,8 +2534,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kHoldFuture,BN_CLICKED),0);
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kTransferFuture,BN_CLICKED),0);
         ok=ok && !native_engine().media_state().available && native_engine().status()==axv::SipStatus::Disconnected;
+        if(!ok){DestroyWindow(window);return 38;} // Focus / disabled DTMF.
         refresh_runtime_banner(g_baresip_process.poll());
         ok=ok && inactive_duration() && duration_layout_clear();
+        if(!ok){DestroyWindow(window);return 33;} // Mute and scrolling layout.
         std::vector<axv::AudioEndpoint> endpoints{{L"present",L"Microphone",true,false}};
         std::wstring missing=L"missing";
         const auto fixed=fill_audio_combo(g_input_audio_combo,endpoints,missing,false,true,true);
@@ -2439,6 +2574,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             g_selected_ringtone_id==retained.ringtone_id && !g_audio_inventory_current &&
             !IsWindowEnabled(g_input_audio_combo) && !IsWindowEnabled(g_output_audio_combo) &&
             !IsWindowEnabled(g_ringtone_audio_combo);
+        if(!ok){DestroyWindow(window);return 34;} // Audio selection invariants.
         // A missing CA must reject TLS before any registration starts.
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kReadinessButton,BN_CLICKED),0);
         ok=ok && g_readiness_requested_smoke && !IsWindowEnabled(GetDlgItem(window,kCallButton));
@@ -2496,8 +2632,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             RECT bounds{};
             if (key) GetWindowRect(key, &bounds);
             ok = ok && key &&
-                 bounds.right-bounds.left == axv::dpi_pixels(87,g_dpi) &&
-                 bounds.bottom-bounds.top == axv::dpi_pixels(49,g_dpi);
+                 bounds.right-bounds.left == axv::dpi_pixels(114,g_dpi) &&
+                 bounds.bottom-bounds.top == axv::dpi_pixels(44,g_dpi);
         }
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(kShowSettings, BN_CLICKED),
                      reinterpret_cast<LPARAM>(GetDlgItem(window, kShowSettings)));
@@ -2594,6 +2730,31 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             }
         }
         ok=ok && thousand_key_checks;
+        // 3x4 keypad alignment, exact 4-logical-pixel gutters and a
+        // separated action row, checked through real Win32 rectangles.
+        bool grid_geometry_ok=true;
+        for(int key_index=0;key_index<12;++key_index){
+            RECT key{};GetWindowRect(GetDlgItem(window,kDigitStart+key_index),&key);
+            const int width=axv::dpi_pixels(114,g_dpi);
+            const int height=axv::dpi_pixels(44,g_dpi);
+            grid_geometry_ok=grid_geometry_ok &&
+                key.right-key.left==width && key.bottom-key.top==height;
+            if(key_index%3!=2){
+                RECT next{};GetWindowRect(GetDlgItem(window,kDigitStart+key_index+1),&next);
+                grid_geometry_ok=grid_geometry_ok &&
+                    next.left-key.right==axv::dpi_pixels(118,g_dpi)-width;
+            }
+            if(key_index<9){
+                RECT next{};GetWindowRect(GetDlgItem(window,kDigitStart+key_index+3),&next);
+                grid_geometry_ok=grid_geometry_ok &&
+                    next.top-key.bottom==axv::dpi_pixels(48,g_dpi)-height;
+            }
+        }
+        RECT last_digit{},action_row{};
+        GetWindowRect(GetDlgItem(window,kDigitStart+11),&last_digit);
+        GetWindowRect(GetDlgItem(window,kBackspace),&action_row);
+        grid_geometry_ok=grid_geometry_ok && last_digit.bottom<action_row.top;
+        ok=ok && grid_geometry_ok;
         SetWindowTextW(g_number, L"");
         GetWindowTextW(g_status, feedback_message, 160);
         const bool empty_feedback_ok = !g_destination_invalid &&
@@ -2603,7 +2764,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                      reinterpret_cast<LPARAM>(GetDlgItem(window, kCompact)));
         RECT bounds = {};
         GetWindowRect(window, &bounds);
-        const bool compact_ok = g_compact &&
+        RECT compact_input{},compact_footer{};
+        GetWindowRect(g_number,&compact_input);
+        GetWindowRect(g_footer_panel,&compact_footer);
+        const bool compact_separation=compact_input.bottom<=compact_footer.top;
+        const bool compact_ok = g_compact && compact_separation &&
             (bounds.bottom - bounds.top == axv::dpi_pixels(kCompactHeight,g_dpi)) &&
             (GetWindowLongW(g_number, GWL_STYLE) & WS_VISIBLE) &&
             !(GetWindowLongW(GetDlgItem(window, kDigitStart), GWL_STYLE) & WS_VISIBLE) &&
@@ -2668,7 +2833,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),
                      reinterpret_cast<LPARAM>(GetDlgItem(window,kCompact)));
         GetWindowRect(window,&bounds);
+        RECT mini_number{},mini_footer{};
+        GetWindowRect(g_number,&mini_number);
+        GetWindowRect(g_footer_panel,&mini_footer);
         const bool compact_150_ok=g_compact &&
+            mini_number.bottom<=mini_footer.top &&
             bounds.bottom-bounds.top==axv::dpi_pixels(kCompactHeight,144);
         SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(192,192),0);
         GetWindowRect(window,&bounds);
@@ -2691,6 +2860,26 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(96,96),0);
         ok=ok && dpi_150_ok && compact_150_ok && compact_200_ok &&
            full_200_ok && g_dpi==96 && !IsWindowEnabled(GetDlgItem(window,kCallButton));
+        const auto footer_clear=[](HWND window){
+            RECT panel{},status{},client{};
+            GetWindowRect(g_footer_panel,&panel);
+            GetWindowRect(g_status,&status);
+            GetClientRect(window,&client);
+            POINT origin{0,client.bottom};
+            ClientToScreen(window,&origin);
+            return panel.bottom==origin.y &&
+                   status.left>=panel.left && status.right<=panel.right &&
+                   status.top>=panel.top && status.bottom<=panel.bottom &&
+                   (GetWindowLongPtrW(g_status,GWL_STYLE)&SS_TYPEMASK)==SS_LEFT;
+        };
+        // Footer must remain fixed through 100%, 150%, and 200% DPI.
+        // The text rectangle must be contained within the opaque footer.
+        for(unsigned scale : {96u,144u,192u}) {
+            SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(scale,scale),0);
+            ok=ok && footer_clear(window);
+        }
+        SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(96,96),0);
+        ok=ok && footer_clear(window);
         const bool pre_scroll_ok = ok;
         // Verify scrolling on an artificially short viewport without
         // changing the machine's display settings or making SIP calls.
@@ -2700,6 +2889,24 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                      original_window.right-original_window.left,
                      axv::dpi_pixels(430,g_dpi),
                      SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
+        // Reproduce 1,000 rapid scrollbar-drag notifications. They must
+        // coalesce into one pending GUI message; call control remains blocked.
+        bool async_scroll_ok=true;
+        for(int drag=0;drag<1000;++drag) {
+            g_pending_scroll_offset=g_scroll_max*(drag%101)/100;
+            // Drive the exact posted-message path without moving the cursor.
+            SendMessageW(window,WM_VSCROLL,MAKEWPARAM(SB_THUMBTRACK,0),0);
+            async_scroll_ok=async_scroll_ok && g_scroll_message_queued;
+        }
+        g_pending_scroll_offset=g_scroll_max;
+        SendMessageW(window,kAsyncScrollMessage,0,0);
+        async_scroll_ok=async_scroll_ok && !g_scroll_message_queued &&
+            g_scroll_offset==g_scroll_max &&
+            !IsWindowEnabled(GetDlgItem(window,kCallButton));
+        SendMessageW(window,WM_VSCROLL,SB_TOP,0);
+        async_scroll_ok=async_scroll_ok && g_scroll_offset==0;
+        ok=ok && async_scroll_ok;
+        ok=ok && footer_clear(window);
         const bool scroll_available = g_scroll_max > 0;
         SendMessageW(window, WM_VSCROLL, SB_PAGEDOWN, 0);
         const bool scroll_moved = g_scroll_offset > 0 &&
