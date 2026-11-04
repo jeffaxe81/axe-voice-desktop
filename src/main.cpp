@@ -432,7 +432,7 @@ HWND make_edit(HWND root, LPCWSTR initial, int id, int x, int y, int w, int h,
         const wchar_t* hint = nullptr;
         switch (id) {
         case kNumberEdit: hint = L"Ex.: 1001 ou sip:usuario@dominio"; break;
-        case kServerEdit: hint = L"pbx.exemplo.com"; break;
+        case kServerEdit: hint = L"IP ou dominio: 192.168.1.10 / pbx.exemplo.com"; break;
         case kUserEdit: hint = L"Ex.: 1001"; break;
         case kPortEdit: hint = L"5060"; break;
         default: break;
