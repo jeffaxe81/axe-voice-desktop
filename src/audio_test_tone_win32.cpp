@@ -163,8 +163,8 @@ TonePreviewState play_windows_ringtone(const std::wstring& id,
     if(preset < 0 || preset > 5) return TonePreviewState::UnsupportedFormat;
     if(preset != 5) return render_preview(id,cancel,multimedia_default,preset);
     if(mp3.empty() || mp3.size() > 2048 || mp3.find(L'"') != std::wstring::npos ||
-       mp3.find(L'\\n') != std::wstring::npos || mp3.find(L'\\r') != std::wstring::npos ||
-       mp3.find(L'\\0') != std::wstring::npos) return TonePreviewState::UnsupportedFormat;
+       mp3.find(wchar_t(10)) != std::wstring::npos || mp3.find(wchar_t(13)) != std::wstring::npos ||
+       mp3.find(wchar_t(0)) != std::wstring::npos) return TonePreviewState::UnsupportedFormat;
     const auto extension=mp3.find_last_of(L'.');
     if(extension==mp3.npos) return TonePreviewState::UnsupportedFormat;
     std::wstring suffix=mp3.substr(extension);
@@ -174,7 +174,7 @@ TonePreviewState play_windows_ringtone(const std::wstring& id,
         return TonePreviewState::UnsupportedFormat;
     if(cancel && cancel->load()) return TonePreviewState::Cancelled;
     const std::wstring alias=L"axvring"+std::to_wstring(GetCurrentThreadId());
-    const std::wstring open=L"open \\"" + mp3 + L"\\" type mpegvideo alias " + alias;
+    const std::wstring open=L"open \"" + mp3 + L"\" type mpegvideo alias " + alias;
     if(mciSendStringW(open.c_str(),nullptr,0,nullptr)!=0) return TonePreviewState::Failed;
     const auto close=[&]{(void)mciSendStringW((L"close "+alias).c_str(),nullptr,0,nullptr);};
     if(mciSendStringW((L"play "+alias+L" from 0").c_str(),nullptr,0,nullptr)!=0){
