@@ -648,19 +648,39 @@ void paint_button(const DRAWITEMSTRUCT& item) {
         const auto index = static_cast<size_t>(id - kDigitStart);
         const auto digit = axv::dialpad_keys()[index];
         const wchar_t primary[2] = {digit, 0};
-        RECT number = rect;
-        number.bottom = number.top + axv::dpi_pixels(29,g_dpi);
-        RECT subtitle = rect;
-        subtitle.top += axv::dpi_pixels(29,g_dpi);
-        auto old = SelectObject(item.hDC, g_font_digit);
-        DrawTextW(item.hDC, primary, -1, &number, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
-        SelectObject(item.hDC, g_font_small);
+        // Measure actual glyph heights rather than fixed Y offsets. A pressed
+        // button must never let the digit and the subtitle paint over each other.
         const wchar_t* letters[] = {
             L"", L"ABC", L"DEF", L"GHI", L"JKL", L"MNO",
             L"PQRS", L"TUV", L"WXYZ", L"", L"", L""
         };
-        SetTextColor(item.hDC, muted_color());
-        DrawTextW(item.hDC, letters[index], -1, &subtitle, DT_CENTER | DT_SINGLELINE);
+        const int padding = axv::dpi_pixels(3,g_dpi);
+        const int gap = axv::dpi_pixels(2,g_dpi);
+        HGDIOBJ old = SelectObject(item.hDC,g_font_digit);
+        TEXTMETRICW digit_metrics{};
+        GetTextMetricsW(item.hDC,&digit_metrics);
+        SelectObject(item.hDC,g_font_small);
+        TEXTMETRICW letter_metrics{};
+        GetTextMetricsW(item.hDC,&letter_metrics);
+        const int inner_height = (rect.bottom-rect.top)-2*padding;
+        const bool draw_letters = letters[index][0] &&
+            inner_height >= digit_metrics.tmHeight + gap + letter_metrics.tmHeight;
+        const int group_height = digit_metrics.tmHeight +
+            (draw_letters ? gap + letter_metrics.tmHeight : 0);
+        const int top = rect.top + padding + (std::max(0,inner_height-group_height))/2;
+        RECT number{rect.left+padding,top,rect.right-padding,top+digit_metrics.tmHeight};
+        SelectObject(item.hDC,g_font_digit);
+        SetTextColor(item.hDC,foreground);
+        DrawTextW(item.hDC,primary,-1,&number,
+                  DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_NOCLIP);
+        if (draw_letters) {
+            RECT subtitle{rect.left+padding,number.bottom+gap,
+                          rect.right-padding,number.bottom+gap+letter_metrics.tmHeight};
+            SelectObject(item.hDC,g_font_small);
+            SetTextColor(item.hDC,disabled ? ui_color(axv::UiRole::DisabledText) : muted_color());
+            DrawTextW(item.hDC,letters[index],-1,&subtitle,
+                      DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+        }
         SelectObject(item.hDC, old);
     } else {
         HGDIOBJ old_font = SelectObject(item.hDC, g_font_regular);
@@ -2412,6 +2432,39 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         GetWindowTextW(g_number, edited, 32);
         const bool selected_delete_ok = std::wstring_view(edited) == L"14";
         ok = ok && insert_at_caret_ok && selected_delete_ok;
+        // 1,000 real Win32 key command cycles. Every cycle checks the
+        // inserted digit, keypad geometry and isolation from neighboring keys.
+        // No SIP network request is made by this smoke test.
+        bool thousand_key_checks = true;
+        for (int trial=0; trial<1000 && thousand_key_checks; ++trial) {
+            const int key_index = trial % 12;
+            const HWND key = GetDlgItem(window,kDigitStart+key_index);
+            SetWindowTextW(g_number,L"1234");
+            SendMessageW(g_number,EM_SETSEL,2,2);
+            SendMessageW(window,WM_COMMAND,MAKEWPARAM(kDigitStart+key_index,BN_CLICKED),
+                         reinterpret_cast<LPARAM>(key));
+            wchar_t result[32]{};
+            GetWindowTextW(g_number,result,32);
+            const auto digit=axv::dialpad_keys()[static_cast<std::size_t>(key_index)];
+            const std::wstring expected=L"12"+std::wstring(1,digit)+L"34";
+            RECT bounds{};
+            GetWindowRect(key,&bounds);
+            thousand_key_checks = key && std::wstring_view(result)==expected &&
+                bounds.right>bounds.left && bounds.bottom>bounds.top;
+            if (thousand_key_checks) {
+                // All 12 buttons must stay non-overlapping after key presses.
+                for (int sibling=0;sibling<12;++sibling) {
+                    if(sibling==key_index)continue;
+                    RECT other{};
+                    GetWindowRect(GetDlgItem(window,kDigitStart+sibling),&other);
+                    const bool intersects = bounds.left<other.right &&
+                        other.left<bounds.right && bounds.top<other.bottom &&
+                        other.top<bounds.bottom;
+                    if(intersects){thousand_key_checks=false;break;}
+                }
+            }
+        }
+        ok=ok && thousand_key_checks;
         SetWindowTextW(g_number, L"");
         GetWindowTextW(g_status, feedback_message, 160);
         const bool empty_feedback_ok = !g_destination_invalid &&
