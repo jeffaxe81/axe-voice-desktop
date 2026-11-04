@@ -8,6 +8,7 @@
 #include "sip_account.h"
 #include "sip_status.h"
 #include "sip_runtime_observation.h"
+#include "sip_lamp.h"
 #include "baresip_event_mailbox.h"
 #include "sip_event_projection.h"
 #include "sip_runtime_session_guard.h"
@@ -164,6 +165,7 @@ HWND g_tls = nullptr;
 HWND g_audio_status = nullptr;
 HWND g_process_status = nullptr;
 HWND g_runtime_banner = nullptr;
+axv::SipLamp g_sip_lamp = axv::SipLamp::Idle;
 HWND g_input_audio_combo = nullptr;
 HWND g_output_audio_combo = nullptr;
 HWND g_ringtone_audio_combo = nullptr;
@@ -603,6 +605,9 @@ void paint_button(const DRAWITEMSTRUCT& item) {
                               (id == kShowAudio && g_page == 2);
     COLORREF color = ui_color(axv::UiRole::Button);
     if (selected_tab || id == kCallButton) color = accent_color();
+    // Dedicated call-action hierarchy, aligned with AXE Despacho action buttons.
+    if (!g_high_contrast && id == kCallButton) color = RGB(22, 163, 74);
+    if (!g_high_contrast && id == kHangupFuture) color = RGB(220, 38, 38);
     if (id >= kDigitStart && id < kDigitStart + 12) color = field_color();
     if (pressed) color = ui_color(axv::UiRole::Pressed);
     if (disabled) color = ui_color(axv::UiRole::DisabledButton);
@@ -613,7 +618,7 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     HGDIOBJ brush_old = SelectObject(item.hDC, fill);
     HGDIOBJ pen_old = SelectObject(item.hDC, outline);
     const int offset=axv::dpi_pixels(1,g_dpi);
-    const int curve=axv::dpi_pixels(24,g_dpi);
+    const int curve=axv::dpi_pixels(id >= kDigitStart && id < kDigitStart + 12 ? 38 : 24,g_dpi);
     RoundRect(item.hDC,rect.left+offset,rect.top+offset,
               rect.right-offset,rect.bottom-offset,curve,curve);
     SelectObject(item.hDC, pen_old);
@@ -622,7 +627,7 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     DeleteObject(fill);
 
     const COLORREF foreground = disabled ? ui_color(axv::UiRole::DisabledText)
-        : (selected_tab || id == kCallButton
+        : (selected_tab || id == kCallButton || (!g_high_contrast && id == kHangupFuture)
            ? ui_color(axv::UiRole::SelectedText) : ui_color(axv::UiRole::ButtonText));
     SetBkMode(item.hDC, TRANSPARENT);
     SetTextColor(item.hDC, foreground);
@@ -959,6 +964,11 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     // Thread-safe receive boundary is active, but not connected to Baresip C API.
     // Bind native event lifetime to actual process lifetime, not to a timer tick.
     const auto observed=current_sip_observation(state);
+    const auto next_lamp = axv::sip_lamp_state(observed);
+    if (next_lamp != g_sip_lamp) {
+        g_sip_lamp = next_lamp;
+        InvalidateRect(GetParent(g_runtime_banner), nullptr, FALSE);
+    }
 #ifdef AXV_ENABLE_NATIVE_SIP
     g_cti_server.set_ready(
         observed.call_id == 0 &&
@@ -1172,7 +1182,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_button(window, L"AJUSTES", kShowSettings, 153, 103, 123, 42);
         make_button(window, L"AUDIO", kShowAudio, 283, 103, 131, 42);
         g_runtime_banner = make_label(window, L"MOTOR PARADO  |  SIP NAO REGISTRADO",
-                                     42, 164, 347, 25, -1, g_font_regular, kRuntimeStatusLabel);
+                                     77, 164, 312, 25, -1, g_font_small, kRuntimeStatusLabel);
 
 #ifdef AXV_ENABLE_NATIVE_SIP
         g_call_duration_label = make_label(window, L"DURACAO --:--:--",
@@ -1893,6 +1903,24 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             DeleteObject(brand_brush);
         }
         draw_card(dc,logical_rect(24,151,414,198),panel_color(),16);
+        // Compact native status lamp: gray idle, amber registering,
+        // green only after verified SIP registration, red on failure.
+        COLORREF lamp = g_high_contrast ? GetSysColor(COLOR_HIGHLIGHT) : RGB(148,163,184);
+        switch (g_sip_lamp) {
+        case axv::SipLamp::Idle: break;
+        case axv::SipLamp::Connecting: if (!g_high_contrast) lamp = RGB(234,179,8); break;
+        case axv::SipLamp::Connected: if (!g_high_contrast) lamp = RGB(22,163,74); break;
+        case axv::SipLamp::Error: if (!g_high_contrast) lamp = RGB(220,38,38); break;
+        }
+        const RECT dot = logical_rect(46,165,66,185);
+        HBRUSH dot_brush = CreateSolidBrush(lamp);
+        HPEN dot_outline = CreatePen(PS_SOLID,axv::dpi_pixels(2,g_dpi),
+                                   g_high_contrast ? GetSysColor(COLOR_WINDOWTEXT) : panel_color());
+        const auto prior_brush = SelectObject(dc,dot_brush);
+        const auto prior_pen = SelectObject(dc,dot_outline);
+        Ellipse(dc,dot.left,dot.top,dot.right,dot.bottom);
+        SelectObject(dc,prior_pen); SelectObject(dc,prior_brush);
+        DeleteObject(dot_outline); DeleteObject(dot_brush);
         draw_card(dc,g_compact?logical_rect(24,206,414,289)
                                :logical_rect(24,206,414,742),panel_color(),18);
         HPEN rule = CreatePen(PS_SOLID, 1, line_color());
