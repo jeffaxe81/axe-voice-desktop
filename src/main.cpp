@@ -148,7 +148,7 @@ bool g_controls_ready = false;
 bool g_scrollbar_updating = false;
 bool g_scroll_message_queued = false;
 int g_pending_scroll_offset = 0;
-constexpr int kCompactHeight = 365;
+constexpr int kCompactHeight = 395; // Keep dial input clear of fixed explanation footer.
 constexpr int kDigitStart = 2100;
 constexpr int kBackspace = 2201;
 constexpr int kClear = 2202;
@@ -2726,7 +2726,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                      reinterpret_cast<LPARAM>(GetDlgItem(window, kCompact)));
         RECT bounds = {};
         GetWindowRect(window, &bounds);
-        const bool compact_ok = g_compact &&
+        RECT compact_input{},compact_footer{};
+        GetWindowRect(g_number,&compact_input);
+        GetWindowRect(g_footer_panel,&compact_footer);
+        const bool compact_separation=compact_input.bottom<=compact_footer.top;
+        const bool compact_ok = g_compact && compact_separation &&
             (bounds.bottom - bounds.top == axv::dpi_pixels(kCompactHeight,g_dpi)) &&
             (GetWindowLongW(g_number, GWL_STYLE) & WS_VISIBLE) &&
             !(GetWindowLongW(GetDlgItem(window, kDigitStart), GWL_STYLE) & WS_VISIBLE) &&
@@ -2791,7 +2795,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),
                      reinterpret_cast<LPARAM>(GetDlgItem(window,kCompact)));
         GetWindowRect(window,&bounds);
+        RECT mini_number{},mini_footer{};
+        GetWindowRect(g_number,&mini_number);
+        GetWindowRect(g_footer_panel,&mini_footer);
         const bool compact_150_ok=g_compact &&
+            mini_number.bottom<=mini_footer.top &&
             bounds.bottom-bounds.top==axv::dpi_pixels(kCompactHeight,144);
         SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(192,192),0);
         GetWindowRect(window,&bounds);
