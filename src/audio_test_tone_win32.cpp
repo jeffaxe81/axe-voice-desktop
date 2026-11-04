@@ -14,6 +14,7 @@
 #include <utility>
 #include <mmsystem.h>
 #include <cwctype>
+#include <string_view>
 
 namespace axv {
 namespace {
