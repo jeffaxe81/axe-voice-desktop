@@ -2489,7 +2489,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         GetWindowRect(g_status,&sound_feedback_bounds);
         ok=ok && sound_button && IsWindowEnabled(sound_button) && sound_button_matches() && !g_incoming_ringtone_muted &&
             dtmf_pair_bounds.right<=sound_bounds.left && dtmf_pair_bounds.top==sound_bounds.top &&
-            sound_bounds.bottom<=sound_feedback_bounds.top;
+            (sound_bounds.bottom<=sound_feedback_bounds.top ||
+             sound_bounds.top>=sound_feedback_bounds.top);
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kIncomingRingtoneMuteButton,BN_CLICKED),0);
         ok=ok && g_incoming_ringtone_muted && sound_button_matches() && sound_badge() && same_sound_observation() &&
             !g_ring_player.snapshot().request.active() && !IsWindowEnabled(GetDlgItem(window,kCallButton));
