@@ -208,7 +208,7 @@ axv::SipEventProjection g_sip_projection;
 axv::SipRuntimeSessionGuard g_sip_session_guard;
 
 
-bool g_dark = true;
+bool g_dark = false; // AXE Despacho-inspired light theme, with optional dark mode
 bool g_high_contrast = false;
 axv::UiSystemColors g_system_colors{};
 bool g_pinned = false;
@@ -612,7 +612,7 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     HGDIOBJ brush_old = SelectObject(item.hDC, fill);
     HGDIOBJ pen_old = SelectObject(item.hDC, outline);
     const int offset=axv::dpi_pixels(1,g_dpi);
-    const int curve=axv::dpi_pixels(13,g_dpi);
+    const int curve=axv::dpi_pixels(17,g_dpi);
     RoundRect(item.hDC,rect.left+offset,rect.top+offset,
               rect.right-offset,rect.bottom-offset,curve,curve);
     SelectObject(item.hDC, pen_old);
@@ -1873,6 +1873,14 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         RECT rect = {};
         GetClientRect(window, &rect);
         FillRect(dc, &rect, g_background_brush);
+        // AXE Despacho visual signature: slim teal header rule (DPI-aware).
+        // Paint-only decoration; no focus, control position or SIP behavior changes.
+        if (!g_high_contrast) {
+            RECT header_rule = {rect.left, rect.top, rect.right, axv::dpi_pixels(4,g_dpi)};
+            HBRUSH brand_brush = CreateSolidBrush(accent_color());
+            FillRect(dc, &header_rule, brand_brush);
+            DeleteObject(brand_brush);
+        }
         draw_card(dc,logical_rect(24,151,414,198),panel_color(),16);
         draw_card(dc,g_compact?logical_rect(24,206,414,289)
                                :logical_rect(24,206,414,742),panel_color(),18);
