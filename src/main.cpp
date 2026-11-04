@@ -1220,12 +1220,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_button(window, g_dark ? L"CLARO" : L"ESCURO", kTheme, 344, 18, 70, 36);
         if (g_pinned) SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0,
                                    SWP_NOMOVE | SWP_NOSIZE);
-        make_button(window, L"DISCADOR", kShowDial, 24, 103, 92, 42);
-        make_button(window, L"CONTA SIP", kShowSettings, 122, 103, 99, 42);
-        make_button(window, L"AUDIO", kShowAudio, 227, 103, 87, 42);
-        make_button(window, L"GERAL", kShowGeneral, 320, 103, 94, 42);
+        make_button(window, L"DISCADOR", kShowDial, 24, 103, 92, 40, -1, g_font_small);
+        make_button(window, L"CONTA SIP", kShowSettings, 122, 103, 99, 40, -1, g_font_small);
+        make_button(window, L"AUDIO", kShowAudio, 227, 103, 87, 40, -1, g_font_small);
+        make_button(window, L"GERAL", kShowGeneral, 320, 103, 94, 40, -1, g_font_small);
         g_runtime_banner = make_label(window, L"MOTOR PARADO  |  SIP NAO REGISTRADO",
-                                     77, 164, 312, 25, -1, g_font_small, kRuntimeStatusLabel);
+                                     73, 164, 329, 25, -1, g_font_small, kRuntimeStatusLabel);
 
 #ifdef AXV_ENABLE_NATIVE_SIP
         g_call_duration_label = make_label(window, L"DURACAO --:--:--",
@@ -1993,7 +1993,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         // AXE Despacho visual signature: slim teal header rule (DPI-aware).
         // Paint-only decoration; no focus, control position or SIP behavior changes.
         if (!g_high_contrast) {
-            RECT header_rule = {rect.left, rect.top, rect.right, axv::dpi_pixels(7,g_dpi)};
+            RECT header_rule = {rect.left, rect.top, rect.right, axv::dpi_pixels(3,g_dpi)};
             HBRUSH brand_brush = CreateSolidBrush(accent_color());
             FillRect(dc, &header_rule, brand_brush);
             DeleteObject(brand_brush);
