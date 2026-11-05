@@ -801,6 +801,34 @@ void dismiss_button_notice(HWND owner){
                      reinterpret_cast<LPARAM>(&tool));
     }
 }
+const wchar_t* function_button_explanation(HWND button,LPCWSTR label){
+    const int id=GetDlgCtrlID(button);
+    if(id==kMuteFuture)return std::wcscmp(label,L"MIC MUDO")==0
+        ? L"Microfone silenciado nesta chamada."
+        : L"Microfone pronto para transmitir.";
+    if(id==kHoldFuture)return std::wcscmp(label,L"RETOMAR")==0
+        ? L"Chamada em espera. Clique para retomar."
+        : L"Clique para colocar a chamada em espera.";
+    if(id==kTransferFuture)return std::wcscmp(label,L"TRANSF. PEDIDA")==0
+        ? L"Transferencia solicitada; aguarde a central."
+        : std::wcscmp(label,L"TRANSF. FALHOU")==0
+          ? L"Transferencia nao concluida."
+          : L"Abre a janela para informar o ramal de destino.";
+    if(id==kDtmfButton)return std::wcscmp(label,L"DTMF ON")==0
+        ? L"O teclado envia tons DTMF durante a chamada."
+        : L"O teclado volta a editar o numero.";
+    if(id==kIncomingRingtoneMuteButton)return std::wcscmp(label,L"TOQUE MUDO")==0
+        ? L"Alerta sonoro de chamada recebida silenciado."
+        : L"Alerta sonoro de chamada recebida habilitado.";
+    if(id==kCompact)return std::wcscmp(label,L"MAX")==0
+        ? L"Voltar a janela completa."
+        : L"Usar a janela compacta.";
+    if(id==kTheme)return L"Alternar a aparencia do aplicativo.";
+    if(id==kPin)return std::wcscmp(label,L"SOLTAR")==0
+        ? L"Janela fixada sobre as demais."
+        : L"Janela deixou de ficar sempre visivel.";
+    return L"";
+}
 void announce_button_function(HWND button,LPCWSTR label){
     if(!button || !label || g_smoke_mode || !g_controls_ready ||
        !IsWindowVisible(button))return;
@@ -823,8 +851,12 @@ void announce_button_function(HWND button,LPCWSTR label){
         g_button_notice_owner=owner;
     }
     dismiss_button_notice(owner);
-    g_button_notice_text=L"Funcao atual: ";
-    g_button_notice_text+=label;
+    g_button_notice_text=label;
+    const wchar_t* detail=function_button_explanation(button,label);
+    if(detail && *detail){
+        g_button_notice_text+=L"\n";
+        g_button_notice_text+=detail;
+    }
     TOOLINFOW tool{};tool.cbSize=sizeof(tool);
     tool.uFlags=TTF_TRACK|TTF_ABSOLUTE;
     tool.hwnd=owner;tool.uId=1;
