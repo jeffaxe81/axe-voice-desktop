@@ -150,7 +150,7 @@ bool g_controls_ready = false;
 bool g_scrollbar_updating = false;
 bool g_scroll_message_queued = false;
 int g_pending_scroll_offset = 0;
-constexpr int kCompactHeight = 395; // Keep dial input clear of fixed explanation footer.
+constexpr int kCompactHeight = 440; // Accommodate actual Windows caption + fixed footer without scrolling.
 constexpr int kDigitStart = 2100;
 constexpr int kBackspace = 2201;
 constexpr int kClear = 2202;
@@ -585,7 +585,12 @@ void sync_viewport_scroll(HWND window) {
     bar.nPage = static_cast<UINT>(available > 0 ? available : 0);
     bar.nPos = g_scroll_offset;
     SetScrollInfo(window, SB_VERT, &bar, TRUE);
-    ShowScrollBar(window, SB_VERT, g_scroll_max > 0);
+    // The mini dial is a single-screen workflow. When there is sufficient
+    // physical viewport height, no scrollbar is ever shown. If Windows is
+    // constrained below this minimum (e.g. extreme DPI on a tiny display),
+    // keep scrolling as a safety fallback instead of clipping the input.
+    const bool needs_scroll = g_scroll_max > 0;
+    ShowScrollBar(window, SB_VERT, needs_scroll);
     if (previous != g_scroll_offset) {
         position_all_children();
         InvalidateRect(window, nullptr, TRUE);
@@ -660,7 +665,19 @@ void apply_compact_layout(HWND root) {
     position_logical(g_number,39,g_compact?242:272,350,43);
     position_footer(root);
     SetWindowTextW(GetDlgItem(root, kCompact), g_compact ? L"MAX" : L"MINI");
-    const int desired_height = axv::dpi_pixels(g_compact?kCompactHeight:kFullHeight,g_dpi);
+    // Win32 window sizes include the non-client caption and resize borders.
+    // Reserve enough *client* height for the final input and pinned footer;
+    // otherwise an apparently 395px mini window creates a needless scrollbar.
+    RECT outer{}, client{};
+    GetWindowRect(root,&outer);
+    GetClientRect(root,&client);
+    const int chrome = std::max(0,static_cast<int>((outer.bottom-outer.top)-(client.bottom-client.top)));
+    const int min_mini_client =
+        axv::dpi_pixels(kMiniScrollContentEnd,g_dpi)+footer_height()+
+        axv::dpi_pixels(8,g_dpi);
+    const int desired_height = g_compact
+        ? std::max(axv::dpi_pixels(kCompactHeight,g_dpi),min_mini_client+chrome)
+        : axv::dpi_pixels(kFullHeight,g_dpi);
     int fitted_height = desired_height;
     MONITORINFO monitor{};
     monitor.cbSize = sizeof(monitor);
@@ -2835,8 +2852,27 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         RECT compact_input{},compact_footer{};
         GetWindowRect(g_number,&compact_input);
         GetWindowRect(g_footer_panel,&compact_footer);
-        const bool compact_separation=compact_input.bottom<=compact_footer.top;
-        const bool compact_ok = g_compact && compact_separation &&
+        const bool compact_separation=compact_input.bottom +
+            axv::dpi_pixels(8,g_dpi) <= compact_footer.top;
+        RECT compact_label{},compact_runtime{},compact_duration{},compact_ringtone{},compact_tabs{};
+        GetWindowRect(g_number_label,&compact_label);
+        GetWindowRect(g_runtime_banner,&compact_runtime);
+        GetWindowRect(GetDlgItem(window,kShowDial),&compact_tabs);
+        const bool label_clear=compact_runtime.top>=compact_tabs.bottom &&
+            compact_label.bottom+axv::dpi_pixels(3,g_dpi)<=compact_input.top;
+#ifdef AXV_ENABLE_NATIVE_SIP
+        GetWindowRect(g_call_duration_label,&compact_duration);
+        GetWindowRect(g_ringtone_status_label,&compact_ringtone);
+        const bool header_clear=compact_runtime.bottom<=compact_duration.top &&
+            compact_duration.bottom+axv::dpi_pixels(3,g_dpi)<=compact_label.top &&
+            compact_ringtone.bottom+axv::dpi_pixels(3,g_dpi)<=compact_label.top &&
+            compact_duration.right<=compact_ringtone.left;
+#else
+        const bool header_clear=true;
+#endif
+        const bool compact_no_scroll=g_scroll_max==0 && g_scroll_offset==0;
+
+        const bool compact_ok = g_compact && compact_separation && label_clear && header_clear && compact_no_scroll &&
             (bounds.bottom - bounds.top == axv::dpi_pixels(kCompactHeight,g_dpi)) &&
             (GetWindowLongW(g_number, GWL_STYLE) & WS_VISIBLE) &&
             !(GetWindowLongW(GetDlgItem(window, kDigitStart), GWL_STYLE) & WS_VISIBLE) &&
