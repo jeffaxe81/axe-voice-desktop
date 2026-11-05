@@ -169,6 +169,9 @@ inline INT_PTR CALLBACK faleweb_preferences_proc(HWND dialog,UINT message,WPARAM
   if(id>=700 && id<706){pref_select_page(state,id-700);return TRUE;}
   if(id==IDCANCEL){EndDialog(dialog,IDCANCEL);return TRUE;}
   if(id==IDOK){
+   const bool same_identity=state->data.server==pref_edit_text(state->server) &&
+      state->data.user==pref_edit_text(state->user) &&
+      state->data.port==pref_edit_text(state->port);
    state->data.server=pref_edit_text(state->server);
    state->data.user=pref_edit_text(state->user);
    state->data.port=pref_edit_text(state->port);
@@ -182,7 +185,7 @@ inline INT_PTR CALLBACK faleweb_preferences_proc(HWND dialog,UINT message,WPARAM
    state->data.output_index=static_cast<int>(SendMessageW(state->outputs,CB_GETCURSEL,0,0));
    state->data.ring_index=static_cast<int>(SendMessageW(state->rings,CB_GETCURSEL,0,0));
    if(state->data.save_password && state->data.password.empty() &&
-      !state->data.saved_password_exists){
+      (!state->data.saved_password_exists || !same_identity)){
     MessageBoxW(dialog,L"Digite uma senha para habilitar o salvamento seguro.",
       L"Senha SIP",MB_OK|MB_ICONWARNING);
     pref_select_page(state,0);
