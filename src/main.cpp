@@ -2528,7 +2528,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             !(GetWindowLongPtrW(sound_button,GWL_STYLE)&WS_VISIBLE);
         // Accelerator-style dispatch works even while the button is hidden.
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kIncomingRingtoneMuteButton,1),0);
-        ok=ok && !g_incoming_ringtone_muted && sound_button_matches() && !sound_badge() && same_sound_observation();
+        ok=ok && !g_incoming_ringtone_muted && sound_button_matches() && sound_badge() && same_sound_observation();
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),0);
         ok=ok && inactive_duration() && duration_layout_clear();
         // Regression: both labels stay distinct after DPI changes and compact mode.
