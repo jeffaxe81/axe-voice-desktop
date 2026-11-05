@@ -112,7 +112,7 @@ int wmain(int argc,wchar_t** argv) {
 
     const HWND number=GetDlgItem(window,kDestination);
     int checked=0;
-    for(int i=0;i<100;++i) {
+    for(int i=0;i<1000;++i) {
         const bool valid=(i%2)==0;
         const auto destination=valid ? std::wstring(L"100")+std::to_wstring(i+100)
             : std::wstring(L"100 ")+std::to_wstring(i+100);
@@ -134,7 +134,7 @@ int wmain(int argc,wchar_t** argv) {
             return fail(36);
         ++checked;
     }
-    if(checked!=100) return fail(14);
+    if(checked!=1000) return fail(14);
     // A hidden external GUI has no keyboard focus; selection/caret handling is
     // independently tested by the in-process Win32 ui_smoke. Here test real
     // boundary actions without assuming foreground focus in the CI runner.
@@ -167,6 +167,6 @@ int wmain(int argc,wchar_t** argv) {
     if(WaitForSingleObject(child.info.hProcess,5000)!=WAIT_OBJECT_0) return fail(27);
     DWORD code=0;
     if(!GetExitCodeProcess(child.info.hProcess,&code) || code!=0) return fail(28);
-    std::wcout << L"BLACKBOX: 100 destinations, external Win32 UI, no SIP or calls. PASS\n";
+    std::wcout << L"BLACKBOX: 1000 destination scenarios (500 valid/500 invalid), external Win32 UI, no SIP or calls. PASS\n";
     return 0;
 }
