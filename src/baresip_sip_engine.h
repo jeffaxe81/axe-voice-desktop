@@ -4,6 +4,7 @@
 #include "native_audio_routes.h"
 #include "native_call_media.h"
 #include "native_security_status.h"
+#include "sip_call_monitor.h"
 #include <memory>
 namespace axv {
 // Candidate native implementation. All SDK pointers stay on its owner thread.
@@ -31,6 +32,8 @@ public:
     SipRuntimeObservation observation() const;
     NativeAudioRoute selected_audio_route() const;
     std::wstring diagnostic() const override;
+    std::vector<SipMonitorEntry> sip_monitor_snapshot() const;
+    void clear_sip_monitor();
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
