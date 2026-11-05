@@ -32,10 +32,17 @@ inline std::wstring pref_edit_text(HWND control){
  result.resize(static_cast<size_t>(length));
  return result;
 }
+// Coordinates in the reference design are logical 96-DPI pixels; scale
+// controls on high-density displays independently from dialog template units.
+inline int pref_px(HWND window,int logical){
+ const unsigned dpi=GetDpiForWindow(window);
+ return MulDiv(logical,static_cast<int>(dpi?dpi:96),96);
+}
 inline HWND pref_control(HWND dialog,FalewebPrefsDialog* state,int page,
  LPCWSTR cls,LPCWSTR value,DWORD style,int x,int y,int w,int h){
  HWND result=CreateWindowExW(0,cls,value,WS_CHILD|WS_VISIBLE|style,
- x,y,w,h,dialog,nullptr,GetModuleHandleW(nullptr),nullptr);
+ pref_px(dialog,x),pref_px(dialog,y),pref_px(dialog,w),pref_px(dialog,h),
+ dialog,nullptr,GetModuleHandleW(nullptr),nullptr);
  if(result){
   state->controls[page].push_back(result);
   SendMessageW(result,WM_SETFONT,reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)),TRUE);
@@ -77,12 +84,13 @@ inline INT_PTR CALLBACK faleweb_preferences_proc(HWND dialog,UINT message,WPARAM
   SetWindowTextW(dialog,L"AXE Voice - Preferencias");
   RECT client{};GetClientRect(dialog,&client);
   const wchar_t* titles[]={L"Identificacao",L"Gerais",L"Audio",L"Contatos",L"Chamada",L"Avancadas"};
-  const int usable=static_cast<int>(client.right-client.left)-24;
+  const int usable=pref_px(dialog,498);
   const int tabw=usable/6;
   for(int i=0;i<6;++i){
    state->tabs[i]=CreateWindowExW(0,L"BUTTON",titles[i],
     WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,
-    12+i*tabw,15,tabw-3,34,dialog,
+    pref_px(dialog,12)+i*tabw,pref_px(dialog,15),tabw-pref_px(dialog,3),
+    pref_px(dialog,34),dialog,
     reinterpret_cast<HMENU>(static_cast<INT_PTR>(700+i)),
     GetModuleHandleW(nullptr),nullptr);
    SendMessageW(state->tabs[i],WM_SETFONT,reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)),TRUE);
@@ -130,15 +138,15 @@ inline INT_PTR CALLBACK faleweb_preferences_proc(HWND dialog,UINT message,WPARAM
   pref_label(dialog,state,4,L"As regras da central e as rotas seguem no PABX SIP.",28,125,440,55);
   pref_label(dialog,state,5,L"Seguranca e conectividade",28,85,440);
   pref_label(dialog,state,5,L"TLS exige certificado CA confiavel. Opcoes de codecs / QoS e atualizacoes nao sao alteradas por esta janela.",28,126,440,65);
-  const int bottom=static_cast<int>(client.bottom)-43;
+  const int bottom=static_cast<int>(client.bottom)-pref_px(dialog,43);
   auto button=[&](LPCWSTR title,int id,int x){
    HWND h=CreateWindowExW(0,L"BUTTON",title,WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,
-    x,bottom,98,31,dialog,reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
+    x,bottom,pref_px(dialog,98),pref_px(dialog,31),dialog,reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
     GetModuleHandleW(nullptr),nullptr);
    SendMessageW(h,WM_SETFONT,reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)),TRUE);
   };
-  button(L"SALVAR",IDOK,client.right-222);
-  button(L"CANCELAR",IDCANCEL,client.right-115);
+  button(L"SALVAR",IDOK,static_cast<int>(client.right)-pref_px(dialog,222));
+  button(L"CANCELAR",IDCANCEL,static_cast<int>(client.right)-pref_px(dialog,115));
   pref_select_page(state,0);
   return TRUE;
  }
