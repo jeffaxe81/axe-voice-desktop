@@ -688,6 +688,7 @@ void apply_faleweb_layout(HWND root) {
         const int id=GetDlgCtrlID(item.handle);
         const bool digit=id>=kDigitStart && id<kDigitStart+12;
         const bool shown=digit || item.handle==g_number ||
+             item.handle==g_faleweb_title ||
              item.handle==g_runtime_banner ||
 #ifdef AXV_ENABLE_NATIVE_SIP
              item.handle==g_call_duration_label ||
@@ -703,10 +704,11 @@ void apply_faleweb_layout(HWND root) {
         if(item.handle==g_status)continue; // Fixed status remains its own area.
         ShowWindow(item.handle,shown?SW_SHOW:SW_HIDE);
     }
-    position_logical(g_runtime_banner,16,29,221,47);
+    position_logical(g_faleweb_title,17,14,217,19);
+    position_logical(g_runtime_banner,16,38,222,36);
 #ifdef AXV_ENABLE_NATIVE_SIP
-    position_logical(g_call_duration_label,17,82,210,21);
-    position_logical(g_ringtone_status_label,130,101,109,19);
+    position_logical(g_call_duration_label,17,82,126,20);
+    position_logical(g_ringtone_status_label,145,82,93,20);
 #endif
     position_logical(g_number,12,178,228,28);
     for(int i=0;i<12;++i){
@@ -1597,6 +1599,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             g_faleweb_prefs_button=make_button(window,L"PREFERENCIAS",kFalewebPrefsButton,10,121,113,26);
             g_faleweb_actions_button=make_button(window,L"FUNCOES",kFalewebActionsButton,128,121,112,26);
         }
+        if(g_faleweb_mode)
+            g_faleweb_title=make_label(window,L"AXE VOICE  |  SOFTPHONE",
+                                      17,14,217,19,-1,g_font_small);
         g_runtime_banner = make_label(window, L"MOTOR PARADO  |  SIP NAO REGISTRADO",
                                      42, 164, 347, 25, -1, g_font_regular, kRuntimeStatusLabel);
 
@@ -2400,7 +2405,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         }
 #endif
         SetTextColor(dc,foreground);
-        if(g_faleweb_mode && (label==g_runtime_banner
+        if(g_faleweb_mode && (label==g_runtime_banner || label==g_faleweb_title
 #ifdef AXV_ENABLE_NATIVE_SIP
            || label==g_call_duration_label || label==g_ringtone_status_label
 #endif
@@ -2456,7 +2461,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         HDC dc=old_bitmap?back_dc:window_dc;
         FillRect(dc,&rect,g_background_brush);
         if(g_faleweb_mode){
-            const auto outer=logical_rect(7,7,247,116);
+            const auto outer=logical_rect(7,7,247,112);
             draw_card(dc,outer,RGB(202,241,247),13);
         }else{
         draw_card(dc,logical_rect(24,151,414,198),panel_color(),16);
@@ -2763,6 +2768,25 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                     rect.right-rect.left==axv::dpi_pixels(72,scale) &&
                     rect.bottom-rect.top==axv::dpi_pixels(33,scale);
             }
+        }
+        SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(96,96),0);
+        // Prevent upper display text from intersecting with duration and
+        // ringtone indicators, including across Windows DPI transitions.
+        for(unsigned dpi:{96u,120u,144u}){
+            SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(dpi,dpi),0);
+            RECT heading{},state{},duration{},ring{};
+            GetWindowRect(g_faleweb_title,&heading);
+            GetWindowRect(g_runtime_banner,&state);
+#ifdef AXV_ENABLE_NATIVE_SIP
+            GetWindowRect(g_call_duration_label,&duration);
+            GetWindowRect(g_ringtone_status_label,&ring);
+            passed=passed && heading.bottom<state.top &&
+                state.bottom<duration.top && state.bottom<ring.top &&
+                duration.right<ring.left &&
+                duration.bottom==ring.bottom;
+#else
+            passed=passed && heading.bottom<state.top;
+#endif
         }
         SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(96,96),0);
         for(int step=0;step<1000;++step){
