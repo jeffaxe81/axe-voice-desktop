@@ -4,6 +4,7 @@
 // owner that serializes callbacks with stop() / unregister completion.
 #include "baresip_sdk_headers.h"
 #include "baresip_callback_lifecycle.h"
+#include "sip_call_monitor.h"
 #include <cstddef>
 #include <cstdint>
 #include <atomic>
@@ -29,6 +30,8 @@ public:
 
     // Must be called from the Baresip event-loop owner thread.
     // Caller MUST await all in-flight callbacks before stop() and destruction.
+    void set_monitor(SipCallMonitor* monitor){monitor_=monitor;}
+
     bool start(struct ua* owned_ua) {
         if (registered_ || !owned_ua || contexts_.size() >= kMaxContexts) return false;
         // Baresip's global bevent_register() first calls
@@ -150,7 +153,11 @@ private:
                captured.mailbox_session == captured_.mailbox_session;
     }
 
+    void trace(MonitoredSipEvent kind,std::uint64_t call=0){
+        if(monitor_)monitor_->record(kind,captured_.mailbox_session,call);
+    }
     void fail_closed() {
+        trace(MonitoredSipEvent::SessionRevoked,active_token_);
         // Called from SDK callback: do not wait for callbacks here.
         lifecycle_.reject_current();
         captured_ = {}; // explicit stop() required before restart
@@ -202,6 +209,7 @@ private:
         }
         switch (type) {
         case BEVENT_AUDIO_ERROR:
+            trace(MonitoredSipEvent::AudioError,active_token_);
             // Signaling/media failures must not leave a usable call state.
             // Only errors from the selected UA are allowed to revoke it.
             fail_closed();
@@ -209,26 +217,26 @@ private:
         case BEVENT_REGISTERING:
             if (!lifecycle_.registration(callback_session, BaresipEventKind::Registering))
                 fail_closed();
-            else sip_registered_ = false;
+            else {sip_registered_ = false;trace(MonitoredSipEvent::Registering);}
             return;
         case BEVENT_REGISTER_OK:
             if (!ua_isregistered(owner_) || !lifecycle_.registration(callback_session, BaresipEventKind::RegisterOk))
                 fail_closed();
-            else sip_registered_ = true;
+            else {sip_registered_ = true;trace(MonitoredSipEvent::Registered);}
             return;
         case BEVENT_REGISTER_FAIL:
             if (!lifecycle_.registration(callback_session, BaresipEventKind::RegisterFail))
                 fail_closed();
-            else sip_registered_ = false;
+            else {sip_registered_ = false;trace(MonitoredSipEvent::RegisterFailed);}
             return;
         case BEVENT_UNREGISTERING:
             if (!lifecycle_.registration(callback_session, BaresipEventKind::Unregistering))
                 fail_closed();
-            else sip_registered_ = false;
+            else {sip_registered_ = false;trace(MonitoredSipEvent::Unregistering);}
             return;
         case BEVENT_CALL_TRANSFER_FAILED:
             if(transfer_attempted_ && active_call_ && bevent_get_call(event)==active_call_)
-                transfer_failed_=true;
+                {transfer_failed_=true;trace(MonitoredSipEvent::TransferFailed,active_token_);}
             return;
         case BEVENT_CALL_INCOMING:
         case BEVENT_CALL_OUTGOING: {
@@ -267,6 +275,7 @@ private:
             answer_sent_ = false;
             transfer_attempted_ = false;
             transfer_failed_ = false;
+            trace(active_incoming_?MonitoredSipEvent::Incoming:MonitoredSipEvent::Outgoing,minted_token);
             seen_calls_.insert(call); // never queued, logged or persisted
             return;
         }
@@ -283,6 +292,7 @@ private:
                 fail_closed();
                 return;
             }
+            trace(type == BEVENT_CALL_CLOSED?MonitoredSipEvent::Closed:MonitoredSipEvent::Established,active_token_);
             if (type == BEVENT_CALL_CLOSED) {
                 active_call_ = nullptr;
                 active_token_ = 0;
@@ -305,6 +315,7 @@ private:
     }
 
     BaresipCallbackLifecycle& lifecycle_;
+    SipCallMonitor* monitor_=nullptr; // Owned by engine; outlives adapter callbacks.
     struct ua* owner_ = nullptr;
     const struct call* active_call_ = nullptr;
     std::unordered_set<const struct call*> seen_calls_;
