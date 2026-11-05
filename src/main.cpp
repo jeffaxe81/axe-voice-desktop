@@ -2852,8 +2852,27 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         RECT compact_input{},compact_footer{};
         GetWindowRect(g_number,&compact_input);
         GetWindowRect(g_footer_panel,&compact_footer);
-        const bool compact_separation=compact_input.bottom<=compact_footer.top;
-        const bool compact_ok = g_compact && compact_separation &&
+        const bool compact_separation=compact_input.bottom +
+            axv::dpi_pixels(8,g_dpi) <= compact_footer.top;
+        RECT compact_label{},compact_runtime{},compact_duration{},compact_ringtone{},compact_tabs{};
+        GetWindowRect(g_number_label,&compact_label);
+        GetWindowRect(g_runtime_banner,&compact_runtime);
+        GetWindowRect(GetDlgItem(window,kShowDial),&compact_tabs);
+        const bool label_clear=compact_runtime.top>=compact_tabs.bottom &&
+            compact_label.bottom+axv::dpi_pixels(3,g_dpi)<=compact_input.top;
+#ifdef AXV_ENABLE_NATIVE_SIP
+        GetWindowRect(g_call_duration_label,&compact_duration);
+        GetWindowRect(g_ringtone_status_label,&compact_ringtone);
+        const bool header_clear=compact_runtime.bottom<=compact_duration.top &&
+            compact_duration.bottom+axv::dpi_pixels(3,g_dpi)<=compact_label.top &&
+            compact_ringtone.bottom+axv::dpi_pixels(3,g_dpi)<=compact_label.top &&
+            compact_duration.right<=compact_ringtone.left;
+#else
+        const bool header_clear=true;
+#endif
+        const bool compact_no_scroll=g_scroll_max==0 && g_scroll_offset==0;
+
+        const bool compact_ok = g_compact && compact_separation && label_clear && header_clear && compact_no_scroll &&
             (bounds.bottom - bounds.top == axv::dpi_pixels(kCompactHeight,g_dpi)) &&
             (GetWindowLongW(g_number, GWL_STYLE) & WS_VISIBLE) &&
             !(GetWindowLongW(GetDlgItem(window, kDigitStart), GWL_STYLE) & WS_VISIBLE) &&
