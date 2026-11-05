@@ -164,12 +164,16 @@ constexpr UINT kTrayCallback = WM_APP + 41;
 constexpr UINT kAsyncScrollMessage = WM_APP + 43;
 constexpr UINT kAsyncCtiMessage = WM_APP + 44;
 constexpr UINT kTrayIconId = 1;
+constexpr UINT_PTR kButtonNoticeTimer = 10130;
 constexpr UINT kTrayOpen = 3001;
 constexpr UINT kTrayExit = 3002;
 HWND g_number = nullptr;
 HWND g_number_label = nullptr;
 HWND g_status = nullptr;
 HWND g_footer_panel = nullptr;
+HWND g_button_notice_tooltip = nullptr;
+HWND g_button_notice_owner = nullptr;
+std::wstring g_button_notice_text;
 HWND g_server = nullptr;
 HWND g_user = nullptr;
 HWND g_port = nullptr;
@@ -658,7 +662,7 @@ void apply_compact_layout(HWND root) {
     position_logical(g_number_label,39,g_compact?218:246,320,20);
     position_logical(g_number,39,g_compact?242:272,350,43);
     position_footer(root);
-    SetWindowTextW(GetDlgItem(root, kCompact), g_compact ? L"MAX" : L"MINI");
+    set_function_button_text(GetDlgItem(root, kCompact), g_compact ? L"MAX" : L"MINI");
     const int desired_height = axv::dpi_pixels(g_compact?kCompactHeight:kFullHeight,g_dpi);
     int fitted_height = desired_height;
     MONITORINFO monitor{};
@@ -783,6 +787,71 @@ void paint_button(const DRAWITEMSTRUCT& item) {
         InflateRect(&rect,-axv::dpi_pixels(5,g_dpi),-axv::dpi_pixels(5,g_dpi));
         DrawFocusRect(item.hDC, &rect);
     }
+}
+
+// A single native Windows tracking tooltip describes a changed button
+// function for 10 seconds. It does not create footer text or resize controls.
+void dismiss_button_notice(HWND owner){
+    if(owner)KillTimer(owner,kButtonNoticeTimer);
+    if(g_button_notice_tooltip && g_button_notice_owner){
+        TOOLINFOW tool{};tool.cbSize=sizeof(tool);
+        tool.uFlags=TTF_TRACK|TTF_ABSOLUTE;
+        tool.hwnd=g_button_notice_owner;tool.uId=1;
+        SendMessageW(g_button_notice_tooltip,TTM_TRACKACTIVATE,FALSE,
+                     reinterpret_cast<LPARAM>(&tool));
+    }
+}
+void announce_button_function(HWND button,LPCWSTR label){
+    if(!button || !label || g_smoke_mode || !g_controls_ready ||
+       !IsWindowVisible(button))return;
+    HWND owner=GetParent(button);
+    if(!owner)return;
+    if(!g_button_notice_tooltip){
+        g_button_notice_tooltip=CreateWindowExW(WS_EX_TOPMOST|WS_EX_TOOLWINDOW,
+            TOOLTIPS_CLASSW,nullptr,WS_POPUP|TTS_NOPREFIX|TTS_ALWAYSTIP,
+            CW_USEDEFAULT,CW_USEDEFAULT,CW_USEDEFAULT,CW_USEDEFAULT,
+            owner,nullptr,GetModuleHandleW(nullptr),nullptr);
+        if(!g_button_notice_tooltip)return;
+        TOOLINFOW tool{};tool.cbSize=sizeof(tool);
+        tool.uFlags=TTF_TRACK|TTF_ABSOLUTE;
+        tool.hwnd=owner;tool.uId=1;
+        tool.lpszText=const_cast<LPWSTR>(L"");
+        SendMessageW(g_button_notice_tooltip,TTM_ADDTOOLW,0,
+                     reinterpret_cast<LPARAM>(&tool));
+        SendMessageW(g_button_notice_tooltip,TTM_SETMAXTIPWIDTH,0,
+                     axv::dpi_pixels(320,g_dpi));
+        g_button_notice_owner=owner;
+    }
+    dismiss_button_notice(owner);
+    g_button_notice_text=L"Funcao atual: ";
+    g_button_notice_text+=label;
+    TOOLINFOW tool{};tool.cbSize=sizeof(tool);
+    tool.uFlags=TTF_TRACK|TTF_ABSOLUTE;
+    tool.hwnd=owner;tool.uId=1;
+    tool.lpszText=g_button_notice_text.data();
+    SendMessageW(g_button_notice_tooltip,TTM_UPDATETIPTEXTW,0,
+                 reinterpret_cast<LPARAM>(&tool));
+    RECT target{};GetWindowRect(button,&target);
+    const int px=target.left;
+    const int py=target.bottom+axv::dpi_pixels(6,g_dpi);
+    MONITORINFO monitor{};monitor.cbSize=sizeof(monitor);
+    int location_y=py;
+    if(GetMonitorInfoW(MonitorFromRect(&target,MONITOR_DEFAULTTONEAREST),&monitor)
+       && py+axv::dpi_pixels(44,g_dpi)>monitor.rcWork.bottom)
+        location_y=target.top-axv::dpi_pixels(44,g_dpi);
+    SendMessageW(g_button_notice_tooltip,TTM_TRACKPOSITION,0,
+                 MAKELPARAM(px,location_y));
+    SendMessageW(g_button_notice_tooltip,TTM_TRACKACTIVATE,TRUE,
+                 reinterpret_cast<LPARAM>(&tool));
+    SetTimer(owner,kButtonNoticeTimer,10000,nullptr);
+}
+void set_function_button_text(HWND button,LPCWSTR label){
+    if(!button || !label)return;
+    wchar_t previous[96]{};
+    GetWindowTextW(button,previous,96);
+    if(std::wcscmp(previous,label)==0)return;
+    SetWindowTextW(button,label);
+    announce_button_function(button,label);
 }
 
 void refresh_destination_feedback() {
@@ -1117,7 +1186,7 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
         if(std::wstring_view(previous_ringtone)!=ringtone_text)
             SetWindowTextW(g_ringtone_status_label,ringtone_text);
     }
-    SetWindowTextW(GetDlgItem(GetParent(g_runtime_banner),kIncomingRingtoneMuteButton),
+    set_function_button_text(GetDlgItem(GetParent(g_runtime_banner),kIncomingRingtoneMuteButton),
                    g_incoming_ringtone_muted?L"TOQUE MUDO":L"TOQUE NORMAL");
     wchar_t previous_duration[80]{};
     GetWindowTextW(g_call_duration_label,previous_duration,80);
@@ -1151,7 +1220,7 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     g_dtmf_mode.synchronize(media,observed);
     const HWND dtmf=GetDlgItem(GetParent(g_runtime_banner),kDtmfButton);
     EnableWindow(dtmf,axv::native_dtmf_controls_current(media,observed));
-    SetWindowTextW(dtmf,g_dtmf_mode.armed()?L"DTMF ON":L"DTMF OFF");
+    set_function_button_text(dtmf,g_dtmf_mode.armed()?L"DTMF ON":L"DTMF OFF");
     const HWND mute=GetDlgItem(GetParent(g_runtime_banner),kMuteFuture);
     const HWND hold=GetDlgItem(GetParent(g_runtime_banner),kHoldFuture);
     EnableWindow(mute,controls);EnableWindow(hold,controls);
@@ -1159,9 +1228,9 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     // A transfer target is entered in its own modal dialog, not in the dial field.
     const bool can_transfer=controls && media.transfer==axv::NativeTransferState::None;
     if(IsWindowEnabled(transfer)!=(can_transfer?TRUE:FALSE))EnableWindow(transfer,can_transfer?TRUE:FALSE);
-    SetWindowTextW(transfer,media.transfer==axv::NativeTransferState::Submitted?L"TRANSF. PEDIDA":media.transfer==axv::NativeTransferState::Failed?L"TRANSF. FALHOU":L"TRANSFERIR");
-    SetWindowTextW(mute,controls && media.muted?L"MIC MUDO":L"MUDO");
-    SetWindowTextW(hold,controls && media.local_hold?L"RETOMAR":L"ESPERA");
+    set_function_button_text(transfer,media.transfer==axv::NativeTransferState::Submitted?L"TRANSF. PEDIDA":media.transfer==axv::NativeTransferState::Failed?L"TRANSF. FALHOU":L"TRANSFERIR");
+    set_function_button_text(mute,controls && media.muted?L"MIC MUDO":L"MUDO");
+    set_function_button_text(hold,controls && media.local_hold?L"RETOMAR":L"ESPERA");
     const bool routes_locked=observed.process!=axv::RuntimeProcess::Stopped;
     if (!SendMessageW(g_input_audio_combo,CB_GETDROPPEDSTATE,0,0))
         EnableWindow(g_input_audio_combo,!routes_locked && g_audio_inventory_current && SendMessageW(g_input_audio_combo,CB_GETCOUNT,0,0)>0);
@@ -1691,7 +1760,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             }
             if (control == kTheme) {
                 g_dark = !g_dark;
-                SetWindowTextW(GetDlgItem(window, kTheme), g_dark ? L"CLARO" : L"ESCURO");
+                set_function_button_text(GetDlgItem(window, kTheme), g_dark ? L"CLARO" : L"ESCURO");
                 refresh_brushes();
                 save_ui_preferences();
                 InvalidateRect(window, nullptr, TRUE);
@@ -1702,7 +1771,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 g_pinned = !g_pinned;
                 SetWindowPos(window, g_pinned ? HWND_TOPMOST : HWND_NOTOPMOST,
                              0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
-                SetWindowTextW(GetDlgItem(window, kPin), g_pinned ? L"SOLTAR" : L"FIXAR");
+                set_function_button_text(GetDlgItem(window, kPin), g_pinned ? L"SOLTAR" : L"FIXAR");
                 save_ui_preferences();
                 return 0;
             }
@@ -2301,6 +2370,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             audio_devices_changed(GetTickCount64());
         return 0;
     case WM_TIMER:
+        if(wparam==kButtonNoticeTimer){dismiss_button_notice(window);return 0;}
         if (wparam == kProcessTimer) {
             poll_audio_notifications();
             poll_audio_inventory();
@@ -2389,6 +2459,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         DestroyWindow(window);
         return 0;
     case WM_DESTROY:
+        dismiss_button_notice(window);
+        if(g_button_notice_tooltip){DestroyWindow(g_button_notice_tooltip);g_button_notice_tooltip=nullptr;g_button_notice_owner=nullptr;}
 #ifdef AXV_ENABLE_NATIVE_SIP
         axv::close_contact_book();
 #endif
