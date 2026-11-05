@@ -657,6 +657,7 @@ void show_page(HWND root, int page) {
 }
 
 // Mini mode keeps only the target and true SIP state, without fake call actions.
+void set_function_button_text(HWND button,LPCWSTR label);
 void apply_compact_layout(HWND root) {
     if (g_compact && g_page != 0) show_page(root, 0);
     position_logical(g_number_label,39,g_compact?218:246,320,20);
