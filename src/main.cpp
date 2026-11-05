@@ -157,6 +157,7 @@ constexpr int kClear = 2202;
 constexpr int kMuteFuture = 2301;
 constexpr int kHoldFuture = 2302;
 constexpr int kTransferFuture = 2303;
+constexpr int kTransferDestinationEdit = 2310;
 constexpr int kHangupFuture = 2304;
 constexpr int kFocusNumber = 2305;
 constexpr UINT kTrayCallback = WM_APP + 41;
@@ -699,14 +700,16 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     const bool positive = id == kCallButton || id == kAnswerNativeColorId ||
                           id == kStartBaresipButton;
     const bool negative = id == kHangupFuture || id == kStopBaresipButton;
+    const bool transfer_ready = id == kTransferFuture && !disabled && !g_high_contrast;
     const bool semantic = (positive || negative) && !g_high_contrast;
     COLORREF color = ui_color(axv::UiRole::Button);
     if (selected_tab || id == kCallButton) color = accent_color();
     if (id >= kDigitStart && id < kDigitStart + 12) color = field_color();
     if (semantic) color = positive ? RGB(20,126,72) : RGB(185,40,52);
-    if (pressed) color = semantic
+    if (transfer_ready) color=RGB(30,102,188);
+    if (pressed) color = transfer_ready ? RGB(20,75,145) : (semantic
         ? (positive ? RGB(12,96,53) : RGB(145,27,41))
-        : ui_color(axv::UiRole::Pressed);
+        : ui_color(axv::UiRole::Pressed));
     if (disabled) color = ui_color(axv::UiRole::DisabledButton);
 
     RECT rect = item.rcItem;
@@ -724,7 +727,7 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     DeleteObject(fill);
 
     const COLORREF foreground = disabled ? ui_color(axv::UiRole::DisabledText)
-        : (semantic ? RGB(255,255,255)
+        : (semantic || transfer_ready ? RGB(255,255,255)
            : (selected_tab || id == kCallButton
               ? ui_color(axv::UiRole::SelectedText) : ui_color(axv::UiRole::ButtonText)));
     SetBkMode(item.hDC, TRANSPARENT);
@@ -1153,7 +1156,9 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     const HWND hold=GetDlgItem(GetParent(g_runtime_banner),kHoldFuture);
     EnableWindow(mute,controls);EnableWindow(hold,controls);
     const HWND transfer=GetDlgItem(GetParent(g_runtime_banner),kTransferFuture);
-    EnableWindow(transfer,controls && media.transfer==axv::NativeTransferState::None && axv::evaluate_destination(destination).valid());
+    // A transfer target is entered in its own modal dialog, not in the dial field.
+    const bool can_transfer=controls && media.transfer==axv::NativeTransferState::None;
+    if(IsWindowEnabled(transfer)!=(can_transfer?TRUE:FALSE))EnableWindow(transfer,can_transfer?TRUE:FALSE);
     SetWindowTextW(transfer,media.transfer==axv::NativeTransferState::Submitted?L"TRANSF. PEDIDA":media.transfer==axv::NativeTransferState::Failed?L"TRANSF. FALHOU":L"TRANSFERIR");
     SetWindowTextW(mute,controls && media.muted?L"MIC MUDO":L"MUDO");
     SetWindowTextW(hold,controls && media.local_hold?L"RETOMAR":L"ESPERA");
@@ -1198,6 +1203,97 @@ axv::NativeSecurityStatus collect_security_status(){
 #endif
 }
 std::wstring make_readiness_report(){return axv::format_call_readiness(collect_call_readiness())+L"\n\n"+axv::format_native_security_status(collect_security_status());}
+#ifdef AXV_ENABLE_NATIVE_SIP
+// Modal destination entry: never mutate the active call's dial field or
+// issue REFER until the user explicitly confirms a syntactically valid target.
+struct TransferDialogData {
+    std::wstring destination;
+};
+INT_PTR CALLBACK TransferDestinationProc(HWND dialog,UINT message,WPARAM wparam,LPARAM lparam){
+    switch(message){
+    case WM_INITDIALOG: {
+        SetWindowLongPtrW(dialog,DWLP_USER,lparam);
+        const auto make=[&](LPCWSTR type,LPCWSTR title,DWORD style,
+                             int x,int y,int width,int height,int id)->HWND {
+            HWND child=CreateWindowExW(0,type,title,WS_CHILD|WS_VISIBLE|style,
+                axv::dpi_pixels(x,g_dpi),axv::dpi_pixels(y,g_dpi),
+                axv::dpi_pixels(width,g_dpi),axv::dpi_pixels(height,g_dpi),
+                dialog,reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
+                GetModuleHandleW(nullptr),nullptr);
+            if(child)SendMessageW(child,WM_SETFONT,reinterpret_cast<WPARAM>(g_font_regular),TRUE);
+            return child;
+        };
+        make(L"STATIC",L"Ramal ou endereco SIP de destino:",
+             SS_LEFT|SS_NOPREFIX,16,12,290,22,0);
+        HWND edit=make(L"EDIT",L"",WS_BORDER|WS_TABSTOP|ES_AUTOHSCROLL,
+                       16,39,288,29,kTransferDestinationEdit);
+        if(edit){
+            SendMessageW(edit,EM_LIMITTEXT,128,0);
+            SendMessageW(edit,EM_SETCUEBANNER,TRUE,
+                         reinterpret_cast<LPARAM>(L"Ex.: 1002 ou sip:usuario@dominio"));
+            SetFocus(edit);
+        }
+        make(L"STATIC",L"Transferencia direta (sem consulta previa).",
+             SS_LEFT|SS_NOPREFIX,16,74,288,20,0);
+        make(L"BUTTON",L"TRANSFERIR",WS_TABSTOP|BS_DEFPUSHBUTTON,
+             110,103,94,31,IDOK);
+        make(L"BUTTON",L"CANCELAR",WS_TABSTOP|BS_PUSHBUTTON,
+             210,103,94,31,IDCANCEL);
+        return FALSE; // The destination EDIT explicitly receives focus.
+    }
+    case WM_COMMAND:
+        if(LOWORD(wparam)==IDOK){
+            wchar_t value[129]{};
+            GetDlgItemTextW(dialog,kTransferDestinationEdit,value,129);
+            if(!axv::evaluate_destination(value).valid()){
+                MessageBoxW(dialog,L"Informe um ramal ou endereco SIP valido.",
+                            L"Destino invalido",MB_OK|MB_ICONWARNING);
+                SetFocus(GetDlgItem(dialog,kTransferDestinationEdit));
+                return TRUE;
+            }
+            auto* data=reinterpret_cast<TransferDialogData*>(
+                GetWindowLongPtrW(dialog,DWLP_USER));
+            if(!data){EndDialog(dialog,IDCANCEL);return TRUE;}
+            data->destination=value;
+            EndDialog(dialog,IDOK);
+            return TRUE;
+        }
+        if(LOWORD(wparam)==IDCANCEL){
+            EndDialog(dialog,IDCANCEL);
+            return TRUE;
+        }
+        break;
+    case WM_CLOSE:
+        EndDialog(dialog,IDCANCEL);
+        return TRUE;
+    }
+    return FALSE;
+}
+std::optional<std::wstring> request_transfer_destination(HWND owner){
+    // Inline DLGTEMPLATE avoids additional .rc resources. Three terminal
+    // zero WORDs represent menu, class and title, with DWORD alignment.
+    struct alignas(DWORD) EmptyDialog {
+        DLGTEMPLATE header{};
+        WORD menu=0;
+        WORD class_name=0;
+        WORD title=0;
+    } specification{};
+    specification.header.style=WS_POPUP|WS_CAPTION|WS_SYSMENU|DS_MODALFRAME|DS_CENTER;
+    specification.header.dwExtendedStyle=0;
+    specification.header.cdit=0;
+    specification.header.x=0;
+    specification.header.y=0;
+    specification.header.cx=230;
+    specification.header.cy=115;
+    TransferDialogData data{};
+    const INT_PTR result=DialogBoxIndirectParamW(GetModuleHandleW(nullptr),
+        &specification.header,owner,TransferDestinationProc,
+        reinterpret_cast<LPARAM>(&data));
+    if(result!=IDOK || data.destination.empty())return std::nullopt;
+    return data.destination;
+}
+#endif
+
 void begin_shutdown(HWND window) {
     g_sip_session_guard.revoke(axv::RuntimeProcess::Stopping, g_native_event_mailbox, g_sip_projection);
     const bool queued = g_baresip_process.request_quit_async();
@@ -1654,19 +1750,37 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         }
 #ifdef AXV_ENABLE_NATIVE_SIP
         if(LOWORD(wparam)==kTransferFuture && HIWORD(wparam)==BN_CLICKED){
+            // Capture exact call identity before entering a modal dialog.
             const auto expected=g_displayed_media;
-            const auto call=native_engine().observation();
-            wchar_t target[129]{};GetWindowTextW(g_number,target,129);
-            if(!axv::native_media_controls_current(expected,call) || expected.transfer!=axv::NativeTransferState::None || !axv::evaluate_destination(target).valid()){
-                SetWindowTextW(g_status,L"Transferencia indisponivel. Informe destino valido em uma chamada estabelecida.");return 0;
+            const auto before=native_engine().observation();
+            if(!axv::native_media_controls_current(expected,before) ||
+               expected.transfer!=axv::NativeTransferState::None){
+                SetWindowTextW(g_status,L"Transferencia indisponivel: nenhuma chamada estabelecida.");
+                return 0;
             }
-            const std::wstring review=L"Transferir esta chamada para:\n\n"+std::wstring(target)+L"\n\nTransferencia direta, sem consulta previa.";
-            if(MessageBoxW(window,review.c_str(),L"Revisar destino da transferencia",MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2)!=IDYES)return 0;
-            // The captured displayed identity remains fixed across the modal dialog.
-            if(!native_engine().transfer_call(target,expected)){
-                const auto feedback=std::wstring(L"Transferencia recusada. ")+native_engine().diagnostic();
+            if(g_smoke_mode)return 0; // Never open modal UI during headless CI.
+            const auto target=request_transfer_destination(window);
+            if(!target){
+                SetWindowTextW(g_status,L"Transferencia cancelada; chamada preservada.");
+                return 0;
+            }
+            const auto after=native_engine().observation();
+            if(!axv::native_media_controls_current(expected,after) ||
+               native_engine().media_state().transfer!=axv::NativeTransferState::None){
+                SetWindowTextW(g_status,L"Transferencia cancelada: a chamada mudou.");
+                return 0;
+            }
+            if(!axv::evaluate_destination(*target).valid()){
+                SetWindowTextW(g_status,L"Destino invalido. Transferencia nao enviada.");
+                return 0;
+            }
+            if(!native_engine().transfer_call(*target,expected)){
+                const auto feedback=std::wstring(L"Transferencia recusada: ")+native_engine().diagnostic();
                 SetWindowTextW(g_status,feedback.c_str());
+            }else{
+                SetWindowTextW(g_status,L"Pedido de transferencia enviado. Aguardando resposta da central.");
             }
+            refresh_runtime_banner(g_baresip_process.poll());
             return 0;
         }
         if((LOWORD(wparam)==kMuteFuture || LOWORD(wparam)==kHoldFuture) && HIWORD(wparam)==BN_CLICKED){
@@ -2433,6 +2547,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             (GetWindowLongPtrW(g_password,GWL_STYLE)&ES_PASSWORD) &&
             !IsWindowEnabled(GetDlgItem(window,kCallButton));
         ok=ok && GetDlgItem(window,kDtmfButton) && !IsWindowEnabled(GetDlgItem(window,kDtmfButton));
+        // Transfer starts unavailable without an established call, regardless
+        // of the typed dial destination. Wrong destinations cannot be sent.
+        SetWindowTextW(g_number,L"1002");
+        refresh_runtime_banner(g_baresip_process.poll());
+        ok=ok && !IsWindowEnabled(GetDlgItem(window,kTransferFuture)) &&
+            axv::evaluate_destination(L"1002").valid() &&
+            !axv::evaluate_destination(L"bad destination").valid();
+        SetWindowTextW(g_number,L"");
         const auto inactive_duration=[] {
             wchar_t text[80]{};
             GetWindowTextW(g_call_duration_label,text,80);
