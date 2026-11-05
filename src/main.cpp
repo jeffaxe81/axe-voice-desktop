@@ -211,6 +211,8 @@ axv::IncomingRingtonePlayer g_ring_player{[](const std::wstring& id,const std::a
 }};
 axv::SipRuntimeObservation g_displayed_sip;
 bool g_ring_error_visible=false;
+std::uint64_t g_last_incoming_visual_session=0;
+std::uint64_t g_last_incoming_visual_call=0;
 #endif
 axv::WindowsProcess g_baresip_process;
 axv::ProcessStatus g_last_process_state = axv::ProcessStatus::Stopped;
@@ -875,6 +877,28 @@ void refresh_audio_test_actions(HWND window) {
 void acknowledge_incoming_alert(){g_ring_policy.silence(g_displayed_sip);g_ring_player.stop();}
 void synchronize_incoming_alert(const axv::SipRuntimeObservation& observed){
     g_displayed_sip=observed;
+    // Alert only once per verified incoming native call. Never infer an INVITE
+    // from registration or engine process state. Do not steal window focus.
+    if(!g_smoke_mode && axv::verified_incoming_call(observed) &&
+       (observed.session!=g_last_incoming_visual_session ||
+        observed.call_id!=g_last_incoming_visual_call)){
+        g_last_incoming_visual_session=observed.session;
+        g_last_incoming_visual_call=observed.call_id;
+        HWND owner=GetParent(g_runtime_banner);
+        if(owner){
+            if(g_tray_visible){
+                auto tray=create_tray_data(owner);
+                tray.uFlags=NIF_INFO;
+                wcscpy_s(tray.szInfoTitle,L"AXE Voice - chamada recebida");
+                wcscpy_s(tray.szInfo,L"Uma chamada esta chegando. Abra o AXE Voice para atender.");
+                tray.dwInfoFlags=NIIF_INFO|NIIF_NOSOUND;
+                (void)Shell_NotifyIconW(NIM_MODIFY,&tray);
+            }else{
+                FLASHWINFO flash{sizeof(flash),owner,FLASHW_TRAY|FLASHW_TIMERNOFG,6,0};
+                (void)FlashWindowEx(&flash);
+            }
+        }
+    }
     const auto request=g_smoke_mode?axv::IncomingRingtoneRequest{}:g_ring_policy.request(observed,g_selected_ringtone_id,g_tone_preview.state()==axv::TonePreviewState::Playing,g_incoming_ringtone_muted);
     if(axv::verified_incoming_call(observed)){g_tone_preview.request_stop();g_microphone_test.request_stop();}
     const bool accepted=g_ring_player.synchronize(request);
@@ -2433,6 +2457,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             (GetWindowLongPtrW(g_password,GWL_STYLE)&ES_PASSWORD) &&
             !IsWindowEnabled(GetDlgItem(window,kCallButton));
         ok=ok && GetDlgItem(window,kDtmfButton) && !IsWindowEnabled(GetDlgItem(window,kDtmfButton));
+        // No unsolicited incoming alert or system-tray message is generated
+        // by a registered/disconnected UI lacking a verified incoming call.
+        ok=ok && g_last_incoming_visual_session==0 &&
+            g_last_incoming_visual_call==0 &&
+            !axv::verified_incoming_call(native_engine().observation());
         const auto inactive_duration=[] {
             wchar_t text[80]{};
             GetWindowTextW(g_call_duration_label,text,80);
