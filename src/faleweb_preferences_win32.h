@@ -10,6 +10,8 @@ namespace axv {
 struct FalewebPreferences {
  std::wstring server,user,port,password,ca_file;
  bool tls=false;
+ bool save_password=false;
+ bool saved_password_exists=false;
  int ringtone=2;
  bool mute_ringtone=false;
  std::vector<std::wstring> inputs,outputs,rings;
@@ -20,6 +22,7 @@ struct FalewebPrefsDialog {
  std::array<std::vector<HWND>,6> controls{};
  std::array<HWND,6> tabs{};
  HWND server=nullptr,user=nullptr,port=nullptr,password=nullptr,ca=nullptr,tls=nullptr;
+ HWND save_password=nullptr;
  HWND ringtone=nullptr,muted=nullptr,inputs=nullptr,outputs=nullptr,rings=nullptr;
  int page=0;
 };
@@ -102,14 +105,24 @@ inline INT_PTR CALLBACK faleweb_preferences_proc(HWND dialog,UINT message,WPARAM
   state->user=pref_edit(dialog,state,0,state->data.user,240,112,230);
   pref_label(dialog,state,0,L"Porta do servidor",28,155,200);
   state->port=pref_edit(dialog,state,0,state->data.port,240,152,230);
-  pref_label(dialog,state,0,L"Senha (nao armazenada)",28,195,206);
+  pref_label(dialog,state,0,L"Senha SIP",28,195,206);
   state->password=pref_edit(dialog,state,0,L"",240,192,230,true);
-  pref_label(dialog,state,0,L"Deixe em branco para manter a senha atual.",28,226,440,20);
+  state->save_password=pref_control(dialog,state,0,L"BUTTON",
+   L"Salvar senha no Gerenciador de Credenciais do Windows",
+   BS_AUTOCHECKBOX|WS_TABSTOP,28,226,450,27);
+  if(state->save_password)
+   SendMessageW(state->save_password,BM_SETCHECK,
+    state->data.save_password?BST_CHECKED:BST_UNCHECKED,0);
+  pref_label(dialog,state,0,
+   state->data.saved_password_exists
+    ?L"Senha ja salva. Deixe em branco para manter a senha armazenada."
+    :L"Opcional: sem marcar, a senha nao sera armazenada.",
+   28,254,445,28);
   state->tls=pref_control(dialog,state,0,L"BUTTON",L"Usar TLS (CA validada)",
-   WS_TABSTOP|BS_AUTOCHECKBOX,28,260,280,26);
+   WS_TABSTOP|BS_AUTOCHECKBOX,28,293,280,26);
   if(state->tls)SendMessageW(state->tls,BM_SETCHECK,state->data.tls?BST_CHECKED:BST_UNCHECKED,0);
-  pref_label(dialog,state,0,L"Certificado CA PEM",28,299,200);
-  state->ca=pref_edit(dialog,state,0,state->data.ca_file,190,296,280);
+  pref_label(dialog,state,0,L"Certificado CA PEM",28,332,200);
+  state->ca=pref_edit(dialog,state,0,state->data.ca_file,190,329,280);
   // General options map to the existing ringtone state.
   pref_label(dialog,state,1,L"Notificacao de chamadas recebidas",28,83,385);
   state->muted=pref_control(dialog,state,1,L"BUTTON",L"Habilitar alerta sonoro",
@@ -156,10 +169,14 @@ inline INT_PTR CALLBACK faleweb_preferences_proc(HWND dialog,UINT message,WPARAM
   if(id>=700 && id<706){pref_select_page(state,id-700);return TRUE;}
   if(id==IDCANCEL){EndDialog(dialog,IDCANCEL);return TRUE;}
   if(id==IDOK){
+   const bool same_identity=state->data.server==pref_edit_text(state->server) &&
+      state->data.user==pref_edit_text(state->user) &&
+      state->data.port==pref_edit_text(state->port);
    state->data.server=pref_edit_text(state->server);
    state->data.user=pref_edit_text(state->user);
    state->data.port=pref_edit_text(state->port);
    state->data.password=pref_edit_text(state->password);
+   state->data.save_password=SendMessageW(state->save_password,BM_GETCHECK,0,0)==BST_CHECKED;
    state->data.ca_file=pref_edit_text(state->ca);
    state->data.tls=SendMessageW(state->tls,BM_GETCHECK,0,0)==BST_CHECKED;
    state->data.mute_ringtone=SendMessageW(state->muted,BM_GETCHECK,0,0)!=BST_CHECKED;
@@ -167,6 +184,14 @@ inline INT_PTR CALLBACK faleweb_preferences_proc(HWND dialog,UINT message,WPARAM
    state->data.input_index=static_cast<int>(SendMessageW(state->inputs,CB_GETCURSEL,0,0));
    state->data.output_index=static_cast<int>(SendMessageW(state->outputs,CB_GETCURSEL,0,0));
    state->data.ring_index=static_cast<int>(SendMessageW(state->rings,CB_GETCURSEL,0,0));
+   if(state->data.save_password && state->data.password.empty() &&
+      (!state->data.saved_password_exists || !same_identity)){
+    MessageBoxW(dialog,L"Digite uma senha para habilitar o salvamento seguro.",
+      L"Senha SIP",MB_OK|MB_ICONWARNING);
+    pref_select_page(state,0);
+    SetFocus(state->password);
+    return TRUE;
+   }
    EndDialog(dialog,IDOK);return TRUE;
   }
  }
@@ -179,7 +204,7 @@ inline bool edit_faleweb_preferences(HWND owner,FalewebPreferences& data){
   WORD menu=0,cls=0,title=0;
  } spec{};
  spec.header.style=WS_POPUP|WS_VISIBLE|WS_CAPTION|WS_SYSMENU|DS_MODALFRAME|DS_CENTER;
- spec.header.cx=355;spec.header.cy=290;
+ spec.header.cx=355;spec.header.cy=330;
  FalewebPrefsDialog state{};
  state.data=data;
  const auto result=DialogBoxIndirectParamW(GetModuleHandleW(nullptr),&spec.header,

@@ -5,6 +5,7 @@
 #include <shellapi.h>
 #include <commctrl.h>
 #include "faleweb_preferences_win32.h"
+#include "windows_sip_credential.h"
 #include "baresip_profile.h"
 #include "sip_address.h"
 #include "sip_engine.h"
@@ -245,6 +246,7 @@ bool g_faleweb_mode=false;
 bool g_faleweb_smoke=false;
 HWND g_faleweb_prefs_button=nullptr;
 HWND g_faleweb_actions_button=nullptr;
+HWND g_faleweb_title=nullptr;
 HBRUSH g_faleweb_display_brush=nullptr;
 bool g_smoke_mode = false;
 constexpr UINT kExternalClickToCallMessage=WM_APP+42;
@@ -686,6 +688,7 @@ void apply_faleweb_layout(HWND root) {
         const int id=GetDlgCtrlID(item.handle);
         const bool digit=id>=kDigitStart && id<kDigitStart+12;
         const bool shown=digit || item.handle==g_number ||
+             item.handle==g_faleweb_title ||
              item.handle==g_runtime_banner ||
 #ifdef AXV_ENABLE_NATIVE_SIP
              item.handle==g_call_duration_label ||
@@ -701,10 +704,11 @@ void apply_faleweb_layout(HWND root) {
         if(item.handle==g_status)continue; // Fixed status remains its own area.
         ShowWindow(item.handle,shown?SW_SHOW:SW_HIDE);
     }
-    position_logical(g_runtime_banner,16,29,221,47);
+    position_logical(g_faleweb_title,17,14,217,19);
+    position_logical(g_runtime_banner,16,38,222,36);
 #ifdef AXV_ENABLE_NATIVE_SIP
-    position_logical(g_call_duration_label,17,82,210,21);
-    position_logical(g_ringtone_status_label,130,101,109,19);
+    position_logical(g_call_duration_label,17,82,126,20);
+    position_logical(g_ringtone_status_label,145,82,93,20);
 #endif
     position_logical(g_number,12,178,228,28);
     for(int i=0;i<12;++i){
@@ -1376,6 +1380,13 @@ void open_faleweb_preferences(HWND owner) {
     prefs.user=text_of(g_user);
     prefs.port=text_of(g_port);
 #ifdef AXV_ENABLE_NATIVE_SIP
+    if(const auto credential=axv::read_saved_sip_credential()){
+        prefs.saved_password_exists=axv::saved_credential_matches(
+            *credential,prefs.server,prefs.user,prefs.port);
+        prefs.save_password=prefs.saved_password_exists;
+    }
+#endif
+#ifdef AXV_ENABLE_NATIVE_SIP
     prefs.ca_file=text_of(g_ca_file);
     prefs.mute_ringtone=g_incoming_ringtone_muted;
 #endif
@@ -1392,14 +1403,45 @@ void open_faleweb_preferences(HWND owner) {
         if(device.id==g_selected_ringtone_id)prefs.ring_index=static_cast<int>(prefs.rings.size())-1;
     }
     if(!axv::edit_faleweb_preferences(owner,prefs))return;
+#ifdef AXV_ENABLE_NATIVE_SIP
+    // Never silently carry the old SIP password to a different account.
+    const std::wstring old_server=text_of(g_server);
+    const std::wstring old_user=text_of(g_user);
+    const std::wstring old_port=text_of(g_port);
+    const bool same_account=old_server==prefs.server &&
+        old_user==prefs.user && old_port==prefs.port;
+    bool credential_ok=true;
+    if(prefs.save_password){
+        if(!prefs.password.empty()){
+            credential_ok=axv::save_sip_credential({
+                prefs.server,prefs.user,prefs.port,prefs.password});
+        }else{
+            const auto saved=axv::read_saved_sip_credential();
+            credential_ok=saved && axv::saved_credential_matches(
+                *saved,prefs.server,prefs.user,prefs.port);
+        }
+    }else{
+        credential_ok=axv::delete_saved_sip_credential();
+    }
+    if(!credential_ok){
+        MessageBoxW(owner,L"Nao foi possivel atualizar o Gerenciador de Credenciais do Windows. Nenhuma configuracao SIP foi alterada.",
+            L"Salvar senha",MB_OK|MB_ICONERROR);
+        axv::securely_clear_sip_secret(prefs.password);
+        return;
+    }
+#endif
     // These changes are applied to existing SIP registration controls. Live
     // registrations are NOT silently restarted or overwritten.
     if(g_server)SetWindowTextW(g_server,prefs.server.c_str());
     if(g_user)SetWindowTextW(g_user,prefs.user.c_str());
     if(g_port)SetWindowTextW(g_port,prefs.port.c_str());
 #ifdef AXV_ENABLE_NATIVE_SIP
-    if(g_password && !prefs.password.empty())
-        SetWindowTextW(g_password,prefs.password.c_str());
+    if(g_password){
+        if(!prefs.password.empty())
+            SetWindowTextW(g_password,prefs.password.c_str());
+        else if(!same_account)SetWindowTextW(g_password,L"");
+    }
+    axv::securely_clear_sip_secret(prefs.password);
     if(g_ca_file)SetWindowTextW(g_ca_file,prefs.ca_file.c_str());
     if(prefs.mute_ringtone)g_ring_player.stop();
     g_incoming_ringtone_muted=prefs.mute_ringtone;
@@ -1557,6 +1599,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             g_faleweb_prefs_button=make_button(window,L"PREFERENCIAS",kFalewebPrefsButton,10,121,113,26);
             g_faleweb_actions_button=make_button(window,L"FUNCOES",kFalewebActionsButton,128,121,112,26);
         }
+        if(g_faleweb_mode)
+            g_faleweb_title=make_label(window,L"AXE VOICE  |  SOFTPHONE",
+                                      17,14,217,19,-1,g_font_small);
         g_runtime_banner = make_label(window, L"MOTOR PARADO  |  SIP NAO REGISTRADO",
                                      42, 164, 347, 25, -1, g_font_regular, kRuntimeStatusLabel);
 
@@ -1724,6 +1769,22 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
 #ifdef AXV_ENABLE_NATIVE_SIP
         SetWindowTextW(GetDlgItem(window,kStartBaresipButton),L"REGISTRAR");
         SetWindowTextW(g_process_status,L"Candidato nativo. Conta nao registrada; midia nao homologada.");
+#endif
+#ifdef AXV_ENABLE_NATIVE_SIP
+        // Load only the current Windows user's explicitly saved credentials.
+        // No automatic registration is triggered by restoring these fields.
+        if(!g_smoke_mode && g_server && g_user && g_port && g_password){
+            if(auto saved=axv::read_saved_sip_credential()){
+                if(axv::pref_edit_text(g_server).empty() &&
+                   axv::pref_edit_text(g_user).empty()){
+                    SetWindowTextW(g_server,saved->server.c_str());
+                    SetWindowTextW(g_user,saved->user.c_str());
+                    SetWindowTextW(g_port,saved->port.c_str());
+                    SetWindowTextW(g_password,saved->password.c_str());
+                }
+                axv::securely_clear_sip_secret(saved->password);
+            }
+        }
 #endif
         show_page(window, 0);
         apply_compact_layout(window);
@@ -2344,7 +2405,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         }
 #endif
         SetTextColor(dc,foreground);
-        if(g_faleweb_mode && (label==g_runtime_banner
+        if(g_faleweb_mode && (label==g_runtime_banner || label==g_faleweb_title
 #ifdef AXV_ENABLE_NATIVE_SIP
            || label==g_call_duration_label || label==g_ringtone_status_label
 #endif
@@ -2400,7 +2461,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         HDC dc=old_bitmap?back_dc:window_dc;
         FillRect(dc,&rect,g_background_brush);
         if(g_faleweb_mode){
-            const auto outer=logical_rect(7,7,247,116);
+            const auto outer=logical_rect(7,7,247,112);
             draw_card(dc,outer,RGB(202,241,247),13);
         }else{
         draw_card(dc,logical_rect(24,151,414,198),panel_color(),16);
@@ -2707,6 +2768,25 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                     rect.right-rect.left==axv::dpi_pixels(72,scale) &&
                     rect.bottom-rect.top==axv::dpi_pixels(33,scale);
             }
+        }
+        SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(96,96),0);
+        // Prevent upper display text from intersecting with duration and
+        // ringtone indicators, including across Windows DPI transitions.
+        for(unsigned dpi:{96u,120u,144u}){
+            SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(dpi,dpi),0);
+            RECT heading{},state{},duration{},ring{};
+            GetWindowRect(g_faleweb_title,&heading);
+            GetWindowRect(g_runtime_banner,&state);
+#ifdef AXV_ENABLE_NATIVE_SIP
+            GetWindowRect(g_call_duration_label,&duration);
+            GetWindowRect(g_ringtone_status_label,&ring);
+            passed=passed && heading.bottom<state.top &&
+                state.bottom<duration.top && state.bottom<ring.top &&
+                duration.right<ring.left &&
+                duration.bottom==ring.bottom;
+#else
+            passed=passed && heading.bottom<state.top;
+#endif
         }
         SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(96,96),0);
         for(int step=0;step<1000;++step){
