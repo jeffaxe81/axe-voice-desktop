@@ -642,6 +642,7 @@ void bring_focused_control_into_view(HWND window, HWND control) {
     }
 }
 
+void apply_faleweb_layout(HWND root);
 void show_page(HWND root, int page) {
     if (g_page != page) {
         if (g_page == 2) { g_microphone_test.request_stop(); g_audio_change_policy.leave(); g_audio_worker.cancel(); g_audio_retry.reset(); g_audio_inventory_current=false; }
@@ -669,6 +670,7 @@ void show_page(HWND root, int page) {
         GetWindowTextW(g_headset_status,explanation,512);
         SetWindowTextW(g_status,explanation);
     }
+    if(g_faleweb_mode)apply_faleweb_layout(root);
 }
 
 // Mini mode keeps only the target and true SIP state, without fake call actions.
@@ -712,8 +714,8 @@ void apply_faleweb_layout(HWND root) {
 #ifdef AXV_ENABLE_NATIVE_SIP
     position_logical(GetDlgItem(root,kAnswerNative),128,354,112,30);
 #endif
-    position_logical(GetDlgItem(root,kHangupFuture),10,389,113,27);
-    position_logical(GetDlgItem(root,kMuteFuture),128,389,112,27);
+    position_logical(GetDlgItem(root,kHangupFuture),10,385,113,25);
+    position_logical(GetDlgItem(root,kMuteFuture),128,385,112,25);
     position_logical(GetDlgItem(root,kContactsButton),10,150,112,23);
     position_logical(GetDlgItem(root,kRecentDestinationsButton),128,150,112,23);
     position_logical(g_faleweb_prefs_button,10,121,113,26);
