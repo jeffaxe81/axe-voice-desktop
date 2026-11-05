@@ -1083,7 +1083,7 @@ bool audio_dropdown_open() {
 // GUI-thread notification handling invalidates the current generation immediately.
 // Device identities and open dropdown contents remain untouched until refresh.
 void audio_devices_changed(ULONGLONG now) {
-    if (g_smoke_mode || g_compact || g_page != 2) return;
+    if (g_smoke_mode || g_compact || (g_page != 2 && !g_faleweb_mode)) return;
     g_audio_worker.cancel();
     g_audio_retry.reset();
     g_audio_inventory_current=false;
@@ -1093,13 +1093,13 @@ void poll_audio_notifications() {
     if (g_smoke_mode) return;
     const auto now=GetTickCount64();
     if (g_audio_endpoint_watcher.take_changed()) audio_devices_changed(now);
-    if (!g_compact && g_page==2 &&
+    if (!g_compact && (g_page==2 || g_faleweb_mode) &&
         axv::audio_device_refresh_due(g_audio_change_policy,now,audio_dropdown_open(),g_audio_worker.snapshot())) request_audio_panel();
 }
 void poll_audio_inventory() {
     if (g_smoke_mode || g_compact) return;
     const auto now=GetTickCount64();
-    if(g_page==2 && !audio_dropdown_open()) {
+    if((g_page==2 || g_faleweb_mode) && !audio_dropdown_open()) {
         if(g_audio_worker.snapshot().pending && g_audio_retry.ready(now)) {
             if(g_audio_worker.start_pending()) g_audio_retry.started();
             else if(g_audio_worker.snapshot().launch_failed) g_audio_retry.failed(now);
@@ -1731,6 +1731,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         SetTimer(window, kProcessTimer, 100, nullptr);
         g_controls_ready = true;
         sync_viewport_scroll(window);
+        if(g_faleweb_mode && !g_smoke_mode){
+            g_audio_change_policy.enter(GetTickCount64());
+            request_audio_panel(); // asynchronous WASAPI inventory for Preferences.
+        }
         return 0;
     }
     case WM_COMMAND:
