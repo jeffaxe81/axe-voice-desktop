@@ -2646,10 +2646,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     if(g_faleweb_smoke){
         bool passed=g_faleweb_mode && !g_scroll_max &&
             !((GetWindowLongPtrW(window,GWL_STYLE))&WS_VSCROLL) &&
-            g_faleweb_prefs_button && IsWindowVisible(g_faleweb_prefs_button) &&
-            g_faleweb_actions_button && IsWindowVisible(g_faleweb_actions_button) &&
-            g_runtime_banner && IsWindowVisible(g_runtime_banner) &&
-            g_number && IsWindowVisible(g_number);
+            g_faleweb_prefs_button && (GetWindowLongPtrW(g_faleweb_prefs_button,GWL_STYLE)&WS_VISIBLE) &&
+            g_faleweb_actions_button && (GetWindowLongPtrW(g_faleweb_actions_button,GWL_STYLE)&WS_VISIBLE) &&
+            g_runtime_banner && (GetWindowLongPtrW(g_runtime_banner,GWL_STYLE)&WS_VISIBLE) &&
+            g_number && (GetWindowLongPtrW(g_number,GWL_STYLE)&WS_VISIBLE);
         RECT frame{},footer{},display{},number{},call{};
         GetWindowRect(window,&frame);
         GetWindowRect(g_footer_panel,&footer);
@@ -2663,7 +2663,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         for(int index=0;index<12;++index){
             HWND key=GetDlgItem(window,kDigitStart+index);
             RECT bounds{};GetWindowRect(key,&bounds);
-            passed=passed && key && IsWindowVisible(key) &&
+            passed=passed && key && (GetWindowLongPtrW(key,GWL_STYLE)&WS_VISIBLE) &&
                 bounds.right-bounds.left==axv::dpi_pixels(72,g_dpi) &&
                 bounds.bottom-bounds.top==axv::dpi_pixels(33,g_dpi) &&
                 bounds.bottom<call.top;
