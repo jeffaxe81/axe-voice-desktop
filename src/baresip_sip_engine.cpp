@@ -51,12 +51,14 @@ struct BaresipSipEngine::Impl {
     std::uint64_t deadline=0;
     struct ua* owned=nullptr;
     struct mod *g711_module=nullptr,*wasapi_module=nullptr;
+    SipCallMonitor monitor;
     BaresipEventMailbox mailbox;
     BaresipCallbackLifecycle lifecycle{mailbox};
     BaresipSdkEventAdapter adapter{lifecycle};
     SipEventProjection projection;
     BaresipNativeLibreReactor reactor{[this]{tick();},[this]{begin();},[this]{end();}};
     static inline std::atomic<Impl*> process_owner{nullptr};
+    Impl(){adapter.set_monitor(&monitor);}
     ~Impl(){reactor.stop();erase(password);}
     void fail() { erase(password); failed=true; adapter.stop(); if(owned){erase_sdk_account_password(ua_account(owned));ua_stop_all(true);owned=nullptr;} std::lock_guard<std::mutex> lock(mutex); view={RuntimeProcess::Failed,SipStatus::Failed}; destination_feedback.clear(); command={};media={};last_hold_error=0;mute_rejected=false;dtmf_rejected=false;audio_issue=NativeAudioRouteStatus::Ready; }
     bool checked(int error,const wchar_t* stage) {
@@ -181,6 +183,10 @@ struct BaresipSipEngine::Impl {
 };
 BaresipSipEngine::BaresipSipEngine():impl_(std::make_unique<Impl>()){}
 BaresipSipEngine::~BaresipSipEngine(){stop();}
+std::vector<SipMonitorEntry> BaresipSipEngine::sip_monitor_snapshot() const {
+    return impl_->monitor.snapshot();
+}
+void BaresipSipEngine::clear_sip_monitor() { impl_->monitor.clear(); }
 SipRuntimeObservation BaresipSipEngine::observation()const {std::lock_guard<std::mutex> lock(impl_->mutex);return impl_->view;}
 NativeAudioRoute BaresipSipEngine::selected_audio_route()const {std::lock_guard<std::mutex> lock(impl_->mutex);return impl_->audio_route;}
 NativeCallMediaState BaresipSipEngine::media_state()const {std::lock_guard<std::mutex> lock(impl_->mutex);return impl_->media;}

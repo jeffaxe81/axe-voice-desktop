@@ -74,6 +74,8 @@ int main() {
     BaresipEventMailbox mailbox;
     BaresipCallbackLifecycle lifecycle(mailbox);
     BaresipSdkEventAdapter adapter(lifecycle);
+    SipCallMonitor journal;
+    adapter.set_monitor(&journal);
     BaresipEventMailbox competing_mailbox;
     BaresipCallbackLifecycle competing_lifecycle(competing_mailbox);
     BaresipSdkEventAdapter competing(competing_lifecycle);
@@ -98,7 +100,7 @@ int main() {
     if (a == 0) return 4;
     emit(BEVENT_REGISTERING, &other_event);
     emit(BEVENT_CALL_INCOMING, &unrelated);
-    if (mailbox.drain().size) return 5; // unrelated account isolation
+    if (mailbox.drain().size || !journal.snapshot().empty()) return 5; // unrelated account isolation
     emit(BEVENT_REGISTERING, &ua_event);
     emit(BEVENT_REGISTER_OK, &ua_event);
     auto first = mailbox.drain();
@@ -113,6 +115,13 @@ int main() {
     emit(BEVENT_CALL_ESTABLISHED, &one);
     emit(BEVENT_CALL_CLOSED, &one);
     emit(BEVENT_CALL_OUTGOING, &two);
+    const auto captured=journal.snapshot();
+    if(captured.size()!=6 || captured[0].event!=MonitoredSipEvent::Registering ||
+       captured[1].event!=MonitoredSipEvent::Registered ||
+       captured[2].event!=MonitoredSipEvent::Incoming || captured[2].call!=1 ||
+       captured[3].event!=MonitoredSipEvent::Established ||
+       captured[4].event!=MonitoredSipEvent::Closed ||
+       captured[5].event!=MonitoredSipEvent::Outgoing) return 49;
     auto batch = mailbox.drain();
     if (batch.size != 4 || batch.events[0].call_id != 1 ||
         batch.events[1].call_id != 1 || batch.events[2].call_id != 1 ||
@@ -267,5 +276,20 @@ int main() {
     if (adapter.active() || mailbox.drain().session) return 47;
     adapter.stop();
     if (g_callback || g_registered != g_unregistered) return 48;
+    // The journal is bounded, monotonic, redacted and clearable. A cleared
+    // historical callback can never reappear in a new view snapshot.
+    SipCallMonitor stress;
+    for(unsigned i=0;i<256;++i)
+        stress.record(MonitoredSipEvent::Incoming,1,i+1);
+    const auto bounded=stress.snapshot();
+    if(bounded.size()!=SipCallMonitor::capacity ||
+       bounded.front().sequence!=129 || bounded.back().sequence!=256 ||
+       bounded.front().call!=129 || bounded.back().call!=256) return 50;
+    stress.clear();
+    if(!stress.snapshot().empty())return 51;
+    stress.record(MonitoredSipEvent::Closed,2,999);
+    const auto fresh=stress.snapshot();
+    if(fresh.size()!=1 || fresh[0].sequence!=257 ||
+       fresh[0].event!=MonitoredSipEvent::Closed) return 52;
     return 0;
 }
