@@ -28,21 +28,6 @@ extern "C" int bevent_register(bevent_h* handler, void* arg) {
     if (g_fail_registration) return 22;
     g_callback = handler; g_context = arg;
     ++g_registered;
-    // The journal is bounded, monotonic, redacted and clearable. A cleared
-    // historical callback can never reappear in a new view snapshot.
-    SipCallMonitor stress;
-    for(unsigned i=0;i<256;++i)
-        stress.record(MonitoredSipEvent::Incoming,1,i+1);
-    const auto bounded=stress.snapshot();
-    if(bounded.size()!=SipCallMonitor::capacity ||
-       bounded.front().sequence!=129 || bounded.back().sequence!=256 ||
-       bounded.front().call!=129 || bounded.back().call!=256) return 50;
-    stress.clear();
-    if(!stress.snapshot().empty())return 51;
-    stress.record(MonitoredSipEvent::Closed,2,999);
-    const auto fresh=stress.snapshot();
-    if(fresh.size()!=1 || fresh[0].sequence!=257 ||
-       fresh[0].event!=MonitoredSipEvent::Closed) return 52;
     return 0;
 }
 extern "C" void bevent_unregister(bevent_h* handler) {
@@ -291,5 +276,20 @@ int main() {
     if (adapter.active() || mailbox.drain().session) return 47;
     adapter.stop();
     if (g_callback || g_registered != g_unregistered) return 48;
+    // The journal is bounded, monotonic, redacted and clearable. A cleared
+    // historical callback can never reappear in a new view snapshot.
+    SipCallMonitor stress;
+    for(unsigned i=0;i<256;++i)
+        stress.record(MonitoredSipEvent::Incoming,1,i+1);
+    const auto bounded=stress.snapshot();
+    if(bounded.size()!=SipCallMonitor::capacity ||
+       bounded.front().sequence!=129 || bounded.back().sequence!=256 ||
+       bounded.front().call!=129 || bounded.back().call!=256) return 50;
+    stress.clear();
+    if(!stress.snapshot().empty())return 51;
+    stress.record(MonitoredSipEvent::Closed,2,999);
+    const auto fresh=stress.snapshot();
+    if(fresh.size()!=1 || fresh[0].sequence!=257 ||
+       fresh[0].event!=MonitoredSipEvent::Closed) return 52;
     return 0;
 }
