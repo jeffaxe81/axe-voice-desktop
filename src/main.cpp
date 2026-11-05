@@ -4,6 +4,7 @@
 #include <mutex>
 #include <shellapi.h>
 #include <commctrl.h>
+#include "faleweb_preferences_win32.h"
 #include "baresip_profile.h"
 #include "sip_address.h"
 #include "sip_engine.h"
@@ -122,6 +123,8 @@ constexpr int kDtmfButton = 2010;
 constexpr int kRecentDestinationsButton = 2011;
 constexpr int kIncomingRingtoneMuteButton = 2012;
 constexpr int kContactsButton = 2013;
+constexpr int kFalewebPrefsButton = 2015;
+constexpr int kFalewebActionsButton = 2016;
 constexpr int kInputAudioCombo = 2401;
 constexpr int kOutputAudioCombo = 2402;
 constexpr int kRingtoneAudioCombo = 2403;
@@ -131,6 +134,8 @@ constexpr int kRingtoneChooseMp3 = 2405;
 constexpr int kFeedbackLabel = 2501;
 constexpr int kRuntimeStatusLabel = 2502;
 constexpr int kWindowWidth = 438;
+constexpr int kFalewebWidth=254;
+constexpr int kFalewebHeight=475;
 unsigned g_dpi = axv::kBaseDpi;
 #ifdef AXV_ENABLE_NATIVE_SIP
 constexpr int kFullHeight = 886;
@@ -236,6 +241,10 @@ bool g_high_contrast = false;
 axv::UiSystemColors g_system_colors{};
 bool g_pinned = false;
 bool g_compact = false;
+bool g_faleweb_mode=false;
+HWND g_faleweb_prefs_button=nullptr;
+HWND g_faleweb_actions_button=nullptr;
+HBRUSH g_faleweb_display_brush=nullptr;
 bool g_smoke_mode = false;
 constexpr UINT kExternalClickToCallMessage=WM_APP+42;
 constexpr ULONG_PTR kExternalClickDataId=0x41585643;
@@ -510,7 +519,7 @@ void refresh_account_feedback() {
 // Content beyond the available client height is reachable by scrollbar,
 // mouse wheel and keyboard focus without cropping or changing SIP state.
 // Explanatory feedback is anchored in a dedicated bottom bar.
-int footer_height() { return axv::dpi_pixels(kFooterHeight,g_dpi); }
+int footer_height() { return axv::dpi_pixels(g_faleweb_mode?31:kFooterHeight,g_dpi); }
 int content_viewport_height(HWND window) {
     RECT client{};
     GetClientRect(window,&client);
@@ -568,6 +577,7 @@ int viewport_content_height() {
                                      : kFullScrollContentEnd, g_dpi);
 }
 void sync_viewport_scroll(HWND window) {
+    if(g_faleweb_mode){g_scroll_max=0;g_scroll_offset=0;ShowScrollBar(window,SB_VERT,FALSE);return;}
     if (!g_controls_ready || g_scrollbar_updating) return;
     g_scrollbar_updating = true;
     RECT client{};
@@ -593,6 +603,7 @@ void sync_viewport_scroll(HWND window) {
     g_scrollbar_updating = false;
 }
 void set_viewport_scroll(HWND window, int desired) {
+    if(g_faleweb_mode)return;
     RECT client{};
     GetClientRect(window, &client);
     const int target = axv::clamp_scroll_offset(desired, viewport_content_height(),
@@ -605,6 +616,7 @@ void set_viewport_scroll(HWND window, int desired) {
     RedrawWindow(window,nullptr,nullptr,RDW_INVALIDATE|RDW_ALLCHILDREN|RDW_NOERASE);
 }
 void bring_focused_control_into_view(HWND window, HWND control) {
+    if(g_faleweb_mode)return;
     if (!g_controls_ready || !control) return;
     for (const auto& child : g_layout) {
         if (child.handle != control) continue;
@@ -654,7 +666,61 @@ void show_page(HWND root, int page) {
 }
 
 // Mini mode keeps only the target and true SIP state, without fake call actions.
+// FaleWEB-inspired compact dialer uses existing live SIP controls, not a
+// duplicate engine. The existing large settings pages remain in memory only.
+void apply_faleweb_layout(HWND root) {
+    if(!g_faleweb_mode || !g_controls_ready && !g_runtime_banner)return;
+    g_compact=false;g_scroll_offset=0;g_scroll_max=0;
+    ShowScrollBar(root,SB_VERT,FALSE);
+    // Hide all legacy page controls, then reveal only the selected controls.
+    for(const auto& item:g_layout) {
+        const int id=GetDlgCtrlID(item.handle);
+        const bool digit=id>=kDigitStart && id<kDigitStart+12;
+        const bool shown=digit || item.handle==g_number ||
+             item.handle==g_runtime_banner ||
+#ifdef AXV_ENABLE_NATIVE_SIP
+             item.handle==g_call_duration_label ||
+             item.handle==g_ringtone_status_label ||
+#endif
+             id==kCallButton || id==kHangupFuture || id==kMuteFuture ||
+             id==kContactsButton || id==kRecentDestinationsButton ||
+             id==kFalewebPrefsButton || id==kFalewebActionsButton
+#ifdef AXV_ENABLE_NATIVE_SIP
+             || id==kAnswerNative
+#endif
+             ;
+        if(item.handle==g_status)continue; // Fixed status remains its own area.
+        ShowWindow(item.handle,shown?SW_SHOW:SW_HIDE);
+    }
+    position_logical(g_runtime_banner,16,29,221,47);
+#ifdef AXV_ENABLE_NATIVE_SIP
+    position_logical(g_call_duration_label,17,82,210,21);
+    position_logical(g_ringtone_status_label,130,101,109,19);
+#endif
+    position_logical(g_number,12,178,228,28);
+    for(int i=0;i<12;++i){
+        HWND digit=GetDlgItem(root,kDigitStart+i);
+        position_logical(digit,14+(i%3)*77,211+(i/3)*35,72,33);
+    }
+    position_logical(GetDlgItem(root,kCallButton),10,354,113,30);
+#ifdef AXV_ENABLE_NATIVE_SIP
+    position_logical(GetDlgItem(root,kAnswerNative),128,354,112,30);
+#endif
+    position_logical(GetDlgItem(root,kHangupFuture),10,389,113,27);
+    position_logical(GetDlgItem(root,kMuteFuture),128,389,112,27);
+    position_logical(GetDlgItem(root,kContactsButton),10,150,112,23);
+    position_logical(GetDlgItem(root,kRecentDestinationsButton),128,150,112,23);
+    position_logical(g_faleweb_prefs_button,10,121,113,26);
+    position_logical(g_faleweb_actions_button,128,121,112,26);
+    position_footer(root);
+    InvalidateRect(root,nullptr,FALSE);
+}
 void apply_compact_layout(HWND root) {
+    if(g_faleweb_mode){
+        SetWindowPos(root,nullptr,0,0,axv::dpi_pixels(kFalewebWidth,g_dpi),
+            axv::dpi_pixels(kFalewebHeight,g_dpi),SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
+        apply_faleweb_layout(root);return;
+    }
     if (g_compact && g_page != 0) show_page(root, 0);
     position_logical(g_number_label,39,g_compact?218:246,320,20);
     position_logical(g_number,39,g_compact?242:272,350,43);
@@ -1339,6 +1405,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         return 0;
 #endif
     case WM_CREATE: {
+        g_faleweb_mode=!g_smoke_mode;
         g_dpi=axv::normalized_dpi(GetDpiForWindow(window));
         load_ui_preferences();
         read_windows_contrast();
@@ -1358,6 +1425,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_button(window, L"TECLADO", kShowDial, 24, 103, 122, 42);
         make_button(window, L"AJUSTES", kShowSettings, 153, 103, 123, 42);
         make_button(window, L"AUDIO", kShowAudio, 283, 103, 131, 42);
+        g_faleweb_prefs_button=make_button(window,L"PREFERENCIAS",kFalewebPrefsButton,10,121,113,26);
+        g_faleweb_actions_button=make_button(window,L"FUNCOES",kFalewebActionsButton,128,121,112,26);
         g_runtime_banner = make_label(window, L"MOTOR PARADO  |  SIP NAO REGISTRADO",
                                      42, 164, 347, 25, -1, g_font_regular, kRuntimeStatusLabel);
 
@@ -2016,6 +2085,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         return 0;
     }
     case WM_VSCROLL: {
+        if(g_faleweb_mode)return 0;
         if (!g_controls_ready) return 0;
         RECT client{};
         GetClientRect(window, &client);
@@ -2065,6 +2135,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         }
         return 0;
     case WM_MOUSEWHEEL: {
+        if(g_faleweb_mode)return 0;
         g_wheel_remainder += GET_WHEEL_DELTA_WPARAM(wparam);
         const int steps = g_wheel_remainder / WHEEL_DELTA;
         g_wheel_remainder %= WHEEL_DELTA;
@@ -2075,6 +2146,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
     }
     case WM_SIZE:
         if (wparam != SIZE_MINIMIZED) {
+            if(g_faleweb_mode)apply_faleweb_layout(window);
             position_footer(window);
             sync_viewport_scroll(window);
         }
@@ -2377,6 +2449,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             LocalFree(argv);
         }
     }
+    g_faleweb_mode=!g_smoke_mode;
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     g_dpi=axv::normalized_dpi(GetDpiForSystem());
     const wchar_t* className = L"AXEVoiceDesktopWindow";
@@ -2393,10 +2466,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
 #endif
     HWND window = CreateWindowExW(0, className, title,
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VSCROLL | WS_CLIPCHILDREN,
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | (g_faleweb_mode?0:WS_VSCROLL) | WS_CLIPCHILDREN,
         CW_USEDEFAULT, CW_USEDEFAULT,
-        axv::dpi_pixels(kWindowWidth,g_dpi)+GetSystemMetricsForDpi(SM_CXVSCROLL,g_dpi),
-        axv::dpi_pixels(kFullHeight,g_dpi),
+        g_faleweb_mode?axv::dpi_pixels(kFalewebWidth,g_dpi):axv::dpi_pixels(kWindowWidth,g_dpi)+GetSystemMetricsForDpi(SM_CXVSCROLL,g_dpi),
+        axv::dpi_pixels(g_faleweb_mode?kFalewebHeight:kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
     if (!window) return 2;
     if (!g_smoke_mode) (void)g_audio_endpoint_watcher.start();
