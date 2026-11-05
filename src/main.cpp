@@ -671,7 +671,7 @@ void apply_compact_layout(HWND root) {
     RECT outer{}, client{};
     GetWindowRect(root,&outer);
     GetClientRect(root,&client);
-    const int chrome = std::max(0,(outer.bottom-outer.top)-(client.bottom-client.top));
+    const int chrome = std::max(0,static_cast<int>((outer.bottom-outer.top)-(client.bottom-client.top)));
     const int min_mini_client =
         axv::dpi_pixels(kMiniScrollContentEnd,g_dpi)+footer_height()+
         axv::dpi_pixels(8,g_dpi);
