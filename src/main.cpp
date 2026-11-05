@@ -1215,6 +1215,17 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     // No audited native producer is linked; process state never implies SIP proof.
     // Without a native verified producer the UI cannot claim SIP registration.
     const wchar_t* banner = axv::runtime_status_banner(observed, current_session);
+    if(g_faleweb_mode) {
+        if(!axv::sip_proof_is_current(observed,current_session))
+            banner=L"SIP NAO REGISTRADO";
+        else switch(observed.sip){
+        case axv::SipStatus::Registered:banner=L"SIP REGISTRADO";break;
+        case axv::SipStatus::Ringing:banner=L"CHAMADA RECEBIDA";break;
+        case axv::SipStatus::Calling:banner=L"CHAMANDO...";break;
+        case axv::SipStatus::InCall:banner=L"EM CONVERSA";break;
+        default:banner=L"SIP SEM CONEXAO";break;
+        }
+    }
     wchar_t previous[160]{};
     GetWindowTextW(g_runtime_banner, previous, 160);
     if (std::wstring_view(previous) != std::wstring_view(banner))
@@ -1344,6 +1355,109 @@ void dispatch_pending_cti(HWND window) {
 
 
 
+// Collect only existing user selections. Sensitive password remains in the
+// original (session-only) edit unless explicitly replaced by the user.
+void open_faleweb_preferences(HWND owner) {
+    if(g_smoke_mode)return;
+    axv::FalewebPreferences prefs{};
+    auto text_of=[](HWND control){return axv::pref_edit_text(control);};
+    prefs.server=text_of(g_server);
+    prefs.user=text_of(g_user);
+    prefs.port=text_of(g_port);
+#ifdef AXV_ENABLE_NATIVE_SIP
+    prefs.ca_file=text_of(g_ca_file);
+    prefs.mute_ringtone=g_incoming_ringtone_muted;
+#endif
+    prefs.tls=g_tls && SendMessageW(g_tls,BM_GETCHECK,0,0)==BST_CHECKED;
+    prefs.ringtone=g_ringtone_preset.load();
+    for(const auto& device:g_audio_inputs){
+        prefs.inputs.push_back(device.name);
+        if(device.id==g_selected_input_id)prefs.input_index=static_cast<int>(prefs.inputs.size())-1;
+    }
+    for(const auto& device:g_audio_outputs){
+        prefs.outputs.push_back(device.name);
+        prefs.rings.push_back(device.name);
+        if(device.id==g_selected_output_id)prefs.output_index=static_cast<int>(prefs.outputs.size())-1;
+        if(device.id==g_selected_ringtone_id)prefs.ring_index=static_cast<int>(prefs.rings.size())-1;
+    }
+    if(!axv::edit_faleweb_preferences(owner,prefs))return;
+    // These changes are applied to existing SIP registration controls. Live
+    // registrations are NOT silently restarted or overwritten.
+    if(g_server)SetWindowTextW(g_server,prefs.server.c_str());
+    if(g_user)SetWindowTextW(g_user,prefs.user.c_str());
+    if(g_port)SetWindowTextW(g_port,prefs.port.c_str());
+#ifdef AXV_ENABLE_NATIVE_SIP
+    if(g_password && !prefs.password.empty())
+        SetWindowTextW(g_password,prefs.password.c_str());
+    if(g_ca_file)SetWindowTextW(g_ca_file,prefs.ca_file.c_str());
+    if(prefs.mute_ringtone)g_ring_player.stop();
+    g_incoming_ringtone_muted=prefs.mute_ringtone;
+#endif
+    if(g_tls)SendMessageW(g_tls,BM_SETCHECK,prefs.tls?BST_CHECKED:BST_UNCHECKED,0);
+    if(prefs.ringtone>=0 && prefs.ringtone<=5){
+        bool allowed=prefs.ringtone!=5;
+        if(!allowed){
+            std::lock_guard<std::mutex> lock(g_ringtone_mp3_mutex);
+            allowed=!g_ringtone_custom_mp3.empty();
+        }
+        if(allowed)g_ringtone_preset.store(prefs.ringtone);
+    }
+    // Device routing changes only while the native engine is stopped.
+    bool may_change_devices=true;
+#ifdef AXV_ENABLE_NATIVE_SIP
+    may_change_devices=native_engine().observation().process==axv::RuntimeProcess::Stopped;
+#endif
+    if(may_change_devices){
+        if(prefs.input_index>=0 &&
+           prefs.input_index<static_cast<int>(g_audio_inputs.size())){
+            g_selected_input_id=g_audio_inputs[static_cast<size_t>(prefs.input_index)].id;
+        }
+        if(prefs.output_index>=0 &&
+           prefs.output_index<static_cast<int>(g_audio_outputs.size())){
+            g_selected_output_id=g_audio_outputs[static_cast<size_t>(prefs.output_index)].id;
+        }
+    }
+    if(prefs.ring_index>=0 &&
+       prefs.ring_index<static_cast<int>(g_audio_outputs.size()))
+        g_selected_ringtone_id=g_audio_outputs[static_cast<size_t>(prefs.ring_index)].id;
+    refresh_account_feedback();
+    save_ui_preferences();
+    refresh_runtime_banner(g_baresip_process.poll());
+}
+
+void show_faleweb_actions(HWND owner){
+    if(g_smoke_mode)return;
+    HMENU menu=CreatePopupMenu();
+    if(!menu)return;
+    const struct Action{UINT command;int control;LPCWSTR title;} actions[]={
+#ifdef AXV_ENABLE_NATIVE_SIP
+        {1,kAnswerNative,L"Atender"},
+#endif
+        {2,kHangupFuture,L"Encerrar"},
+        {3,kTransferFuture,L"Transferir"},
+        {4,kHoldFuture,L"Espera / Retomar"},
+        {5,kMuteFuture,L"Microfone mudo"},
+        {6,kDtmfButton,L"Alternar DTMF"},
+        {7,kIncomingRingtoneMuteButton,L"Silenciar toque"},
+        {8,kBackspace,L"Apagar digito"},
+        {9,kClear,L"Limpar numero"}
+    };
+    for(const auto& action:actions){
+        const HWND control=GetDlgItem(owner,action.control);
+        if(!control)continue;
+        AppendMenuW(menu,MF_STRING|(IsWindowEnabled(control)?0:MF_GRAYED),
+            action.command,action.title);
+    }
+    RECT anchor{};GetWindowRect(g_faleweb_actions_button,&anchor);
+    const UINT chosen=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_NONOTIFY,
+       anchor.left,anchor.bottom,0,owner,nullptr);
+    DestroyMenu(menu);
+    for(const auto& action:actions)
+        if(chosen==action.command)
+            SendMessageW(owner,WM_COMMAND,MAKEWPARAM(action.control,BN_CLICKED),
+              reinterpret_cast<LPARAM>(GetDlgItem(owner,action.control)));
+}
+
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
     case WM_COPYDATA: {
@@ -1413,6 +1527,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_font_title = create_font(27, FW_BOLD);
         g_font_small = create_font(13, FW_NORMAL);
         g_font_digit = create_font(21, FW_SEMIBOLD);
+        g_faleweb_display_brush=CreateSolidBrush(RGB(202,241,247));
         refresh_brushes();
         make_label(window, L"AXE  VOICE", 24, 16, 240, 37, -1, g_font_title);
         make_label(window, L"SOFTPHONE DESKTOP  /  LAB", 25, 57, 270, 22, -1, g_font_small);
@@ -1621,6 +1736,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         // Combo selection uses code 1 too; accelerator commands have lParam == 0.
         if (HIWORD(wparam) == BN_CLICKED || (HIWORD(wparam) == 1 && lparam == 0)) {
             const int control = LOWORD(wparam);
+            if(control==kFalewebPrefsButton){open_faleweb_preferences(window);return 0;}
+            if(control==kFalewebActionsButton){show_faleweb_actions(window);return 0;}
             if (control == kShowDial || control == kFocusNumber) { show_page(window, 0); return 0; }
             if(control==kCopyStatusButton){
                 const auto status=collect_call_readiness();
@@ -2208,6 +2325,15 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         }
 #endif
         SetTextColor(dc,foreground);
+        if(g_faleweb_mode && (label==g_runtime_banner
+#ifdef AXV_ENABLE_NATIVE_SIP
+           || label==g_call_duration_label || label==g_ringtone_status_label
+#endif
+           )){
+            SetBkColor(dc,RGB(202,241,247));SetTextColor(dc,RGB(16,60,89));
+            SetBkMode(dc,OPAQUE);
+            return reinterpret_cast<LRESULT>(g_faleweb_display_brush);
+        }
         if(label==g_footer_panel || label==g_status){
             SetBkColor(dc,field_color());
             SetBkMode(dc,OPAQUE);
@@ -2254,6 +2380,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         HGDIOBJ old_bitmap=bitmap?SelectObject(back_dc,bitmap):nullptr;
         HDC dc=old_bitmap?back_dc:window_dc;
         FillRect(dc,&rect,g_background_brush);
+        if(g_faleweb_mode){
+            const auto outer=logical_rect(7,7,247,116);
+            draw_card(dc,outer,RGB(202,241,247),13);
+        }else{
         draw_card(dc,logical_rect(24,151,414,198),panel_color(),16);
         draw_card(dc,g_compact?logical_rect(24,206,414,289)
                                :logical_rect(24,206,414,742),panel_color(),18);
@@ -2266,6 +2396,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                axv::dpi_pixels(divider_y,g_dpi)-g_scroll_offset);
         SelectObject(dc,old);
         DeleteObject(rule);
+        }
         if(old_bitmap){
             BitBlt(window_dc,paint.rcPaint.left,paint.rcPaint.top,
                 paint.rcPaint.right-paint.rcPaint.left,
@@ -2396,6 +2527,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         if (g_background_brush) DeleteObject(g_background_brush);
         if (g_field_brush) DeleteObject(g_field_brush);
         if (g_invalid_field_brush) DeleteObject(g_invalid_field_brush);
+        if(g_faleweb_display_brush)DeleteObject(g_faleweb_display_brush);
         // Normally stopped through WM_CLOSE. Forced fallback on external destruction.
         g_baresip_process.stop();
         PostQuitMessage(0);
