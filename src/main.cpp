@@ -83,7 +83,9 @@ constexpr int kPasswordEdit=1016,kCaEdit=1017,kAnswerNative=1018;
 HWND g_password=nullptr,g_ca_file=nullptr;
 axv::NativeCallMediaState g_displayed_media;
 constexpr int kCallDurationLabel = 2503;
+constexpr int kRingtoneStatusLabel = 2504;
 HWND g_call_duration_label = nullptr;
+HWND g_ringtone_status_label = nullptr;
 axv::NativeCallDuration g_call_duration;
 axv::RecentDestinations g_recent_destinations;
 bool g_incoming_ringtone_muted=false; // Local preference for this execution only.
@@ -1104,7 +1106,14 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     std::wstring duration_text=duration.active
         ? L"DURACAO " + axv::format_call_duration(duration.elapsed_ms)
         : L"DURACAO --:--:--";
-    if(g_incoming_ringtone_muted)duration_text+=L" | TOQUE MUDO";
+    // Keep mute status separate from call duration to avoid text clipping.
+    const wchar_t* ringtone_text=g_incoming_ringtone_muted?L"TOQUE MUDO":L"";
+    if(g_ringtone_status_label){
+        wchar_t previous_ringtone[32]{};
+        GetWindowTextW(g_ringtone_status_label,previous_ringtone,32);
+        if(std::wstring_view(previous_ringtone)!=ringtone_text)
+            SetWindowTextW(g_ringtone_status_label,ringtone_text);
+    }
     SetWindowTextW(GetDlgItem(GetParent(g_runtime_banner),kIncomingRingtoneMuteButton),
                    g_incoming_ringtone_muted?L"TOQUE MUDO":L"TOQUE NORMAL");
     wchar_t previous_duration[80]{};
@@ -1330,7 +1339,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
 
 #ifdef AXV_ENABLE_NATIVE_SIP
         g_call_duration_label = make_label(window, L"DURACAO --:--:--",
-                                          42, 190, 347, 20, -1, g_font_small, kCallDurationLabel);
+                                          42, 190, 187, 20, -1, g_font_small, kCallDurationLabel);
+        g_ringtone_status_label = make_label(window, L"",
+                                             239, 190, 150, 20, -1, g_font_small, kRingtoneStatusLabel);
 #endif
 
 #ifdef AXV_ENABLE_NATIVE_SIP
@@ -2092,7 +2103,15 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
     case WM_CTLCOLORSTATIC: {
         HDC dc = reinterpret_cast<HDC>(wparam);
         const HWND label=reinterpret_cast<HWND>(lparam);
-        SetTextColor(dc,text_color());
+        COLORREF foreground=text_color();
+#ifdef AXV_ENABLE_NATIVE_SIP
+        if(label==g_ringtone_status_label && g_incoming_ringtone_muted){
+            // Explicit warning without overriding the Windows high-contrast palette.
+            foreground=g_high_contrast ? GetSysColor(COLOR_WINDOWTEXT)
+                      : (g_dark ? RGB(255,206,107) : RGB(139,86,0));
+        }
+#endif
+        SetTextColor(dc,foreground);
         if(label==g_footer_panel || label==g_status){
             SetBkColor(dc,field_color());
             SetBkMode(dc,OPAQUE);
@@ -2421,19 +2440,25 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                    std::wstring_view(text)==L"DURACAO --:--:--";
         };
         const auto duration_layout_clear=[&] {
-            RECT runtime{},duration{},destination{};
+            RECT runtime{},duration{},ringtone{},destination{};
             GetWindowRect(g_runtime_banner,&runtime);
             GetWindowRect(g_call_duration_label,&duration);
+            GetWindowRect(g_ringtone_status_label,&ringtone);
             GetWindowRect(g_number_label,&destination);
             bool dial_section_clear=true;
             for(const auto& child:g_layout) {
                 if(child.logical.y!=220 || !(GetWindowLongPtrW(child.handle,GWL_STYLE)&WS_VISIBLE)) continue;
                 RECT section{};
                 GetWindowRect(child.handle,&section);
-                dial_section_clear=duration.bottom<=section.top;
+                dial_section_clear=duration.bottom<=section.top && ringtone.bottom<=section.top;
             }
             return (GetWindowLongPtrW(g_call_duration_label,GWL_STYLE)&WS_VISIBLE) &&
-                   runtime.bottom<=duration.top && duration.bottom<=destination.top && dial_section_clear;
+                   (GetWindowLongPtrW(g_ringtone_status_label,GWL_STYLE)&WS_VISIBLE) &&
+                   runtime.bottom<=duration.top && duration.right<=ringtone.left &&
+                   duration.top==ringtone.top && duration.bottom==ringtone.bottom &&
+                   ringtone.right<=runtime.right &&
+                   duration.bottom<=destination.top && ringtone.bottom<=destination.top &&
+                   dial_section_clear;
         };
         RECT recents_bounds{},number_label_bounds{};
         GetWindowRect(GetDlgItem(window,kRecentDestinationsButton),&recents_bounds);
@@ -2473,8 +2498,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                 after.call_id==before_sound_mode.call_id && after.last_call_id==before_sound_mode.last_call_id;
         };
         const auto sound_badge=[] {
-            wchar_t text[80]{};GetWindowTextW(g_call_duration_label,text,80);
-            return std::wstring_view(text).find(L"TOQUE MUDO")!=std::wstring_view::npos;
+            wchar_t ringtone[32]{};
+            wchar_t duration[80]{};
+            GetWindowTextW(g_ringtone_status_label,ringtone,32);
+            GetWindowTextW(g_call_duration_label,duration,80);
+            return std::wstring_view(ringtone)==(g_incoming_ringtone_muted?L"TOQUE MUDO":L"") &&
+                   std::wstring_view(duration)==L"DURACAO --:--:--";
         };
         HWND sound_button=GetDlgItem(window,kIncomingRingtoneMuteButton);
         const auto sound_button_matches=[&] {
@@ -2494,12 +2523,25 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         if(!ok){DestroyWindow(window);return 35;} // Mute-button first toggle.
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),0);
         ok=ok && g_compact && sound_badge() && duration_layout_clear() &&
-            (GetWindowLongPtrW(g_call_duration_label,GWL_STYLE)&WS_VISIBLE) && !(GetWindowLongPtrW(sound_button,GWL_STYLE)&WS_VISIBLE);
+            (GetWindowLongPtrW(g_call_duration_label,GWL_STYLE)&WS_VISIBLE) &&
+            (GetWindowLongPtrW(g_ringtone_status_label,GWL_STYLE)&WS_VISIBLE) &&
+            !(GetWindowLongPtrW(sound_button,GWL_STYLE)&WS_VISIBLE);
         // Accelerator-style dispatch works even while the button is hidden.
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kIncomingRingtoneMuteButton,1),0);
         ok=ok && !g_incoming_ringtone_muted && sound_button_matches() && !sound_badge() && same_sound_observation();
         SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),0);
         ok=ok && inactive_duration() && duration_layout_clear();
+        // Regression: both labels stay distinct after DPI changes and compact mode.
+        // This never performs a SIP call or writes user preferences.
+        for(unsigned scale : {96u,120u,144u,192u}) {
+            SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(scale,scale),0);
+            ok=ok && duration_layout_clear() && sound_badge() && inactive_duration();
+            SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),0);
+            ok=ok && g_compact && duration_layout_clear();
+            SendMessageW(window,WM_COMMAND,MAKEWPARAM(kCompact,BN_CLICKED),0);
+            ok=ok && !g_compact && duration_layout_clear();
+        }
+        SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(96,96),0);
         RECT dtmf_bounds{},feedback_bounds{};
         GetWindowRect(GetDlgItem(window,kDtmfButton),&dtmf_bounds);GetWindowRect(g_status,&feedback_bounds);
         ok=ok && (dtmf_bounds.bottom<=feedback_bounds.top || dtmf_bounds.top>=feedback_bounds.top);
