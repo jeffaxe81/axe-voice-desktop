@@ -624,11 +624,14 @@ void bring_focused_control_into_view(HWND window, HWND control) {
         if (control == g_status) y = g_compact ? 298 : kFullFeedbackY;
         RECT client{};
         GetClientRect(window, &client);
-        const int top = axv::dpi_pixels(y,g_dpi);
-        const int bottom = top + axv::dpi_pixels(child.logical.height,g_dpi);
-        const int target = axv::scroll_for_visible_range(
-            g_scroll_offset, viewport_content_height(), content_viewport_height(window),
-            top, bottom, axv::dpi_pixels(8,g_dpi));
+        const int reserved_header=axv::dpi_pixels(206,g_dpi);
+        const int top=axv::dpi_pixels(y,g_dpi)-reserved_header;
+        const int bottom=top+axv::dpi_pixels(child.logical.height,g_dpi);
+        const int target=axv::scroll_for_visible_range(
+            g_scroll_offset,
+            std::max(1,viewport_content_height()-reserved_header),
+            std::max(1,content_viewport_height(window)-reserved_header),
+            top,bottom,axv::dpi_pixels(8,g_dpi));
         set_viewport_scroll(window, target);
         break;
     }
@@ -2200,6 +2203,13 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         HDC dc=old_bitmap?back_dc:window_dc;
         FillRect(dc,&rect,g_background_brush);
         draw_card(dc,logical_rect(24,151,414,198),panel_color(),16);
+        // The scrolling card must never paint onto the fixed SIP status,
+        // header, navigation tabs, or pinned footer.
+        const int previous_clip=SaveDC(dc);
+        const int content_top=axv::dpi_pixels(206,g_dpi);
+        const int content_bottom=std::max(content_top,
+            static_cast<int>(rect.bottom)-footer_height());
+        IntersectClipRect(dc,0,content_top,rect.right,content_bottom);
         draw_card(dc,g_compact?logical_rect(24,206,414,289)
                                :logical_rect(24,206,414,742),panel_color(),18);
         HPEN rule=CreatePen(PS_SOLID,1,line_color());
@@ -2211,6 +2221,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                axv::dpi_pixels(divider_y,g_dpi)-g_scroll_offset);
         SelectObject(dc,old);
         DeleteObject(rule);
+        if(previous_clip)RestoreDC(dc,previous_clip);
         if(old_bitmap){
             BitBlt(window_dc,paint.rcPaint.left,paint.rcPaint.top,
                 paint.rcPaint.right-paint.rcPaint.left,
