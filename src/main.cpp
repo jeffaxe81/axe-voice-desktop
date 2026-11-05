@@ -269,6 +269,8 @@ HFONT g_font_regular = nullptr;
 HFONT g_font_title = nullptr;
 HFONT g_font_small = nullptr;
 HFONT g_font_digit = nullptr;
+HFONT g_faleweb_digit_font=nullptr;
+HFONT g_faleweb_letters_font=nullptr;
 HBRUSH g_background_brush = nullptr;
 HBRUSH g_field_brush = nullptr;
 HBRUSH g_invalid_field_brush = nullptr;
@@ -430,6 +432,10 @@ void rebuild_fonts() {
         SendMessageW(child.handle, WM_SETFONT,
                      reinterpret_cast<WPARAM>(font_for_kind(child.font)), FALSE);
     for(HFONT old : prior) if(old) DeleteObject(old);
+    if(g_faleweb_digit_font)DeleteObject(g_faleweb_digit_font);
+    if(g_faleweb_letters_font)DeleteObject(g_faleweb_letters_font);
+    g_faleweb_digit_font=create_font(15,FW_SEMIBOLD);
+    g_faleweb_letters_font=create_font(9,FW_NORMAL);
 }
 void position_logical(HWND child, int x,int y,int width,int height) {
     if(!child) return;
@@ -812,10 +818,12 @@ void paint_button(const DRAWITEMSTRUCT& item) {
         };
         const int padding = axv::dpi_pixels(3,g_dpi);
         const int gap = axv::dpi_pixels(2,g_dpi);
-        HGDIOBJ old = SelectObject(item.hDC,g_font_digit);
+        HFONT primary_font=g_faleweb_mode && g_faleweb_digit_font?g_faleweb_digit_font:g_font_digit;
+        HFONT secondary_font=g_faleweb_mode && g_faleweb_letters_font?g_faleweb_letters_font:g_font_small;
+        HGDIOBJ old = SelectObject(item.hDC,primary_font);
         TEXTMETRICW digit_metrics{};
         GetTextMetricsW(item.hDC,&digit_metrics);
-        SelectObject(item.hDC,g_font_small);
+        SelectObject(item.hDC,secondary_font);
         TEXTMETRICW letter_metrics{};
         GetTextMetricsW(item.hDC,&letter_metrics);
         const int inner_height = (rect.bottom-rect.top)-2*padding;
@@ -825,14 +833,14 @@ void paint_button(const DRAWITEMSTRUCT& item) {
             (draw_letters ? gap + letter_metrics.tmHeight : 0);
         const int top = rect.top + padding + (std::max(0,inner_height-group_height))/2;
         RECT number{rect.left+padding,top,rect.right-padding,top+digit_metrics.tmHeight};
-        SelectObject(item.hDC,g_font_digit);
+        SelectObject(item.hDC,primary_font);
         SetTextColor(item.hDC,foreground);
         DrawTextW(item.hDC,primary,-1,&number,
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
         if (draw_letters) {
             RECT subtitle{rect.left+padding,number.bottom+gap,
                           rect.right-padding,number.bottom+gap+letter_metrics.tmHeight};
-            SelectObject(item.hDC,g_font_small);
+            SelectObject(item.hDC,secondary_font);
             SetTextColor(item.hDC,disabled ? ui_color(axv::UiRole::DisabledText) : muted_color());
             DrawTextW(item.hDC,letters[index],-1,&subtitle,
                       DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
@@ -1527,6 +1535,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_font_title = create_font(27, FW_BOLD);
         g_font_small = create_font(13, FW_NORMAL);
         g_font_digit = create_font(21, FW_SEMIBOLD);
+        g_faleweb_digit_font=create_font(15,FW_SEMIBOLD);
+        g_faleweb_letters_font=create_font(9,FW_NORMAL);
         g_faleweb_display_brush=CreateSolidBrush(RGB(202,241,247));
         refresh_brushes();
         make_label(window, L"AXE  VOICE", 24, 16, 240, 37, -1, g_font_title);
@@ -1540,8 +1550,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_button(window, L"TECLADO", kShowDial, 24, 103, 122, 42);
         make_button(window, L"AJUSTES", kShowSettings, 153, 103, 123, 42);
         make_button(window, L"AUDIO", kShowAudio, 283, 103, 131, 42);
-        g_faleweb_prefs_button=make_button(window,L"PREFERENCIAS",kFalewebPrefsButton,10,121,113,26);
-        g_faleweb_actions_button=make_button(window,L"FUNCOES",kFalewebActionsButton,128,121,112,26);
+        if(g_faleweb_mode){
+            g_faleweb_prefs_button=make_button(window,L"PREFERENCIAS",kFalewebPrefsButton,10,121,113,26);
+            g_faleweb_actions_button=make_button(window,L"FUNCOES",kFalewebActionsButton,128,121,112,26);
+        }
         g_runtime_banner = make_label(window, L"MOTOR PARADO  |  SIP NAO REGISTRADO",
                                      42, 164, 347, 25, -1, g_font_regular, kRuntimeStatusLabel);
 
@@ -2528,6 +2540,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         if (g_field_brush) DeleteObject(g_field_brush);
         if (g_invalid_field_brush) DeleteObject(g_invalid_field_brush);
         if(g_faleweb_display_brush)DeleteObject(g_faleweb_display_brush);
+        if(g_faleweb_digit_font)DeleteObject(g_faleweb_digit_font);
+        if(g_faleweb_letters_font)DeleteObject(g_faleweb_letters_font);
         // Normally stopped through WM_CLOSE. Forced fallback on external destruction.
         g_baresip_process.stop();
         PostQuitMessage(0);
