@@ -212,7 +212,7 @@ target_compile_definitions(AXEVoice PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN
 if(MSVC)
   target_compile_options(AXEVoice PRIVATE /utf-8 /W4)
 endif()
-target_link_libraries(AXEVoice PRIVATE user32 gdi32 advapi32 shell32 comdlg32 axv_sip_address axv_audio_devices axv_audio_test_tone axv_microphone_test axv_local_cti axv_windows_process axv_audio_inventory_async axv_audio_endpoint_watcher)
+target_link_libraries(AXEVoice PRIVATE user32 gdi32 advapi32 shell32 comdlg32 comctl32 axv_sip_address axv_audio_devices axv_audio_test_tone axv_microphone_test axv_local_cti axv_windows_process axv_audio_inventory_async axv_audio_endpoint_watcher)
 if(AXV_ENABLE_NATIVE_SIP)
   if(NOT AXV_NATIVE_TLS_MEDIA)
     message(FATAL_ERROR "Native SIP candidate requires TLS/media SDK profile")
