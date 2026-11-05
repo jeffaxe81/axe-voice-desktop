@@ -3006,8 +3006,37 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         ok=ok && async_scroll_ok;
         ok=ok && footer_clear(window);
         const bool scroll_available = g_scroll_max > 0;
+        RECT fixed_before{},footer_before{};
+        GetWindowRect(g_runtime_banner,&fixed_before);
+        GetWindowRect(g_footer_panel,&footer_before);
         SendMessageW(window, WM_VSCROLL, SB_PAGEDOWN, 0);
-        const bool scroll_moved = g_scroll_offset > 0 &&
+        RECT fixed_after{},footer_after{};
+        GetWindowRect(g_runtime_banner,&fixed_after);
+        GetWindowRect(g_footer_panel,&footer_after);
+        const bool pinned_header_footer =
+            EqualRect(&fixed_before,&fixed_after) &&
+            EqualRect(&footer_before,&footer_after);
+        // The server edit scrolls into the header region. Its *window region*
+        // must be clipped to the content area even when its logical rectangle
+        // extends underneath the navigation tabs.
+        RECT server_screen{};
+        GetWindowRect(g_server,&server_screen);
+        POINT server_origin{server_screen.left,server_screen.top};
+        ScreenToClient(window,&server_origin);
+        HRGN clipped_region=CreateRectRgn(0,0,1,1);
+        bool server_clipped=false;
+        if(clipped_region){
+            const int kind=GetWindowRgn(g_server,clipped_region);
+            RECT region_box{};
+            const int box_kind=GetRgnBox(clipped_region,&region_box);
+            const int content_top=axv::dpi_pixels(206,g_dpi);
+            server_clipped=kind!=ERROR && box_kind!=ERROR &&
+                (server_origin.y+region_box.top >= content_top ||
+                 box_kind==NULLREGION);
+            DeleteObject(clipped_region);
+        }
+        const bool scroll_moved = pinned_header_footer && server_clipped &&
+            g_scroll_offset > 0 &&
             !IsWindowEnabled(GetDlgItem(window,kCallButton));
         SendMessageW(window, WM_VSCROLL, SB_TOP, 0);
         const bool scroll_returned = g_scroll_offset == 0;
