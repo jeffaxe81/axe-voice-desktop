@@ -715,8 +715,8 @@ void apply_faleweb_layout(HWND root) {
 #ifdef AXV_ENABLE_NATIVE_SIP
     position_logical(GetDlgItem(root,kAnswerNative),128,354,112,30);
 #endif
-    position_logical(GetDlgItem(root,kHangupFuture),10,385,113,25);
-    position_logical(GetDlgItem(root,kMuteFuture),128,385,112,25);
+    position_logical(GetDlgItem(root,kHangupFuture),10,381,113,22);
+    position_logical(GetDlgItem(root,kMuteFuture),128,381,112,22);
     position_logical(GetDlgItem(root,kContactsButton),10,150,112,23);
     position_logical(GetDlgItem(root,kRecentDestinationsButton),128,150,112,23);
     position_logical(g_faleweb_prefs_button,10,121,113,26);
@@ -2682,6 +2682,33 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                 passed=passed && bounds.bottom<next.top;
             }
         }
+        // Test the compact controls and fixed footer at 100%, 125% and 150%.
+        // Both action rows must stay in the client content area at every DPI.
+        for(unsigned scale:{96u,120u,144u}){
+            SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(scale,scale),0);
+            RECT safe_footer{},hangup{},mute{},call_box{},answer{},number_box{};
+            GetWindowRect(g_footer_panel,&safe_footer);
+            GetWindowRect(GetDlgItem(window,kHangupFuture),&hangup);
+            GetWindowRect(GetDlgItem(window,kMuteFuture),&mute);
+            GetWindowRect(GetDlgItem(window,kCallButton),&call_box);
+            GetWindowRect(g_number,&number_box);
+            passed=passed && g_scroll_max==0 && g_scroll_offset==0 &&
+                hangup.bottom<=safe_footer.top && mute.bottom<=safe_footer.top &&
+                call_box.bottom<hangup.top && number_box.bottom<call_box.top &&
+                (GetWindowLongPtrW(window,GWL_STYLE)&WS_VSCROLL)==0;
+#ifdef AXV_ENABLE_NATIVE_SIP
+            GetWindowRect(GetDlgItem(window,kAnswerNative),&answer);
+            passed=passed && answer.bottom<hangup.top && answer.bottom<safe_footer.top;
+#endif
+            for(int key_index=0;key_index<12;++key_index){
+                RECT rect{};
+                GetWindowRect(GetDlgItem(window,kDigitStart+key_index),&rect);
+                passed=passed && rect.bottom<call_box.top &&
+                    rect.right-rect.left==axv::dpi_pixels(72,scale) &&
+                    rect.bottom-rect.top==axv::dpi_pixels(33,scale);
+            }
+        }
+        SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(96,96),0);
         for(int step=0;step<1000;++step){
             SendMessageW(window,WM_MOUSEWHEEL,MAKEWPARAM(0,WHEEL_DELTA),0);
             SendMessageW(window,WM_VSCROLL,SB_BOTTOM,0);
