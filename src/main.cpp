@@ -254,7 +254,7 @@ std::vector<HWND> g_dial_controls;
 std::vector<HWND> g_settings_controls;
 std::vector<HWND> g_audio_controls;
 enum class UiFontKind { Regular, Title, Small, Digit };
-struct ChildLayout { HWND handle; axv::DpiBox logical; UiFontKind font; };
+struct ChildLayout { HWND handle; axv::DpiBox logical; UiFontKind font; int page; };
 std::vector<ChildLayout> g_layout;
 HFONT g_font_regular = nullptr;
 HFONT g_font_title = nullptr;
@@ -262,6 +262,7 @@ HFONT g_font_small = nullptr;
 HFONT g_font_digit = nullptr;
 HBRUSH g_background_brush = nullptr;
 HBRUSH g_field_brush = nullptr;
+HBRUSH g_panel_brush = nullptr;
 HBRUSH g_invalid_field_brush = nullptr;
 
 
@@ -387,9 +388,11 @@ COLORREF line_color() { return ui_color(axv::UiRole::Border); }
 void refresh_brushes() {
     if (g_background_brush) DeleteObject(g_background_brush);
     if (g_field_brush) DeleteObject(g_field_brush);
+    if (g_panel_brush) DeleteObject(g_panel_brush);
     if (g_invalid_field_brush) DeleteObject(g_invalid_field_brush);
     g_background_brush = CreateSolidBrush(background_color());
     g_field_brush = CreateSolidBrush(field_color());
+    g_panel_brush = CreateSolidBrush(panel_color());
     g_invalid_field_brush = CreateSolidBrush(invalid_field_color());
 }
 HFONT create_font(int size, int weight) {
@@ -444,7 +447,7 @@ HWND make_control(HWND root, LPCWSTR type, LPCWSTR title, DWORD style,
         const UiFontKind kind = font == g_font_title ? UiFontKind::Title :
             font == g_font_small ? UiFontKind::Small :
             font == g_font_digit ? UiFontKind::Digit : UiFontKind::Regular;
-        g_layout.push_back({child,{x,y,width,height},kind});
+        g_layout.push_back({child,{x,y,width,height},kind,page});
         SendMessageW(child, WM_SETFONT,
             reinterpret_cast<WPARAM>(font ? font : g_font_regular), TRUE);
         if (page == 0) g_dial_controls.push_back(child);
@@ -532,35 +535,40 @@ void position_footer(HWND window) {
                  message.width,message.height,SWP_NOACTIVATE);
 }
 
+// Keep header/navigation at fixed coordinates. Only page controls scroll,
+// and their actual Windows regions are clipped to the content viewport.
+// This prevents scrolling labels from painting over status, tabs or footer.
 void position_all_children() {
-    // One deferred batch avoids dozens of synchronous redraws per scroll tick.
-    // Never allow an invalid batch to leave controls stranded: fall back to
-    // the existing individual positioning behavior.
-    HDWP batch = BeginDeferWindowPos(static_cast<int>(g_layout.size()));
-    if(batch) {
-        for (const auto& child : g_layout) {
-            if(child.handle==g_status)continue;
-            auto r=child.logical;
-            if (child.handle==g_number_label) r.y=g_compact?218:246;
-            if (child.handle==g_number) r.y=g_compact?242:272;
-            if (child.handle==g_status) r.y=g_compact?298:kFullFeedbackY;
-            const auto box=axv::scaled_box(r,g_dpi);
-            batch=DeferWindowPos(batch,child.handle,nullptr,
-                box.x,box.y-g_scroll_offset,box.width,box.height,
-                SWP_NOACTIVATE|SWP_NOZORDER|SWP_NOREDRAW);
-            if(!batch)break;
-        }
-        if(batch && EndDeferWindowPos(batch)){position_footer(GetParent(g_status));return;}
-    }
+    if(!g_status)return;
+    HWND window=GetParent(g_status);
+    if(!window)return;
+    RECT client{};
+    GetClientRect(window,&client);
+    const int viewport_top=axv::dpi_pixels(206,g_dpi);
+    const int viewport_bottom=std::max(viewport_top,
+        static_cast<int>(client.bottom)-footer_height());
+
     for(const auto& child:g_layout) {
-        if(child.handle==g_status)continue;
+        if(child.handle==g_status)continue; // Fixed footer.
         auto r=child.logical;
         if(child.handle==g_number_label)r.y=g_compact?218:246;
         if(child.handle==g_number)r.y=g_compact?242:272;
-        if(child.handle==g_status)r.y=g_compact?298:kFullFeedbackY;
-        position_logical(child.handle,r.x,r.y,r.width,r.height);
+        const auto box=axv::scaled_box(r,g_dpi);
+        const int y=box.y-(child.page>=0 ? g_scroll_offset : 0);
+        SetWindowPos(child.handle,nullptr,box.x,y,box.width,box.height,
+                     SWP_NOACTIVATE|SWP_NOZORDER);
+        if(child.page<0)continue; // Header, buttons and call status stay fixed.
+
+        const int visible_top=std::clamp(viewport_top-y,0,box.height);
+        const int visible_bottom=std::clamp(viewport_bottom-y,0,box.height);
+        HRGN region=CreateRectRgn(0,visible_top,box.width,
+                                 std::max(visible_top,visible_bottom));
+        if(region) {
+            if(!SetWindowRgn(child.handle,region,FALSE))
+                DeleteObject(region); // Windows owns the region on success.
+        }
     }
-    position_footer(GetParent(g_status));
+    position_footer(window);
 }
 
 int viewport_content_height() {
@@ -588,7 +596,8 @@ void sync_viewport_scroll(HWND window) {
     ShowScrollBar(window, SB_VERT, g_scroll_max > 0);
     if (previous != g_scroll_offset) {
         position_all_children();
-        InvalidateRect(window, nullptr, TRUE);
+        RedrawWindow(window,nullptr,nullptr,
+                     RDW_INVALIDATE|RDW_ERASE|RDW_ALLCHILDREN);
     }
     g_scrollbar_updating = false;
 }
@@ -600,9 +609,10 @@ void set_viewport_scroll(HWND window, int desired) {
     if (target == g_scroll_offset) return;
     g_scroll_offset = target;
     sync_viewport_scroll(window);
-    position_all_children();
-    InvalidateRect(window, nullptr, FALSE);
-    RedrawWindow(window,nullptr,nullptr,RDW_INVALIDATE|RDW_ALLCHILDREN|RDW_NOERASE);
+    // Refresh both the vacated position and the new control position.
+    // Never use NOERASE: it leaves duplicate glyphs/borders while scrolling.
+    RedrawWindow(window,nullptr,nullptr,
+                 RDW_INVALIDATE|RDW_ERASE|RDW_ALLCHILDREN);
 }
 void bring_focused_control_into_view(HWND window, HWND control) {
     if (!g_controls_ready || !control) return;
@@ -2141,8 +2151,15 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             SetBkMode(dc,OPAQUE);
             return reinterpret_cast<LRESULT>(g_field_brush);
         }
-        SetBkMode(dc,TRANSPARENT);
-        return reinterpret_cast<LRESULT>(GetStockObject(NULL_BRUSH));
+        // Every STATIC must erase its old text when content or position
+        // changes. Transparent brushes caused duplicated SIP labels on scroll.
+        bool page_label=false;
+        for(const auto& child:g_layout)
+            if(child.handle==label){page_label=child.page>=0;break;}
+        SetBkColor(dc,page_label?panel_color():background_color());
+        SetBkMode(dc,OPAQUE);
+        return reinterpret_cast<LRESULT>(
+            page_label?g_panel_brush:g_background_brush);
     }
     case WM_CTLCOLOREDIT: {
         HDC dc = reinterpret_cast<HDC>(wparam);
@@ -2323,6 +2340,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         if (g_font_digit) DeleteObject(g_font_digit);
         if (g_background_brush) DeleteObject(g_background_brush);
         if (g_field_brush) DeleteObject(g_field_brush);
+        if (g_panel_brush) DeleteObject(g_panel_brush);
         if (g_invalid_field_brush) DeleteObject(g_invalid_field_brush);
         // Normally stopped through WM_CLOSE. Forced fallback on external destruction.
         g_baresip_process.stop();
