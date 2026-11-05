@@ -711,12 +711,12 @@ void apply_faleweb_layout(HWND root) {
         HWND digit=GetDlgItem(root,kDigitStart+i);
         position_logical(digit,14+(i%3)*77,211+(i/3)*35,72,33);
     }
-    position_logical(GetDlgItem(root,kCallButton),10,354,113,30);
+    position_logical(GetDlgItem(root,kCallButton),10,351,113,28);
 #ifdef AXV_ENABLE_NATIVE_SIP
-    position_logical(GetDlgItem(root,kAnswerNative),128,354,112,30);
+    position_logical(GetDlgItem(root,kAnswerNative),128,351,112,28);
 #endif
-    position_logical(GetDlgItem(root,kHangupFuture),10,381,113,22);
-    position_logical(GetDlgItem(root,kMuteFuture),128,381,112,22);
+    position_logical(GetDlgItem(root,kHangupFuture),10,382,113,22);
+    position_logical(GetDlgItem(root,kMuteFuture),128,382,112,22);
     position_logical(GetDlgItem(root,kContactsButton),10,150,112,23);
     position_logical(GetDlgItem(root,kRecentDestinationsButton),128,150,112,23);
     position_logical(g_faleweb_prefs_button,10,121,113,26);
