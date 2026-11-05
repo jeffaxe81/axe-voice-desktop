@@ -2457,6 +2457,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             (GetWindowLongPtrW(g_password,GWL_STYLE)&ES_PASSWORD) &&
             !IsWindowEnabled(GetDlgItem(window,kCallButton));
         ok=ok && GetDlgItem(window,kDtmfButton) && !IsWindowEnabled(GetDlgItem(window,kDtmfButton));
+        // No unsolicited incoming alert or system-tray message is generated
+        // by a registered/disconnected UI lacking a verified incoming call.
+        ok=ok && g_last_incoming_visual_session==0 &&
+            g_last_incoming_visual_call==0 &&
+            !axv::verified_incoming_call(native_engine().observation());
         const auto inactive_duration=[] {
             wchar_t text[80]{};
             GetWindowTextW(g_call_duration_label,text,80);
