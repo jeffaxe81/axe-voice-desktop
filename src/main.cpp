@@ -150,7 +150,7 @@ bool g_controls_ready = false;
 bool g_scrollbar_updating = false;
 bool g_scroll_message_queued = false;
 int g_pending_scroll_offset = 0;
-constexpr int kCompactHeight = 395; // Keep dial input clear of fixed explanation footer.
+constexpr int kCompactHeight = 440; // Accommodate actual Windows caption + fixed footer without scrolling.
 constexpr int kDigitStart = 2100;
 constexpr int kBackspace = 2201;
 constexpr int kClear = 2202;
@@ -585,7 +585,12 @@ void sync_viewport_scroll(HWND window) {
     bar.nPage = static_cast<UINT>(available > 0 ? available : 0);
     bar.nPos = g_scroll_offset;
     SetScrollInfo(window, SB_VERT, &bar, TRUE);
-    ShowScrollBar(window, SB_VERT, g_scroll_max > 0);
+    // The mini dial is a single-screen workflow. When there is sufficient
+    // physical viewport height, no scrollbar is ever shown. If Windows is
+    // constrained below this minimum (e.g. extreme DPI on a tiny display),
+    // keep scrolling as a safety fallback instead of clipping the input.
+    const bool needs_scroll = g_scroll_max > 0;
+    ShowScrollBar(window, SB_VERT, needs_scroll);
     if (previous != g_scroll_offset) {
         position_all_children();
         InvalidateRect(window, nullptr, TRUE);
@@ -660,7 +665,19 @@ void apply_compact_layout(HWND root) {
     position_logical(g_number,39,g_compact?242:272,350,43);
     position_footer(root);
     SetWindowTextW(GetDlgItem(root, kCompact), g_compact ? L"MAX" : L"MINI");
-    const int desired_height = axv::dpi_pixels(g_compact?kCompactHeight:kFullHeight,g_dpi);
+    // Win32 window sizes include the non-client caption and resize borders.
+    // Reserve enough *client* height for the final input and pinned footer;
+    // otherwise an apparently 395px mini window creates a needless scrollbar.
+    RECT outer{}, client{};
+    GetWindowRect(root,&outer);
+    GetClientRect(root,&client);
+    const int chrome = std::max(0,(outer.bottom-outer.top)-(client.bottom-client.top));
+    const int min_mini_client =
+        axv::dpi_pixels(kMiniScrollContentEnd,g_dpi)+footer_height()+
+        axv::dpi_pixels(8,g_dpi);
+    const int desired_height = g_compact
+        ? std::max(axv::dpi_pixels(kCompactHeight,g_dpi),min_mini_client+chrome)
+        : axv::dpi_pixels(kFullHeight,g_dpi);
     int fitted_height = desired_height;
     MONITORINFO monitor{};
     monitor.cbSize = sizeof(monitor);
