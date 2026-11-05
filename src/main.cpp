@@ -242,6 +242,7 @@ axv::UiSystemColors g_system_colors{};
 bool g_pinned = false;
 bool g_compact = false;
 bool g_faleweb_mode=false;
+bool g_faleweb_smoke=false;
 HWND g_faleweb_prefs_button=nullptr;
 HWND g_faleweb_actions_button=nullptr;
 HBRUSH g_faleweb_display_brush=nullptr;
@@ -1529,7 +1530,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         return 0;
 #endif
     case WM_CREATE: {
-        g_faleweb_mode=!g_smoke_mode;
+        g_faleweb_mode=!g_smoke_mode || g_faleweb_smoke;
         g_dpi=axv::normalized_dpi(GetDpiForWindow(window));
         load_ui_preferences();
         read_windows_contrast();
@@ -2554,8 +2555,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
 }
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show) {
-    g_smoke_mode = command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
-                                      std::wcscmp(command_line, L"--ui-blackbox") == 0 || std::wcscmp(command_line,L"--native-ui-smoke")==0);
+    g_faleweb_smoke=command_line && std::wcscmp(command_line,L"--faleweb-ui-smoke")==0;
+    g_smoke_mode = g_faleweb_smoke || (command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
+                                      std::wcscmp(command_line, L"--ui-blackbox") == 0 || std::wcscmp(command_line,L"--native-ui-smoke")==0));
 #ifdef AXV_ENABLE_NATIVE_SIP
     const auto guard_names = axv::native_install_guard_names();
     const auto guard_result = guard_names
@@ -2641,6 +2643,49 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         }
     }
 #endif
+    if(g_faleweb_smoke){
+        bool passed=g_faleweb_mode && !g_scroll_max &&
+            !((GetWindowLongPtrW(window,GWL_STYLE))&WS_VSCROLL) &&
+            g_faleweb_prefs_button && IsWindowVisible(g_faleweb_prefs_button) &&
+            g_faleweb_actions_button && IsWindowVisible(g_faleweb_actions_button) &&
+            g_runtime_banner && IsWindowVisible(g_runtime_banner) &&
+            g_number && IsWindowVisible(g_number);
+        RECT frame{},footer{},display{},number{},call{};
+        GetWindowRect(window,&frame);
+        GetWindowRect(g_footer_panel,&footer);
+        GetWindowRect(g_runtime_banner,&display);
+        GetWindowRect(g_number,&number);
+        GetWindowRect(GetDlgItem(window,kCallButton),&call);
+        passed=passed && frame.right-frame.left==axv::dpi_pixels(kFalewebWidth,g_dpi) &&
+            frame.bottom-frame.top==axv::dpi_pixels(kFalewebHeight,g_dpi) &&
+            display.bottom<number.top && number.bottom<call.top &&
+            call.bottom<footer.top && footer.bottom<=frame.bottom;
+        for(int index=0;index<12;++index){
+            HWND key=GetDlgItem(window,kDigitStart+index);
+            RECT bounds{};GetWindowRect(key,&bounds);
+            passed=passed && key && IsWindowVisible(key) &&
+                bounds.right-bounds.left==axv::dpi_pixels(72,g_dpi) &&
+                bounds.bottom-bounds.top==axv::dpi_pixels(33,g_dpi) &&
+                bounds.bottom<call.top;
+            if(index%3!=2){
+                RECT next{};
+                GetWindowRect(GetDlgItem(window,kDigitStart+index+1),&next);
+                passed=passed && bounds.right<next.left;
+            }
+            if(index<9){
+                RECT next{};
+                GetWindowRect(GetDlgItem(window,kDigitStart+index+3),&next);
+                passed=passed && bounds.bottom<next.top;
+            }
+        }
+        for(int step=0;step<1000;++step){
+            SendMessageW(window,WM_MOUSEWHEEL,MAKEWPARAM(0,WHEEL_DELTA),0);
+            SendMessageW(window,WM_VSCROLL,SB_BOTTOM,0);
+            passed=passed && g_scroll_offset==0 && g_scroll_max==0;
+        }
+        DestroyWindow(window);
+        return passed?0:93;
+    }
     if (g_smoke_mode) {
         if(g_compact){g_compact=false;apply_compact_layout(window);}
         for(int pass=0;pass<2;++pass) {
