@@ -115,6 +115,9 @@ constexpr int kTheme = 2003;
 constexpr int kPin = 2004;
 constexpr int kCompact = 2005;
 constexpr int kShowAudio = 2006;
+constexpr int kShowMonitor = 2014;
+constexpr int kMonitorList = 2510;
+constexpr int kMonitorClear = 2511;
 constexpr int kHelpButton = 2007;
 constexpr int kReadinessButton = 2008;
 constexpr int kCopyStatusButton = 2009;
@@ -249,10 +252,13 @@ bool g_account_invalid_user = false;
 bool g_account_invalid_port = false;
 bool g_tray_visible = false;
 constexpr wchar_t kPrefsKey[] = L"Software\\AXEVoice\\Desktop";
-int g_page = 0; // 0 = dial, 1 = settings, 2 = audio
+int g_page = 0; // 0 = dial, 1 = settings, 2 = audio, 3 = monitor
 std::vector<HWND> g_dial_controls;
 std::vector<HWND> g_settings_controls;
 std::vector<HWND> g_audio_controls;
+std::vector<HWND> g_monitor_controls;
+HWND g_monitor_list=nullptr;
+std::uint64_t g_last_monitored_sequence=0;
 enum class UiFontKind { Regular, Title, Small, Digit };
 struct ChildLayout { HWND handle; axv::DpiBox logical; UiFontKind font; };
 std::vector<ChildLayout> g_layout;
@@ -450,6 +456,7 @@ HWND make_control(HWND root, LPCWSTR type, LPCWSTR title, DWORD style,
         if (page == 0) g_dial_controls.push_back(child);
         if (page == 1) g_settings_controls.push_back(child);
         if (page == 2) g_audio_controls.push_back(child);
+        if (page == 3) g_monitor_controls.push_back(child);
     }
     return child;
 }
@@ -638,15 +645,16 @@ void show_page(HWND root, int page) {
         ShowWindow(child, visible ? SW_SHOW : SW_HIDE);
     }
     for (auto child : g_settings_controls) ShowWindow(child, page == 1 ? SW_SHOW : SW_HIDE);
+    for (auto child : g_monitor_controls) ShowWindow(child, page == 3 ? SW_SHOW : SW_HIDE);
     for (auto child : g_audio_controls)
         ShowWindow(child, page == 2 && child != g_headset_status ? SW_SHOW : SW_HIDE);
     sync_viewport_scroll(root);
     InvalidateRect(root, nullptr, TRUE);
-    HWND target = page == 0 ? g_number : (page == 1 ? g_server : g_input_audio_combo);
+    HWND target = page == 0 ? g_number : (page == 1 ? g_server : (page==2?g_input_audio_combo:g_monitor_list));
     if (target) SetFocus(target);
     if (page == 0) refresh_destination_feedback();
     else if (page == 1) refresh_account_feedback();
-    else if(g_status && g_headset_status) {
+    else if(page==2 && g_status && g_headset_status) {
         wchar_t explanation[512]{};
         GetWindowTextW(g_headset_status,explanation,512);
         SetWindowTextW(g_status,explanation);
@@ -695,7 +703,8 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     const bool pressed = (item.itemState & ODS_SELECTED) != 0;
     const bool selected_tab = (id == kShowDial && g_page == 0) ||
                               (id == kShowSettings && g_page == 1) ||
-                              (id == kShowAudio && g_page == 2);
+                              (id == kShowAudio && g_page == 2) ||
+                              (id == kShowMonitor && g_page == 3);
     // Call controls: green for initiating, red for ending/stopping.
     // High contrast and disabled states keep the Windows/theme palette.
     const bool positive = id == kCallButton || id == kAnswerNativeColorId ||
@@ -1111,12 +1120,43 @@ void show_recent_destinations(HWND window) {
 }
 #endif
 
+#ifdef AXV_ENABLE_NATIVE_SIP
+void update_sip_monitor_view(){
+    if(!g_monitor_list)return;
+    const auto items=native_engine().sip_monitor_snapshot();
+    for(const auto& item:items){
+        if(item.sequence<=g_last_monitored_sequence)continue;
+        g_last_monitored_sequence=item.sequence;
+        std::tm clock{};
+        if(localtime_s(&clock,&item.when)!=0)continue;
+        wchar_t timestamp[24]{};
+        if(!wcsftime(timestamp,24,L"%H:%M:%S",&clock))continue;
+        std::wstring line=timestamp;
+        line+=L" | ";
+        line+=axv::sip_monitor_event_name(item.event);
+        if(item.call){
+            line+=L" | chamada #";
+            line+=std::to_wstring(item.call);
+        }
+        const auto count=SendMessageW(g_monitor_list,LB_GETCOUNT,0,0);
+        if(count==LB_ERR)continue;
+        if(count>=static_cast<LRESULT>(axv::SipCallMonitor::capacity))
+            SendMessageW(g_monitor_list,LB_DELETESTRING,0,0);
+        const auto added=SendMessageW(g_monitor_list,LB_ADDSTRING,0,
+                                     reinterpret_cast<LPARAM>(line.c_str()));
+        if(added!=LB_ERR && g_page==3)
+            SendMessageW(g_monitor_list,LB_SETTOPINDEX,added,0);
+    }
+}
+#endif
+
 void refresh_runtime_banner(axv::ProcessStatus state) {
     if (!g_runtime_banner) return;
     // Thread-safe receive boundary is active, but not connected to Baresip C API.
     // Bind native event lifetime to actual process lifetime, not to a timer tick.
     const auto observed=current_sip_observation(state);
 #ifdef AXV_ENABLE_NATIVE_SIP
+    update_sip_monitor_view();
     g_cti_server.set_ready(
         observed.call_id == 0 &&
         axv::authorize_call_command(observed,observed.session,g_sip_selection,
@@ -1355,9 +1395,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_button(window, g_dark ? L"CLARO" : L"ESCURO", kTheme, 344, 18, 70, 36);
         if (g_pinned) SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0,
                                    SWP_NOMOVE | SWP_NOSIZE);
-        make_button(window, L"TECLADO", kShowDial, 24, 103, 122, 42);
-        make_button(window, L"AJUSTES", kShowSettings, 153, 103, 123, 42);
-        make_button(window, L"AUDIO", kShowAudio, 283, 103, 131, 42);
+        make_button(window, L"TECLADO", kShowDial, 24, 103, 93, 42);
+        make_button(window, L"AJUSTES", kShowSettings, 123, 103, 93, 42);
+        make_button(window, L"AUDIO", kShowAudio, 222, 103, 93, 42);
+        make_button(window, L"MONITOR", kShowMonitor, 321, 103, 93, 42);
         g_runtime_banner = make_label(window, L"MOTOR PARADO  |  SIP NAO REGISTRADO",
                                      42, 164, 347, 25, -1, g_font_regular, kRuntimeStatusLabel);
 
@@ -1503,6 +1544,14 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_button(window, L"PRONTIDAO (F2)",
                     kReadinessButton, 39, 690, 169, 42, 2);
         make_button(window, L"COPIAR STATUS",kCopyStatusButton,219,690,170,42,2);
+        make_label(window,L"EVENTOS NATIVOS SIP (ate 128, sem numeros e senhas)",
+                   39,222,350,25,3,g_font_small);
+        g_monitor_list=make_control(window,L"LISTBOX",L"",
+            WS_BORDER|WS_TABSTOP|WS_VSCROLL|LBS_NOTIFY|LBS_NOINTEGRALHEIGHT,
+            39,257,350,426,kMonitorList,3,g_font_small);
+        make_label(window,L"Sem eventos nao comprova ausencia de pacotes SIP.",
+                   39,696,350,30,3,g_font_small);
+        make_button(window,L"LIMPAR EVENTOS",kMonitorClear,39,733,350,34,3);
         g_footer_panel=CreateWindowExW(0,L"STATIC",L"",
             WS_CHILD|WS_VISIBLE|SS_LEFT,0,0,1,1,window,nullptr,
             GetModuleHandleW(nullptr),nullptr);
@@ -1553,6 +1602,18 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         if (HIWORD(wparam) == BN_CLICKED || (HIWORD(wparam) == 1 && lparam == 0)) {
             const int control = LOWORD(wparam);
             if (control == kShowDial || control == kFocusNumber) { show_page(window, 0); return 0; }
+            if(control==kShowMonitor){
+                if(g_compact){g_compact=false;apply_compact_layout(window);save_ui_preferences();}
+                show_page(window,3);
+                return 0;
+            }
+            if(control==kMonitorClear){
+#ifdef AXV_ENABLE_NATIVE_SIP
+                native_engine().clear_sip_monitor();
+#endif
+                if(g_monitor_list)SendMessageW(g_monitor_list,LB_RESETCONTENT,0,0);
+                return 0;
+            }
             if(control==kCopyStatusButton){
                 const auto status=collect_call_readiness();
                 if(g_smoke_mode){
@@ -2506,6 +2567,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             GetDlgItem(contacts,104) && GetDlgItem(contacts,105) && GetDlgItem(contacts,113);
         MSG contact_key{};contact_key.hwnd=GetDlgItem(contacts,101);contact_key.message=WM_KEYDOWN;contact_key.wParam='A';
         ok=ok && axv::contacts_owns_message(contact_key) && !IsWindowEnabled(GetDlgItem(window,kCallButton));
+        show_page(window,3);
+        ok=ok && g_page==3 && g_monitor_list &&
+            GetDlgItem(window,kShowMonitor) &&
+            SendMessageW(g_monitor_list,LB_GETCOUNT,0,0)==0;
         show_page(window,1);
         const auto before_contact=native_engine().observation();
         ok=ok && axv::use_contact_destination(g_number,{99,L"Contato",L"1002",false}) && g_page==0;
