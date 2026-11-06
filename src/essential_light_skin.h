@@ -190,9 +190,29 @@ inline void button(HDC dc,RECT r,unsigned dpi,int id,bool disabled,bool pressed,
         // Disabled actions remain visible; the command gate is unchanged.
     }
 }
-inline void action_caption(HDC dc,RECT r,unsigned dpi,const wchar_t* title,bool dark,bool disabled){
-    label(dc,title,r,dpi,15,FW_SEMIBOLD,
-          disabled?(dark?RGB(150,173,201):RGB(105,123,145)):
-                   (dark?RGB(245,249,255):RGB(8,31,69)));
+inline void action_caption(HDC dc,RECT r,unsigned dpi,int id,
+                           const wchar_t* title,bool dark,bool disabled){
+    const COLORREF foreground=disabled?(dark?RGB(150,173,201):RGB(105,123,145)):
+                          (dark?RGB(245,249,255):RGB(8,31,69));
+    const int x=MulDiv(r.left,96,dpi)+18;
+    const int y=MulDiv((r.top+r.bottom)/2,96,dpi);
+    if(id==2301){ // muted microphone with diagonal strike
+        line(dc,dpi,x-3,y-9,x-3,y+3,foreground,2);
+        line(dc,dpi,x+3,y-9,x+3,y+3,foreground,2);
+        line(dc,dpi,x-8,y+6,x+8,y+6,foreground,2);
+        line(dc,dpi,x-9,y-10,x+9,y+10,foreground,2);
+    }else if(id==2302){ // hold / resume
+        line(dc,dpi,x-5,y-9,x-5,y+9,foreground,3);
+        line(dc,dpi,x+5,y-9,x+5,y+9,foreground,3);
+    }else if(id==2303){ // bidirectional transfer
+        line(dc,dpi,x-10,y-5,x+9,y-5,foreground,2);
+        line(dc,dpi,x+9,y-5,x+4,y-9,foreground,2);
+        line(dc,dpi,x+9,y-5,x+4,y-1,foreground,2);
+        line(dc,dpi,x+10,y+5,x-9,y+5,foreground,2);
+        line(dc,dpi,x-9,y+5,x-4,y+1,foreground,2);
+        line(dc,dpi,x-9,y+5,x-4,y+9,foreground,2);
+    }
+    RECT title_rect=r;title_rect.left+=px(dpi,29);
+    label(dc,title,title_rect,dpi,14,FW_SEMIBOLD,foreground);
 }
 } // namespace axv::essential
