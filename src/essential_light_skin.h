@@ -145,7 +145,7 @@ inline void button(HDC dc,RECT r,unsigned dpi,int id,bool disabled,bool pressed,
         fill=disabled?RGB(177,119,123):RGB(206,48,57);stroke=fill;fg=RGB(255,255,255);
     }else if(id==2003){
         stroke=RGB(0,179,235);curve=25;
-    }else if(id==2201){
+    }else if((id==2201||id==2800)){
         fill=dark?RGB(27,57,93):RGB(247,249,252);
         stroke=fill;
     }else if(id==2801||id==2802){
@@ -177,7 +177,7 @@ inline void button(HDC dc,RECT r,unsigned dpi,int id,bool disabled,bool pressed,
             MulDiv((r.top+r.bottom)/2,96,dpi)-20,46,40),dpi,28,FW_BOLD,fg);
     }else if(id==2003){
         label(dc,dark?L"☾":L"☼",r,dpi,28,FW_NORMAL,fg);
-    }else if(id==2201){
+    }else if((id==2201||id==2800)){
         label(dc,L"⌫",r,dpi,29,FW_NORMAL,fg);
     }else if(id==2801){
         label(dc,L"—",r,dpi,21,FW_NORMAL,fg);
