@@ -47,5 +47,27 @@ int main() {
     o.process = RuntimeProcess::Running;
     o.session = 32;
     if (send(BaresipEventKind::Registering) != EventTransition::StaleSession) return 30;
+    // Incoming SIP lifecycle: reject repeated INVITE projections, late BYE,
+    // cross-session callbacks and attempts to reuse an old call token.
+    SipRuntimeObservation incoming{RuntimeProcess::Running, SipStatus::Registered,
+                                   SipEvidence::VerifiedNativeApi, 41};
+    auto incoming_event = [&](BaresipEventKind kind, std::uint64_t session,
+                              std::uint64_t call_id) {
+        return apply_baresip_event(incoming, 41, {kind, session, call_id});
+    };
+    if (incoming_event(BaresipEventKind::CallIncoming, 41, 700) != EventTransition::Applied) return 40;
+    if (incoming_event(BaresipEventKind::CallIncoming, 41, 700) != EventTransition::InvalidOrder) return 41;
+    if (incoming_event(BaresipEventKind::CallEstablished, 40, 700) != EventTransition::StaleSession) return 42;
+    if (incoming.sip != SipStatus::Ringing || incoming.call_id != 700) return 43;
+    if (incoming_event(BaresipEventKind::CallClosed, 41, 700) != EventTransition::Applied) return 44;
+    if (incoming_event(BaresipEventKind::CallEstablished, 41, 700) != EventTransition::InvalidOrder) return 45;
+    if (incoming_event(BaresipEventKind::CallIncoming, 41, 700) != EventTransition::StaleCall) return 46;
+    if (incoming_event(BaresipEventKind::CallIncoming, 41, 701) != EventTransition::Applied) return 47;
+    if (incoming_event(BaresipEventKind::CallClosed, 41, 700) != EventTransition::StaleCall) return 48;
+    if (incoming.sip != SipStatus::Ringing || incoming.call_id != 701) return 49;
+    if (incoming_event(BaresipEventKind::TransportLost, 41, 0) != EventTransition::Applied) return 50;
+    if (incoming.sip != SipStatus::Disconnected || incoming.call_id != 0) return 51;
+    if (may_use_call_control(incoming, 41, CallAction::Answer)) return 52;
+    if (incoming_event(BaresipEventKind::CallEstablished, 41, 701) != EventTransition::InvalidOrder) return 53;
     return 0;
 }
