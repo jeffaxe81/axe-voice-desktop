@@ -125,6 +125,7 @@ constexpr int kIncomingRingtoneMuteButton = 2012;
 constexpr int kContactsButton = 2013;
 constexpr int kFalewebPrefsButton = 2015;
 constexpr int kFalewebActionsButton = 2016;
+constexpr int kShowSipMonitor = 2017;
 constexpr int kInputAudioCombo = 2401;
 constexpr int kOutputAudioCombo = 2402;
 constexpr int kRingtoneAudioCombo = 2403;
@@ -136,8 +137,10 @@ constexpr int kRuntimeStatusLabel = 2502;
 constexpr int kWindowWidth = 438;
 constexpr int kFalewebWidth=254;
 constexpr int kFalewebHeight=475;
-constexpr int kEssentialWidth=444;
-constexpr int kEssentialHeight=752;
+// The normal Essencial view is 80% of the approved reference canvas.
+constexpr int kEssentialScalePercent=80;
+constexpr int kEssentialWidth=355;
+constexpr int kEssentialHeight=602;
 unsigned g_dpi = axv::kBaseDpi;
 #ifdef AXV_ENABLE_NATIVE_SIP
 constexpr int kFullHeight = 886;
@@ -262,8 +265,13 @@ bool g_account_invalid_user = false;
 bool g_account_invalid_port = false;
 bool g_tray_visible = false;
 constexpr wchar_t kPrefsKey[] = L"Software\\AXEVoice\\Desktop";
-int g_page = 0; // 0 = dial, 1 = settings, 2 = audio
+int g_page = 0; // 0 = dial, 1 = settings, 2 = audio, 3 = monitor
 std::vector<HWND> g_dial_controls;
+std::vector<HWND> g_monitor_controls;
+HWND g_monitor_events = nullptr;
+std::wstring g_monitor_text;
+axv::SipRuntimeObservation g_monitor_last{};
+bool g_monitor_has_last = false;
 std::vector<HWND> g_settings_controls;
 std::vector<HWND> g_audio_controls;
 enum class UiFontKind { Regular, Title, Small, Digit };
@@ -472,6 +480,7 @@ HWND make_control(HWND root, LPCWSTR type, LPCWSTR title, DWORD style,
         if (page == 0) g_dial_controls.push_back(child);
         if (page == 1) g_settings_controls.push_back(child);
         if (page == 2) g_audio_controls.push_back(child);
+        if (page == 3) g_monitor_controls.push_back(child);
     }
     return child;
 }
@@ -666,12 +675,16 @@ void show_page(HWND root, int page) {
     for (auto child : g_settings_controls) ShowWindow(child, page == 1 ? SW_SHOW : SW_HIDE);
     for (auto child : g_audio_controls)
         ShowWindow(child, page == 2 && child != g_headset_status ? SW_SHOW : SW_HIDE);
+    for (auto child : g_monitor_controls) ShowWindow(child, page == 3 ? SW_SHOW : SW_HIDE);
     sync_viewport_scroll(root);
     InvalidateRect(root, nullptr, TRUE);
-    HWND target = page == 0 ? g_number : (page == 1 ? g_server : g_input_audio_combo);
+    HWND target = page == 0 ? g_number : (page == 1 ? g_server : (page == 2 ? g_input_audio_combo : g_monitor_events));
     if (target) SetFocus(target);
     if (page == 0) refresh_destination_feedback();
     else if (page == 1) refresh_account_feedback();
+    else if (page == 3) {
+        if (g_status) SetWindowTextW(g_status,L"Monitor: somente estados observados; nao captura pacotes SIP.");
+    }
     else if(g_status && g_headset_status) {
         wchar_t explanation[512]{};
         GetWindowTextW(g_headset_status,explanation,512);
@@ -683,18 +696,45 @@ void show_page(HWND root, int page) {
 // Mini mode keeps only the target and true SIP state, without fake call actions.
 // FaleWEB-inspired compact dialer uses existing live SIP controls, not a
 // duplicate engine. The existing large settings pages remain in memory only.
+void position_essential(HWND child,int x,int y,int width,int height) {
+    auto shrink=[](int value){return (value*kEssentialScalePercent+50)/100;};
+    position_logical(child,shrink(x),shrink(y),shrink(width),shrink(height));
+}
 void apply_faleweb_layout(HWND root) {
     // Original FaleWEB smoke layout is retained unchanged for regression checks.
     // Normal desktop view follows the approved Essencial claro reference.
     if (g_faleweb_mode && !g_faleweb_smoke) {
         g_compact=false; g_scroll_offset=0; g_scroll_max=0;
         ShowScrollBar(root,SB_VERT,FALSE);
+        // The compact Essencial canvas has an actual fourth-page monitor.
+        // Toggle back to the dialer without resizing the main window.
+        if (g_page == 3) {
+            for (const auto& item : g_layout) {
+                const int id=GetDlgCtrlID(item.handle);
+                const bool shown=item.handle==g_brand_label ||
+                    item.handle==g_runtime_banner ||
+                    item.handle==g_monitor_events ||
+                    id==kTheme || id==kShowSipMonitor;
+                ShowWindow(item.handle,shown?SW_SHOW:SW_HIDE);
+            }
+            position_essential(g_brand_label,23,13,215,39);
+            position_essential(GetDlgItem(root,kTheme),369,15,52,32);
+            position_essential(GetDlgItem(root,kShowSipMonitor),253,15,108,32);
+            position_essential(g_runtime_banner,23,68,397,31);
+            position_essential(g_monitor_events,23,116,397,590);
+            SetWindowTextW(GetDlgItem(root,kShowSipMonitor),L"TECLADO");
+            ShowWindow(g_footer_panel,SW_HIDE);
+            ShowWindow(g_status,SW_HIDE);
+            InvalidateRect(root,nullptr,FALSE);
+            return;
+        }
+        SetWindowTextW(GetDlgItem(root,kShowSipMonitor),L"MONITOR");
         for (const auto& item : g_layout) {
             const int id=GetDlgCtrlID(item.handle);
             const bool digit=id>=kDigitStart && id<kDigitStart+12;
             const bool shown=digit || item.handle==g_number ||
                 item.handle==g_runtime_banner || item.handle==g_brand_label ||
-                id==kTheme || id==kShowDial || id==kFalewebPrefsButton ||
+                id==kTheme || id==kShowSipMonitor || id==kShowDial || id==kFalewebPrefsButton ||
                 id==kContactsButton || id==kRecentDestinationsButton ||
                 id==kCallButton || id==kMuteFuture || id==kHoldFuture ||
                 id==kTransferFuture || id==kHangupFuture
@@ -705,22 +745,23 @@ void apply_faleweb_layout(HWND root) {
             ShowWindow(item.handle,shown?SW_SHOW:SW_HIDE);
         }
         // Logical coordinates reproduce the proportions of the first approved mockup.
-        position_logical(g_brand_label,85,13,279,39);
-        position_logical(GetDlgItem(root,kTheme),369,15,52,32);
-        position_logical(g_runtime_banner,26,68,391,31);
-        position_logical(g_number,23,124,397,56);
+        position_essential(g_brand_label,85,13,165,39);
+        position_essential(GetDlgItem(root,kShowSipMonitor),253,15,108,32);
+        position_essential(GetDlgItem(root,kTheme),369,15,52,32);
+        position_essential(g_runtime_banner,26,68,391,31);
+        position_essential(g_number,23,124,397,56);
         for(int i=0;i<12;++i)
-            position_logical(GetDlgItem(root,kDigitStart+i),
-                             23+(i%3)*135,192+(i/3)*72,126,64);
-        position_logical(GetDlgItem(root,kCallButton),23,489,397,54);
+            position_essential(GetDlgItem(root,kDigitStart+i),
+                             23+(i%3)*132,192+(i/3)*68,129,64);
+        position_essential(GetDlgItem(root,kCallButton),23,477,397,54);
         // Existing call controls retain their original IDs and SIP handlers.
-        position_logical(GetDlgItem(root,kMuteFuture),23,558,126,45);
-        position_logical(GetDlgItem(root,kHoldFuture),158,558,126,45);
-        position_logical(GetDlgItem(root,kTransferFuture),293,558,127,45);
-        position_logical(GetDlgItem(root,kShowDial),23,649,94,67);
-        position_logical(GetDlgItem(root,kContactsButton),125,649,94,67);
-        position_logical(GetDlgItem(root,kRecentDestinationsButton),227,649,94,67);
-        position_logical(g_faleweb_prefs_button,329,649,94,67);
+        position_essential(GetDlgItem(root,kMuteFuture),23,546,126,45);
+        position_essential(GetDlgItem(root,kHoldFuture),158,546,126,45);
+        position_essential(GetDlgItem(root,kTransferFuture),293,546,127,45);
+        position_essential(GetDlgItem(root,kShowDial),23,637,94,67);
+        position_essential(GetDlgItem(root,kContactsButton),125,637,94,67);
+        position_essential(GetDlgItem(root,kRecentDestinationsButton),227,637,94,67);
+        position_essential(g_faleweb_prefs_button,329,637,94,67);
         // Hangup/answer remain available from the functional call-state
         // controls, but do not crowd the approved idle keypad screen.
         ShowWindow(GetDlgItem(root,kHangupFuture),SW_HIDE);
@@ -836,7 +877,8 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     const bool pressed = (item.itemState & ODS_SELECTED) != 0;
     const bool selected_tab = (id == kShowDial && g_page == 0) ||
                               (id == kShowSettings && g_page == 1) ||
-                              (id == kShowAudio && g_page == 2);
+                              (id == kShowAudio && g_page == 2) ||
+                               (id == kShowSipMonitor && g_page == 3);
     // Call controls: green for initiating, red for ending/stopping.
     // High contrast and disabled states keep the Windows/theme palette.
     const bool positive = id == kCallButton || id == kAnswerNativeColorId ||
@@ -1257,11 +1299,60 @@ void show_recent_destinations(HWND window) {
 }
 #endif
 
+// Monitor records only trusted state observations, not SIP wire packets.
+// Avoid usernames, phone numbers, passwords, URIs and raw packet payloads.
+void observe_monitor_state(const axv::SipRuntimeObservation& o) {
+    if (!g_monitor_events) return;
+    if (g_monitor_has_last &&
+        g_monitor_last.process == o.process &&
+        g_monitor_last.sip == o.sip &&
+        g_monitor_last.evidence == o.evidence &&
+        g_monitor_last.session == o.session &&
+        g_monitor_last.call_id == o.call_id) return;
+    SYSTEMTIME now{};
+    GetLocalTime(&now);
+    wchar_t timestamp[32]{};
+    swprintf_s(timestamp,L"%02u:%02u:%02u",now.wHour,now.wMinute,now.wSecond);
+    const wchar_t* label = L"Motor sem evidencia de registro";
+    if (o.process == axv::RuntimeProcess::Stopped) label=L"Motor parado";
+    else if (o.process == axv::RuntimeProcess::Stopping) label=L"Motor encerrando";
+    else if (o.process == axv::RuntimeProcess::Failed) label=L"Falha do motor";
+    else if (axv::sip_proof_is_current(o,o.session)) {
+        switch(o.sip){
+        case axv::SipStatus::Registered: label=L"Registro SIP confirmado";break;
+        case axv::SipStatus::Registering: label=L"Registro em andamento";break;
+        case axv::SipStatus::Ringing: label=L"Chamada entrante sinalizada";break;
+        case axv::SipStatus::Calling: label=L"Chamada originada sinalizada";break;
+        case axv::SipStatus::InCall: label=L"Chamada estabelecida";break;
+        case axv::SipStatus::Failed: label=L"Falha no registro";break;
+        case axv::SipStatus::Disconnected: label=L"Transporte desconectado";break;
+        default: label=L"SIP indisponivel";break;
+        }
+    }
+    std::wstring entry=std::wstring(timestamp)+L"  "+label+L"\r\n";
+    g_monitor_text += entry;
+    // Bounded, ephemeral ring of 80 transitions, no disk persistence.
+    int count=0;
+    for(wchar_t ch:g_monitor_text) if(ch==L'\n') ++count;
+    while(count>80){
+        auto pos=g_monitor_text.find(L'\n');
+        if(pos==std::wstring::npos)break;
+        g_monitor_text.erase(0,pos+1);
+        --count;
+    }
+    g_monitor_last=o;
+    g_monitor_has_last=true;
+    SetWindowTextW(g_monitor_events,g_monitor_text.c_str());
+    SendMessageW(g_monitor_events,EM_SETSEL,g_monitor_text.size(),g_monitor_text.size());
+    SendMessageW(g_monitor_events,EM_SCROLLCARET,0,0);
+}
+
 void refresh_runtime_banner(axv::ProcessStatus state) {
     if (!g_runtime_banner) return;
     // Thread-safe receive boundary is active, but not connected to Baresip C API.
     // Bind native event lifetime to actual process lifetime, not to a timer tick.
     const auto observed=current_sip_observation(state);
+    observe_monitor_state(observed);
 #ifdef AXV_ENABLE_NATIVE_SIP
     g_cti_server.set_ready(
         observed.call_id == 0 &&
@@ -1618,9 +1709,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_button(window, g_dark ? L"CLARO" : L"ESCURO", kTheme, 344, 18, 70, 36);
         if (g_pinned) SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0,
                                    SWP_NOMOVE | SWP_NOSIZE);
-        make_button(window, L"TECLADO", kShowDial, 24, 103, 122, 42);
-        make_button(window, L"AJUSTES", kShowSettings, 153, 103, 123, 42);
-        make_button(window, L"AUDIO", kShowAudio, 283, 103, 131, 42);
+        make_button(window, L"TECLADO", kShowDial, 24, 103, 92, 42);
+        make_button(window, L"AJUSTES", kShowSettings, 123, 103, 92, 42);
+        make_button(window, L"AUDIO", kShowAudio, 222, 103, 92, 42);
+        make_button(window, L"MONITOR", kShowSipMonitor, 321, 103, 93, 42);
         if(g_faleweb_mode){
             g_faleweb_prefs_button=make_button(window,L"PREFERENCIAS",kFalewebPrefsButton,10,121,113,26);
             g_faleweb_actions_button=make_button(window,L"FUNCOES",kFalewebActionsButton,128,121,112,26);
@@ -1729,6 +1821,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
 #endif
         g_process_status = make_label(window, L"Baresip parado; registro SIP indisponível.",
                                       39, 702, 350, 43, 1, g_font_small);
+        make_label(window,L"MONITOR SIP  /  EVENTOS OBSERVADOS",39,219,355,26,3,g_font_small);
+        make_label(window,L"Nao captura mensagens SIP brutas; sem senhas ou numeros.",39,252,355,40,3,g_font_small);
+        g_monitor_events=make_control(window,L"EDIT",L"Aguardando eventos do motor...",
+            WS_VSCROLL|ES_MULTILINE|ES_AUTOVSCROLL|ES_READONLY,
+            39,306,350,390,0,3,g_font_small);
+        make_label(window,L"Historico temporario: ate 80 transicoes de estado.",39,706,352,28,3,g_font_small);
         make_label(window, L"HEADSET / AUDIO - TRES ROTAS", 39, 218, 352, 27, 2, g_font_small);
         make_label(window, L"Microfone (captura)", 39, 256, 340, 24, 2);
         g_input_audio_combo = make_control(window, L"COMBOBOX", L"",
@@ -1825,6 +1923,14 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             const int control = LOWORD(wparam);
             if(control==kFalewebPrefsButton){open_faleweb_preferences(window);return 0;}
             if(control==kFalewebActionsButton){show_faleweb_actions(window);return 0;}
+            if(control==kShowSipMonitor){
+                if(g_faleweb_mode && !g_faleweb_smoke){
+                    show_page(window,g_page==3?0:3);
+                    return 0;
+                }
+                if(g_compact){g_compact=false;apply_compact_layout(window);save_ui_preferences();}
+                show_page(window,3);return 0;
+            }
             if (control == kShowDial || control == kFocusNumber) { show_page(window, 0); return 0; }
             if(control==kCopyStatusButton){
                 const auto status=collect_call_readiness();
@@ -2471,7 +2577,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         HDC dc=old_bitmap?back_dc:window_dc;
         FillRect(dc,&rect,g_background_brush);
         if(g_faleweb_mode){
-            const auto outer=g_faleweb_smoke?logical_rect(7,7,247,116):logical_rect(7,7,437,113);
+            const auto outer=g_faleweb_smoke?logical_rect(7,7,247,116):
+                logical_rect(6,6,350,91);
             draw_card(dc,outer,g_high_contrast?background_color():
                 (g_dark?RGB(19,48,86):RGB(225,242,255)),13);
         }else{
