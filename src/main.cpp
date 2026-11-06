@@ -858,7 +858,10 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     HGDIOBJ brush_old = SelectObject(item.hDC, fill);
     HGDIOBJ pen_old = SelectObject(item.hDC, outline);
     const int offset=axv::dpi_pixels(1,g_dpi);
-    const int curve=axv::dpi_pixels(9,g_dpi);
+    // Keep a pill-like radius on small keypad buttons without exceeding their height.
+    // Win32 RoundRect receives the full corner ellipse diameter, not a CSS radius.
+    const int button_height=std::max(0,rect.bottom-rect.top-2*offset);
+    const int curve=std::min(axv::dpi_pixels(24,g_dpi),button_height);
     RoundRect(item.hDC,rect.left+offset,rect.top+offset,
               rect.right-offset,rect.bottom-offset,curve,curve);
     SelectObject(item.hDC, pen_old);
