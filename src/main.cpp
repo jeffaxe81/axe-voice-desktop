@@ -143,8 +143,6 @@ constexpr int kEssentialHeight=752;
 constexpr int kEssentialBackspace=2800;
 constexpr int kEssentialMinimize=2801;
 constexpr int kEssentialClose=2802;
-constexpr int kEssentialWidth=444;
-constexpr int kEssentialHeight=752;
 unsigned g_dpi = axv::kBaseDpi;
 #ifdef AXV_ENABLE_NATIVE_SIP
 constexpr int kFullHeight = 886;
@@ -690,6 +688,7 @@ void show_page(HWND root, int page) {
 // Mini mode keeps only the target and true SIP state, without fake call actions.
 // FaleWEB-inspired compact dialer uses existing live SIP controls, not a
 // duplicate engine. The existing large settings pages remain in memory only.
+axv::SipRuntimeObservation current_sip_observation(axv::ProcessStatus state);
 void apply_faleweb_layout(HWND root) {
     // Exact first-column composition. All original SIP and account widgets
     // remain live; we only change their placement and visual presentation.
