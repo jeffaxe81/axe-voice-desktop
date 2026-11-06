@@ -2153,8 +2153,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 forget_sip_credential();
             } else {
                 auto secret=axv::pref_edit_text(g_password);
-                if(!secret.empty() && !save_sip_credential(secret))
+                if(!secret.empty() && !save_sip_credential(secret)){
+                    SendMessageW(g_remember_password,BM_SETCHECK,BST_UNCHECKED,0);
                     SetWindowTextW(g_process_status,L"Senha nao salva; confira servidor e usuario SIP.");
+                }
                 if(!secret.empty())SecureZeroMemory(secret.data(),secret.size()*sizeof(wchar_t));
             }
             return 0;
