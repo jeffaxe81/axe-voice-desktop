@@ -1739,8 +1739,15 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_button(window,L"CONTATOS",kContactsButton,154,216,108,28,0);
 #else
         make_label(window, L"DISCAGEM", 39, 220, 200, 23, 0, g_font_small);
+        // Lab build shows the approved navigation without pretending that
+        // the native contacts backend is available.
+        make_button(window,L"CONTATOS",kContactsButton,154,216,108,28,0);
+        EnableWindow(GetDlgItem(window,kContactsButton),FALSE);
 #endif
 #ifdef AXV_ENABLE_NATIVE_SIP
+        make_button(window,L"RECENTES",kRecentDestinationsButton,270,216,119,28,0);
+        EnableWindow(GetDlgItem(window,kRecentDestinationsButton),FALSE);
+#else
         make_button(window,L"RECENTES",kRecentDestinationsButton,270,216,119,28,0);
         EnableWindow(GetDlgItem(window,kRecentDestinationsButton),FALSE);
 #endif
