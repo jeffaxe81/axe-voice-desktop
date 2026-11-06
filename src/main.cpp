@@ -1867,7 +1867,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             if(control==kFalewebPrefsButton){open_faleweb_preferences(window);return 0;}
             if(control==kEssentialMinimize){ShowWindow(window,SW_MINIMIZE);return 0;}
             if(control==kEssentialClose){SendMessageW(window,WM_CLOSE,0,0);return 0;}
-            if(control==kEssentialBackspace){edit_number(window,L'\\b');return 0;}
+            if(control==kEssentialBackspace){edit_number(window,L'\b');return 0;}
             if(control==kFalewebActionsButton){show_faleweb_actions(window);return 0;}
             if (control == kShowDial || control == kFocusNumber) { show_page(window, 0); return 0; }
             if(control==kCopyStatusButton){
@@ -2523,7 +2523,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 const auto observed=current_sip_observation(g_baresip_process.poll());
                 const bool connected=axv::sip_proof_is_current(observed,observed.session) &&
                       observed.sip!=axv::SipStatus::Unavailable &&
-                      observed.sip!=axv::SipStatus::Unregistered;
+                      observed.sip!=axv::SipStatus::Disconnected &&
+                      observed.sip!=axv::SipStatus::Failed;
                 wchar_t user[96]{};GetWindowTextW(g_user,user,96);
                 wchar_t account[120]{};
                 if(user[0])swprintf_s(account,L"Ramal %ls",user);
