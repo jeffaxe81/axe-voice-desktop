@@ -537,7 +537,7 @@ int content_viewport_height(HWND window) {
     RECT client{};
     GetClientRect(window,&client);
     const int height=static_cast<int>(client.bottom-client.top);
-    return std::max(1,height-footer_height());
+    return (std::max)(1,height-footer_height());
 }
 void position_footer(HWND window) {
     if(!g_status || !g_footer_panel || !window)return;
@@ -808,7 +808,7 @@ void apply_compact_layout(HWND root) {
     const HMONITOR display = MonitorFromWindow(root, MONITOR_DEFAULTTONEAREST);
     if (display && GetMonitorInfoW(display, &monitor)) {
         const int work_height = monitor.rcWork.bottom-monitor.rcWork.top;
-        if (work_height > 0) fitted_height = std::min(desired_height, work_height);
+        if (work_height > 0) fitted_height = (std::min)(desired_height, work_height);
     }
     const int width = axv::dpi_pixels(kWindowWidth,g_dpi) +
                       GetSystemMetricsForDpi(SM_CXVSCROLL,g_dpi);
@@ -860,8 +860,8 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     const int offset=axv::dpi_pixels(1,g_dpi);
     // Keep a pill-like radius on small keypad buttons without exceeding their height.
     // Win32 RoundRect receives the full corner ellipse diameter, not a CSS radius.
-    const int button_height=std::max(0,rect.bottom-rect.top-2*offset);
-    const int curve=std::min(axv::dpi_pixels(24,g_dpi),button_height);
+    const int button_height=static_cast<int>((std::max)(0L,rect.bottom-rect.top-2*offset));
+    const int curve=(std::min)(axv::dpi_pixels(24,g_dpi),button_height);
     RoundRect(item.hDC,rect.left+offset,rect.top+offset,
               rect.right-offset,rect.bottom-offset,curve,curve);
     SelectObject(item.hDC, pen_old);
@@ -903,7 +903,7 @@ void paint_button(const DRAWITEMSTRUCT& item) {
             inner_height >= digit_metrics.tmHeight + gap + letter_metrics.tmHeight;
         const int group_height = digit_metrics.tmHeight +
             (draw_letters ? gap + letter_metrics.tmHeight : 0);
-        const int top = rect.top + padding + (std::max(0,inner_height-group_height))/2;
+        const int top = rect.top + padding + ((std::max)(0,inner_height-group_height))/2;
         RECT number{rect.left+padding,top,rect.right-padding,top+digit_metrics.tmHeight};
         SelectObject(item.hDC,primary_font);
         SetTextColor(item.hDC,foreground);
@@ -2293,7 +2293,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         if (!g_controls_ready) return 0;
         RECT client{};
         GetClientRect(window, &client);
-        const int page = std::max(1, static_cast<int>(client.bottom-client.top));
+        const int page = (std::max)(1, static_cast<int>(client.bottom-client.top));
         int desired = g_scroll_offset;
         switch (LOWORD(wparam)) {
         case SB_TOP: desired = 0; break;
@@ -3301,7 +3301,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         if (smoke_display && GetMonitorInfoW(smoke_display, &smoke_monitor)) {
             const int work_height = smoke_monitor.rcWork.bottom-smoke_monitor.rcWork.top;
             if (work_height > 0)
-                expected_mini_height = std::min(requested_mini_height, work_height);
+                expected_mini_height = (std::min)(requested_mini_height, work_height);
         }
         const bool compact_200_ok=g_dpi==192 && g_compact &&
             bounds.bottom-bounds.top==expected_mini_height;
