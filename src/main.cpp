@@ -337,7 +337,8 @@ NOTIFYICONDATAW create_tray_data(HWND window) {
     tray.uID = kTrayIconId;
     tray.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     tray.uCallbackMessage = kTrayCallback;
-    tray.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    tray.hIcon = LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(101));
+    if (!tray.hIcon) tray.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
     const wchar_t caption[] = L"AXE Voice - laboratorio";
     std::copy(std::begin(caption), std::end(caption), std::begin(tray.szTip));
     return tray;
@@ -2612,6 +2613,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hInstance = instance;
     wc.lpszClassName = className;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    wc.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(101));
+    if (!wc.hIcon) wc.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
 #ifdef AXV_ENABLE_NATIVE_SIP
