@@ -88,7 +88,7 @@ inline void shell(HDC dc,unsigned dpi,bool dark,bool connected,const wchar_t* ac
     const COLORREF border=dark?RGB(55,83,117):RGB(222,229,239);
     // Header 0..73, connection band 73..127, bottom navigation 669..752.
     HBRUSH bg=CreateSolidBrush(paper);
-    FillRect(dc,&box(dpi,0,0,444,752),bg);DeleteObject(bg);
+    const RECT canvas=box(dpi,0,0,444,752);FillRect(dc,&canvas,bg);DeleteObject(bg);
     line(dc,dpi,0,72,444,72,border,1);
     line(dc,dpi,0,126,444,126,border,1);
     line(dc,dpi,0,668,444,668,border,1);
@@ -162,10 +162,7 @@ inline void button(HDC dc,RECT r,unsigned dpi,int id,bool disabled,bool pressed,
     }else if(id==2802){
         label(dc,L"×",r,dpi,25,FW_NORMAL,fg);
     }else{
-        wchar_t caption[80]{}; // Text is provided by main.cpp below for live mute/hold.
-        const int chars=GetWindowTextW(WindowFromDC(dc),caption,80);
-        (void)chars;
-        // The actual button caption is drawn by caller's text-aware variant.
+        // Live action caption is supplied by main.cpp.
     }
     if(disabled && !nav) {
         // Disabled actions remain visible; the command gate is unchanged.
