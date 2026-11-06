@@ -43,16 +43,38 @@ inline void label(HDC dc,const wchar_t* txt,RECT r,unsigned dpi,int size,
     SelectObject(dc,old);DeleteObject(font);
 }
 inline void logo(HDC dc,unsigned dpi){
-    // Compact blue A mark, drawn at native DPI without a remote asset.
-    const POINT raw[]={{20,64},{39,18},{59,18},{82,64},{66,64},{59,51},{43,51},{36,64}};
-    POINT pts[8];for(int i=0;i<8;++i)pts[i]={px(dpi,raw[i].x),px(dpi,raw[i].y)};
-    HBRUSH b=CreateSolidBrush(RGB(0,151,230));
-    HGDIOBJ oldb=SelectObject(dc,b),oldp=SelectObject(dc,GetStockObject(NULL_PEN));
-    Polygon(dc,pts,8);SelectObject(dc,oldp);SelectObject(dc,oldb);DeleteObject(b);
-    rounded(dc,box(dpi,43,36,16,6),RGB(255,255,255),RGB(255,255,255),5,dpi);
-    dot(dc,dpi,50,30,3,RGB(255,255,255));
-    line(dc,dpi,42,43,48,46,RGB(255,255,255),3);
-    line(dc,dpi,48,46,57,41,RGB(255,255,255),3);
+    // AXE Voice monogram: cyan-to-royal-blue A with a compact white voice mark.
+    // Pixel geometry is held in logical coordinates so Windows scaling is crisp.
+    const POINT raw[]={{20,64},{38,18},{57,18},{83,64},
+                       {67,64},{59,51},{43,51},{36,64}};
+    POINT outline[8]{};
+    for(int i=0;i<8;++i)
+        outline[i]={px(dpi,raw[i].x),px(dpi,raw[i].y)};
+    HRGN mask=CreatePolygonRgn(outline,8,WINDING);
+    if(mask){
+        const int saved=SaveDC(dc);
+        SelectClipRgn(dc,mask);
+        for(int y=18;y<65;++y){
+            const float t=static_cast<float>(y-18)/46.0f;
+            const COLORREF blue=RGB(static_cast<int>(5+1*t),
+                                    static_cast<int>(193-132*t),
+                                    static_cast<int>(246-18*t));
+            HBRUSH band=CreateSolidBrush(blue);
+            RECT stripe=box(dpi,17,y,72,1);
+            FillRect(dc,&stripe,band);
+            DeleteObject(band);
+        }
+        RestoreDC(dc,saved);
+        DeleteObject(mask);
+    }
+    // Acoustic bars and hand are white, as in the approved AXE symbol.
+    const COLORREF white=RGB(255,255,255);
+    line(dc,dpi,44,37,44,31,white,3);
+    line(dc,dpi,50,37,50,28,white,3);
+    line(dc,dpi,56,37,56,32,white,3);
+    line(dc,dpi,42,39,47,46,white,3);
+    line(dc,dpi,47,46,55,46,white,5);
+    line(dc,dpi,55,46,62,39,white,3);
 }
 inline void icon(HDC dc,unsigned dpi,int id,int cx,int cy,COLORREF fg){
     // Simple vector glyphs, placed above labels rather than overlapping them.
