@@ -443,6 +443,8 @@ void rebuild_fonts() {
     for(const auto& child : g_layout)
         SendMessageW(child.handle, WM_SETFONT,
                      reinterpret_cast<WPARAM>(font_for_kind(child.font)), FALSE);
+    if(g_faleweb_mode && !g_faleweb_smoke && g_number)
+        SendMessageW(g_number,WM_SETFONT,reinterpret_cast<WPARAM>(g_font_digit),FALSE);
     for(HFONT old : prior) if(old) DeleteObject(old);
     if(g_faleweb_digit_font)DeleteObject(g_faleweb_digit_font);
     if(g_faleweb_letters_font)DeleteObject(g_faleweb_letters_font);
@@ -499,12 +501,14 @@ HWND make_button(HWND root, LPCWSTR text, int id, int x, int y, int w, int h,
 HWND make_edit(HWND root, LPCWSTR initial, int id, int x, int y, int w, int h,
                int page) {
     HWND edit = make_control(root, L"EDIT", initial,
-        WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, x, y, w, h, id, page);
+        WS_TABSTOP | ((g_faleweb_mode && !g_faleweb_smoke && id == kNumberEdit) ? 0 : WS_BORDER) | ES_AUTOHSCROLL,
+        x, y, w, h, id, page);
     if (edit) {
         SendMessageW(edit, EM_LIMITTEXT, 128, 0);
         const wchar_t* hint = nullptr;
         switch (id) {
-        case kNumberEdit: hint = L"Ex.: 1001 ou sip:usuario@dominio"; break;
+        case kNumberEdit: hint = g_faleweb_mode && !g_faleweb_smoke
+              ? L"Digite o número" : L"Ex.: 1001 ou sip:usuario@dominio"; break;
         case kServerEdit: hint = L"pbx.exemplo.com"; break;
         case kUserEdit: hint = L"Ex.: 1001"; break;
         case kPortEdit: hint = L"5060"; break;
@@ -1706,6 +1710,11 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
 #endif
         g_number_label = make_label(window, L"Número ou endereço SIP", 39, 246, 320, 20, 0, g_font_regular);
         g_number = make_edit(window, L"", kNumberEdit, 39, 272, 350, 43, 0);
+        if(g_faleweb_mode && !g_faleweb_smoke && g_number){
+            SendMessageW(g_number, WM_SETFONT, reinterpret_cast<WPARAM>(g_font_digit), TRUE);
+            SendMessageW(g_number, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN,
+                         MAKELPARAM(axv::dpi_pixels(12,g_dpi),axv::dpi_pixels(6,g_dpi)));
+        }
 
         constexpr const wchar_t* dial_labels[] = {
             L"1",L"2",L"3",L"4",L"5",L"6",L"7",L"8",L"9",L"*",L"0",L"#"
