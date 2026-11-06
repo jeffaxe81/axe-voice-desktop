@@ -4,8 +4,8 @@ Requires the native SDK smoke binary (NOT the UI-only AXE-Voice.exe).
 This is NOT validation against a production PABX. No credentials leave localhost.
 
 Usage:
-  python tests/run_1000_native_sip_connections.py path/to/native_sip_engine_smoke.exe
-  python tests/run_1000_native_sip_connections.py path/to/native_sip_engine_smoke.exe --count 1000 --report sip-results.json
+  python tests/run_1000_native_sip_connections.py path/to/axv_native_sip_engine_smoke.exe
+  python tests/run_1000_native_sip_connections.py path/to/axv_native_sip_engine_smoke.exe --count 1000 --report sip-results.json
 """
 import argparse
 import json
