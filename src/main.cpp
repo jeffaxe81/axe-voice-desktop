@@ -291,6 +291,14 @@ void load_ui_preferences() {
                      nullptr, &value, &size) == ERROR_SUCCESS) {
         g_dark = value != 0;
     }
+    if(g_faleweb_mode && !g_faleweb_smoke) {
+        // Adopt the explicitly approved light skin exactly once. Afterwards
+        // the user's theme toggle is respected across launches.
+        DWORD migrated=0, migrated_size=sizeof(migrated);
+        if(RegGetValueW(HKEY_CURRENT_USER,kPrefsKey,L"EssentialLightThemeInitialized",
+                        RRF_RT_REG_DWORD,nullptr,&migrated,&migrated_size)!=ERROR_SUCCESS)
+            g_dark=false;
+    }
     value = 0; size = sizeof(value);
     if (RegGetValueW(HKEY_CURRENT_USER, kPrefsKey, L"AlwaysOnTop", RRF_RT_REG_DWORD,
                      nullptr, &value, &size) == ERROR_SUCCESS) {
@@ -325,6 +333,11 @@ void save_ui_preferences() {
                    reinterpret_cast<const BYTE*>(&compact), sizeof(compact));
     RegSetValueExW(key, L"DarkTheme", 0, REG_DWORD,
                    reinterpret_cast<const BYTE*>(&theme), sizeof(theme));
+    if(g_faleweb_mode && !g_faleweb_smoke){
+        const DWORD migrated=1u;
+        RegSetValueExW(key,L"EssentialLightThemeInitialized",0,REG_DWORD,
+                       reinterpret_cast<const BYTE*>(&migrated),sizeof(migrated));
+    }
     RegSetValueExW(key, L"AlwaysOnTop", 0, REG_DWORD,
                    reinterpret_cast<const BYTE*>(&pinned), sizeof(pinned));
     const DWORD preset=static_cast<DWORD>(g_ringtone_preset.load());
