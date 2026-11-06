@@ -728,10 +728,10 @@ void apply_faleweb_layout(HWND root) {
         for(int i=0;i<12;++i)
             position_logical(GetDlgItem(root,kDigitStart+i),
                     22+(i%3)*135,215+(i/3)*76,127,68);
-        position_logical(GetDlgItem(root,kCallButton),22,520,400,58);
-        position_logical(GetDlgItem(root,kMuteFuture),22,594,126,49);
-        position_logical(GetDlgItem(root,kHoldFuture),158,594,130,49);
-        position_logical(GetDlgItem(root,kTransferFuture),298,594,124,49);
+        position_logical(GetDlgItem(root,kCallButton),22,529,400,58);
+        position_logical(GetDlgItem(root,kMuteFuture),22,601,126,49);
+        position_logical(GetDlgItem(root,kHoldFuture),158,601,130,49);
+        position_logical(GetDlgItem(root,kTransferFuture),298,601,124,49);
         position_logical(GetDlgItem(root,kShowDial),13,677,100,62);
         position_logical(GetDlgItem(root,kContactsButton),121,677,100,62);
         position_logical(GetDlgItem(root,kRecentDestinationsButton),229,677,100,62);
@@ -745,8 +745,8 @@ void apply_faleweb_layout(HWND root) {
         ShowWindow(GetDlgItem(root,kCallButton),active?SW_HIDE:SW_SHOW);
         ShowWindow(GetDlgItem(root,kAnswerNative),incoming?SW_SHOW:SW_HIDE);
         ShowWindow(GetDlgItem(root,kHangupFuture),active?SW_SHOW:SW_HIDE);
-        position_logical(GetDlgItem(root,kAnswerNative),22,520,400,58);
-        position_logical(GetDlgItem(root,kHangupFuture),22,incoming?588:520,400,incoming?45:58);
+        position_logical(GetDlgItem(root,kAnswerNative),22,529,400,58);
+        position_logical(GetDlgItem(root,kHangupFuture),22,incoming?597:529,400,incoming?45:58);
 #else
         ShowWindow(GetDlgItem(root,kHangupFuture),SW_HIDE);
 #endif
