@@ -87,51 +87,6 @@ constexpr int kPasswordEdit=1016,kCaEdit=1017,kAnswerNative=1018,kRememberSipPas
 constexpr wchar_t kSipCredentialTarget[]=L"AXEVoice/SIP/DefaultAccount";
 HWND g_password=nullptr,g_ca_file=nullptr,g_remember_password=nullptr;
 
-// Windows Credential Manager stores the secret for the current Windows user.
-// Account identity is checked on every read to prevent use with another SIP account.
-std::wstring sip_credential_identity() {
-    return axv::pref_edit_text(g_server)+L"\n"+axv::pref_edit_text(g_user);
-}
-bool sip_credential_exists() {
-    PCREDENTIALW credential=nullptr;
-    if(!CredReadW(kSipCredentialTarget,CRED_TYPE_GENERIC,0,&credential))return false;
-    CredFree(credential);
-    return true;
-}
-void forget_sip_credential() {
-    if(!CredDeleteW(kSipCredentialTarget,CRED_TYPE_GENERIC,0) &&
-       GetLastError()!=ERROR_NOT_FOUND && g_process_status)
-        SetWindowTextW(g_process_status,L"Nao foi possivel excluir a senha salva do Windows.");
-}
-bool save_sip_credential(const std::wstring& secret) {
-    if(secret.empty() || secret.size()>256 || !g_server || !g_user)return false;
-    const auto identity=sip_credential_identity();
-    if(identity.size()<3 || identity.front()==L'\n' || identity.back()==L'\n')return false;
-    CREDENTIALW entry{};
-    entry.Type=CRED_TYPE_GENERIC;
-    entry.TargetName=const_cast<LPWSTR>(kSipCredentialTarget);
-    entry.UserName=const_cast<LPWSTR>(identity.c_str());
-    entry.CredentialBlob=reinterpret_cast<LPBYTE>(const_cast<wchar_t*>(secret.data()));
-    entry.CredentialBlobSize=static_cast<DWORD>(secret.size()*sizeof(wchar_t));
-    entry.Persist=CRED_PERSIST_LOCAL_MACHINE;
-    return CredWriteW(&entry,0)!=FALSE;
-}
-std::wstring load_sip_credential() {
-    PCREDENTIALW credential=nullptr;
-    if(!CredReadW(kSipCredentialTarget,CRED_TYPE_GENERIC,0,&credential))return {};
-    std::wstring secret;
-    if(credential->UserName &&
-       sip_credential_identity()==credential->UserName &&
-       credential->CredentialBlob &&
-       credential->CredentialBlobSize>0 &&
-       credential->CredentialBlobSize<=256*sizeof(wchar_t) &&
-       credential->CredentialBlobSize%sizeof(wchar_t)==0) {
-        const auto* data=reinterpret_cast<const wchar_t*>(credential->CredentialBlob);
-        secret.assign(data,data+credential->CredentialBlobSize/sizeof(wchar_t));
-    }
-    CredFree(credential);
-    return secret;
-}
 axv::NativeCallMediaState g_displayed_media;
 constexpr int kCallDurationLabel = 2503;
 constexpr int kRingtoneStatusLabel = 2504;
@@ -235,6 +190,53 @@ HWND g_port = nullptr;
 HWND g_tls = nullptr;
 HWND g_audio_status = nullptr;
 HWND g_process_status = nullptr;
+#ifdef AXV_ENABLE_NATIVE_SIP
+// Windows Credential Manager stores the secret for the current Windows user.
+// Account identity is checked on every read to prevent use with another SIP account.
+std::wstring sip_credential_identity() {
+    return axv::pref_edit_text(g_server)+L"\n"+axv::pref_edit_text(g_user);
+}
+bool sip_credential_exists() {
+    PCREDENTIALW credential=nullptr;
+    if(!CredReadW(kSipCredentialTarget,CRED_TYPE_GENERIC,0,&credential))return false;
+    CredFree(credential);
+    return true;
+}
+void forget_sip_credential() {
+    if(!CredDeleteW(kSipCredentialTarget,CRED_TYPE_GENERIC,0) &&
+       GetLastError()!=ERROR_NOT_FOUND && g_process_status)
+        SetWindowTextW(g_process_status,L"Nao foi possivel excluir a senha salva do Windows.");
+}
+bool save_sip_credential(const std::wstring& secret) {
+    if(secret.empty() || secret.size()>256 || !g_server || !g_user)return false;
+    const auto identity=sip_credential_identity();
+    if(identity.size()<3 || identity.front()==L'\n' || identity.back()==L'\n')return false;
+    CREDENTIALW entry{};
+    entry.Type=CRED_TYPE_GENERIC;
+    entry.TargetName=const_cast<LPWSTR>(kSipCredentialTarget);
+    entry.UserName=const_cast<LPWSTR>(identity.c_str());
+    entry.CredentialBlob=reinterpret_cast<LPBYTE>(const_cast<wchar_t*>(secret.data()));
+    entry.CredentialBlobSize=static_cast<DWORD>(secret.size()*sizeof(wchar_t));
+    entry.Persist=CRED_PERSIST_LOCAL_MACHINE;
+    return CredWriteW(&entry,0)!=FALSE;
+}
+std::wstring load_sip_credential() {
+    PCREDENTIALW credential=nullptr;
+    if(!CredReadW(kSipCredentialTarget,CRED_TYPE_GENERIC,0,&credential))return {};
+    std::wstring secret;
+    if(credential->UserName &&
+       sip_credential_identity()==credential->UserName &&
+       credential->CredentialBlob &&
+       credential->CredentialBlobSize>0 &&
+       credential->CredentialBlobSize<=256*sizeof(wchar_t) &&
+       credential->CredentialBlobSize%sizeof(wchar_t)==0) {
+        const auto* data=reinterpret_cast<const wchar_t*>(credential->CredentialBlob);
+        secret.assign(data,data+credential->CredentialBlobSize/sizeof(wchar_t));
+    }
+    CredFree(credential);
+    return secret;
+}
+#endif
 HWND g_runtime_banner = nullptr;
 HWND g_input_audio_combo = nullptr;
 HWND g_output_audio_combo = nullptr;
