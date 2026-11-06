@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <windowsx.h>
 #include <shlobj.h>
 #include <commdlg.h>
 #include <mutex>
