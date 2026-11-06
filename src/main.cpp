@@ -706,12 +706,35 @@ void apply_faleweb_layout(HWND root) {
     if (g_faleweb_mode && !g_faleweb_smoke) {
         g_compact=false; g_scroll_offset=0; g_scroll_max=0;
         ShowScrollBar(root,SB_VERT,FALSE);
+        // The compact Essencial canvas has an actual fourth-page monitor.
+        // Toggle back to the dialer without resizing the main window.
+        if (g_page == 3) {
+            for (const auto& item : g_layout) {
+                const int id=GetDlgCtrlID(item.handle);
+                const bool shown=item.handle==g_brand_label ||
+                    item.handle==g_runtime_banner ||
+                    item.handle==g_monitor_events ||
+                    id==kTheme || id==kShowSipMonitor;
+                ShowWindow(item.handle,shown?SW_SHOW:SW_HIDE);
+            }
+            position_essential(g_brand_label,23,13,215,39);
+            position_essential(GetDlgItem(root,kTheme),369,15,52,32);
+            position_essential(GetDlgItem(root,kShowSipMonitor),253,15,108,32);
+            position_essential(g_runtime_banner,23,68,397,31);
+            position_essential(g_monitor_events,23,116,397,590);
+            SetWindowTextW(GetDlgItem(root,kShowSipMonitor),L"TECLADO");
+            ShowWindow(g_footer_panel,SW_HIDE);
+            ShowWindow(g_status,SW_HIDE);
+            InvalidateRect(root,nullptr,FALSE);
+            return;
+        }
+        SetWindowTextW(GetDlgItem(root,kShowSipMonitor),L"MONITOR");
         for (const auto& item : g_layout) {
             const int id=GetDlgCtrlID(item.handle);
             const bool digit=id>=kDigitStart && id<kDigitStart+12;
             const bool shown=digit || item.handle==g_number ||
                 item.handle==g_runtime_banner || item.handle==g_brand_label ||
-                id==kTheme || id==kShowDial || id==kFalewebPrefsButton ||
+                id==kTheme || id==kShowSipMonitor || id==kShowDial || id==kFalewebPrefsButton ||
                 id==kContactsButton || id==kRecentDestinationsButton ||
                 id==kCallButton || id==kMuteFuture || id==kHoldFuture ||
                 id==kTransferFuture || id==kHangupFuture
@@ -722,7 +745,8 @@ void apply_faleweb_layout(HWND root) {
             ShowWindow(item.handle,shown?SW_SHOW:SW_HIDE);
         }
         // Logical coordinates reproduce the proportions of the first approved mockup.
-        position_essential(g_brand_label,85,13,279,39);
+        position_essential(g_brand_label,85,13,165,39);
+        position_essential(GetDlgItem(root,kShowSipMonitor),253,15,108,32);
         position_essential(GetDlgItem(root,kTheme),369,15,52,32);
         position_essential(g_runtime_banner,26,68,391,31);
         position_essential(g_number,23,124,397,56);
@@ -1900,6 +1924,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             if(control==kFalewebPrefsButton){open_faleweb_preferences(window);return 0;}
             if(control==kFalewebActionsButton){show_faleweb_actions(window);return 0;}
             if(control==kShowSipMonitor){
+                if(g_faleweb_mode && !g_faleweb_smoke){
+                    show_page(window,g_page==3?0:3);
+                    return 0;
+                }
                 if(g_compact){g_compact=false;apply_compact_layout(window);save_ui_preferences();}
                 show_page(window,3);return 0;
             }
