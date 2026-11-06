@@ -136,6 +136,8 @@ constexpr int kRuntimeStatusLabel = 2502;
 constexpr int kWindowWidth = 438;
 constexpr int kFalewebWidth=254;
 constexpr int kFalewebHeight=475;
+constexpr int kEssentialWidth=444;
+constexpr int kEssentialHeight=752;
 unsigned g_dpi = axv::kBaseDpi;
 #ifdef AXV_ENABLE_NATIVE_SIP
 constexpr int kFullHeight = 886;
@@ -236,7 +238,7 @@ axv::SipEventProjection g_sip_projection;
 axv::SipRuntimeSessionGuard g_sip_session_guard;
 
 
-bool g_dark = true;
+bool g_dark = false; // Option 1: Essencial claro. Saved user theme still wins.
 bool g_high_contrast = false;
 axv::UiSystemColors g_system_colors{};
 bool g_pinned = false;
@@ -406,7 +408,7 @@ void refresh_brushes() {
     g_invalid_field_brush = CreateSolidBrush(invalid_field_color());
     if(g_faleweb_display_brush)DeleteObject(g_faleweb_display_brush);
     g_faleweb_display_brush=CreateSolidBrush(g_high_contrast?background_color():
-        (g_dark?RGB(19,48,86):RGB(225,242,255)));
+        (g_dark?RGB(19,48,86):RGB(247,250,254)));
 }
 HFONT create_font(int size, int weight) {
     return CreateFontW(-axv::dpi_pixels(size, g_dpi), 0, 0, 0, weight, FALSE, FALSE, FALSE,
@@ -682,6 +684,63 @@ void show_page(HWND root, int page) {
 // FaleWEB-inspired compact dialer uses existing live SIP controls, not a
 // duplicate engine. The existing large settings pages remain in memory only.
 void apply_faleweb_layout(HWND root) {
+    // Original FaleWEB smoke layout is retained unchanged for regression checks.
+    // Normal desktop view follows the approved Essencial claro reference.
+    if (g_faleweb_mode && !g_faleweb_smoke) {
+        g_compact=false; g_scroll_offset=0; g_scroll_max=0;
+        ShowScrollBar(root,SB_VERT,FALSE);
+        for (const auto& item : g_layout) {
+            const int id=GetDlgCtrlID(item.handle);
+            const bool digit=id>=kDigitStart && id<kDigitStart+12;
+            const bool shown=digit || item.handle==g_number ||
+                item.handle==g_runtime_banner || item.handle==g_brand_label ||
+                id==kTheme || id==kShowDial || id==kFalewebPrefsButton ||
+                id==kContactsButton || id==kRecentDestinationsButton ||
+                id==kCallButton || id==kMuteFuture || id==kHoldFuture ||
+                id==kTransferFuture || id==kHangupFuture
+#ifdef AXV_ENABLE_NATIVE_SIP
+                || id==kAnswerNative
+#endif
+                ;
+            ShowWindow(item.handle,shown?SW_SHOW:SW_HIDE);
+        }
+        // Logical coordinates reproduce the proportions of the first approved mockup.
+        position_logical(g_brand_label,85,13,279,39);
+        position_logical(GetDlgItem(root,kTheme),369,15,52,32);
+        position_logical(g_runtime_banner,26,68,391,31);
+        position_logical(g_number,23,124,397,56);
+        for(int i=0;i<12;++i)
+            position_logical(GetDlgItem(root,kDigitStart+i),
+                             23+(i%3)*135,192+(i/3)*72,126,64);
+        position_logical(GetDlgItem(root,kCallButton),23,489,397,54);
+        // Existing call controls retain their original IDs and SIP handlers.
+        position_logical(GetDlgItem(root,kMuteFuture),23,558,126,45);
+        position_logical(GetDlgItem(root,kHoldFuture),158,558,126,45);
+        position_logical(GetDlgItem(root,kTransferFuture),293,558,127,45);
+        position_logical(GetDlgItem(root,kShowDial),23,649,94,67);
+        position_logical(GetDlgItem(root,kContactsButton),125,649,94,67);
+        position_logical(GetDlgItem(root,kRecentDestinationsButton),227,649,94,67);
+        position_logical(g_faleweb_prefs_button,329,649,94,67);
+        // Hangup/answer remain available from the functional call-state
+        // controls, but do not crowd the approved idle keypad screen.
+        ShowWindow(GetDlgItem(root,kHangupFuture),SW_HIDE);
+#ifdef AXV_ENABLE_NATIVE_SIP
+        ShowWindow(GetDlgItem(root,kAnswerNative),SW_HIDE);
+#endif
+        SetWindowTextW(GetDlgItem(root,kCallButton),L"Ligar");
+        SetWindowTextW(GetDlgItem(root,kShowDial),L"Teclado");
+        SetWindowTextW(GetDlgItem(root,kContactsButton),L"Contatos");
+        SetWindowTextW(GetDlgItem(root,kRecentDestinationsButton),L"Histórico");
+        SetWindowTextW(g_faleweb_prefs_button,L"Ajustes");
+        SetWindowTextW(GetDlgItem(root,kHoldFuture),L"Espera");
+        SetWindowTextW(GetDlgItem(root,kTransferFuture),L"Transferir");
+        SetWindowTextW(GetDlgItem(root,kMuteFuture),L"Mudo");
+        // The approved keypad has no legacy feedback footer overlaying navigation.
+        ShowWindow(g_footer_panel,SW_HIDE);
+        ShowWindow(g_status,SW_HIDE);
+        InvalidateRect(root,nullptr,FALSE);
+        return;
+    }
     if(!g_faleweb_mode || !g_controls_ready && !g_runtime_banner)return;
     g_compact=false;g_scroll_offset=0;g_scroll_max=0;
     ShowScrollBar(root,SB_VERT,FALSE);
@@ -733,8 +792,8 @@ void apply_faleweb_layout(HWND root) {
 }
 void apply_compact_layout(HWND root) {
     if(g_faleweb_mode){
-        SetWindowPos(root,nullptr,0,0,axv::dpi_pixels(kFalewebWidth,g_dpi),
-            axv::dpi_pixels(kFalewebHeight,g_dpi),SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
+        SetWindowPos(root,nullptr,0,0,axv::dpi_pixels(g_faleweb_smoke?kFalewebWidth:kEssentialWidth,g_dpi),
+            axv::dpi_pixels(g_faleweb_smoke?kFalewebHeight:kEssentialHeight,g_dpi),SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
         apply_faleweb_layout(root);return;
     }
     if (g_compact && g_page != 0) show_page(root, 0);
@@ -2409,7 +2468,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         HDC dc=old_bitmap?back_dc:window_dc;
         FillRect(dc,&rect,g_background_brush);
         if(g_faleweb_mode){
-            const auto outer=logical_rect(7,7,247,116);
+            const auto outer=g_faleweb_smoke?logical_rect(7,7,247,116):logical_rect(7,7,437,113);
             draw_card(dc,outer,g_high_contrast?background_color():
                 (g_dark?RGB(19,48,86):RGB(225,242,255)),13);
         }else{
@@ -2632,8 +2691,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     HWND window = CreateWindowExW(0, className, title,
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | (g_faleweb_mode?0:WS_VSCROLL) | WS_CLIPCHILDREN,
         CW_USEDEFAULT, CW_USEDEFAULT,
-        g_faleweb_mode?axv::dpi_pixels(kFalewebWidth,g_dpi):axv::dpi_pixels(kWindowWidth,g_dpi)+GetSystemMetricsForDpi(SM_CXVSCROLL,g_dpi),
-        axv::dpi_pixels(g_faleweb_mode?kFalewebHeight:kFullHeight,g_dpi),
+        g_faleweb_mode?axv::dpi_pixels(g_faleweb_smoke?kFalewebWidth:kEssentialWidth,g_dpi):axv::dpi_pixels(kWindowWidth,g_dpi)+GetSystemMetricsForDpi(SM_CXVSCROLL,g_dpi),
+        axv::dpi_pixels(g_faleweb_mode?(g_faleweb_smoke?kFalewebHeight:kEssentialHeight):kFullHeight,g_dpi),
         nullptr, nullptr, instance, nullptr);
     if (!window) return 2;
     if (!g_smoke_mode) (void)g_audio_endpoint_watcher.start();
