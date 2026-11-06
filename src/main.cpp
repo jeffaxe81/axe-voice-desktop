@@ -1576,6 +1576,17 @@ void show_faleweb_actions(HWND owner){
 
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
+    case WM_NCHITTEST: {
+        if(g_faleweb_mode && !g_faleweb_smoke) {
+            POINT point{GET_X_LPARAM(lparam),GET_Y_LPARAM(lparam)};
+            ScreenToClient(window,&point);
+            const int x=MulDiv(point.x,96,g_dpi),y=MulDiv(point.y,96,g_dpi);
+            // The approved white header is draggable; close/minimize are
+            // real owner-drawn child buttons and keep priority over dragging.
+            if(y>=0 && y<72 && x>=0 && x<326)return HTCAPTION;
+        }
+        break;
+    }
     case WM_COPYDATA: {
         // Another AXE Voice instance may forward a Windows protocol click.
         // No WM_COPYDATA message is trusted without explicit confirmation.
@@ -2753,7 +2764,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     const wchar_t* title=L"AXE Voice  |  Desktop Lab v0.45";
 #endif
     HWND window = CreateWindowExW(0, className, title,
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | (g_faleweb_mode?0:WS_VSCROLL) | WS_CLIPCHILDREN,
+        (g_faleweb_mode && !g_faleweb_smoke ? (WS_POPUP | WS_BORDER | WS_SYSMENU | WS_MINIMIZEBOX) : (WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX)) | (g_faleweb_mode?0:WS_VSCROLL) | WS_CLIPCHILDREN,
         CW_USEDEFAULT, CW_USEDEFAULT,
         g_faleweb_mode?axv::dpi_pixels(g_faleweb_smoke?kFalewebWidth:kEssentialWidth,g_dpi):axv::dpi_pixels(kWindowWidth,g_dpi)+GetSystemMetricsForDpi(SM_CXVSCROLL,g_dpi),
         axv::dpi_pixels(g_faleweb_mode?(g_faleweb_smoke?kFalewebHeight:kEssentialHeight):kFullHeight,g_dpi),
