@@ -1,4 +1,7 @@
 #include <windows.h>
+#ifdef AXV_ENABLE_NATIVE_SIP
+#include <wincred.h>
+#endif
 #include <shlobj.h>
 #include <commdlg.h>
 #include <mutex>
@@ -80,8 +83,55 @@ namespace {
 #ifdef AXV_ENABLE_NATIVE_SIP
 // Retain through process exit, including detached audio probes after owner teardown.
 axv::NativeInstallGuard g_native_install_guard{axv::NativeInstallGuardLifetime::Process};
-constexpr int kPasswordEdit=1016,kCaEdit=1017,kAnswerNative=1018;
-HWND g_password=nullptr,g_ca_file=nullptr;
+constexpr int kPasswordEdit=1016,kCaEdit=1017,kAnswerNative=1018,kRememberSipPassword=1020;
+constexpr wchar_t kSipCredentialTarget[]=L"AXEVoice/SIP/DefaultAccount";
+HWND g_password=nullptr,g_ca_file=nullptr,g_remember_password=nullptr;
+
+// Windows Credential Manager stores the secret for the current Windows user.
+// Account identity is checked on every read to prevent use with another SIP account.
+std::wstring sip_credential_identity() {
+    return axv::pref_edit_text(g_server)+L"\n"+axv::pref_edit_text(g_user);
+}
+bool sip_credential_exists() {
+    PCREDENTIALW credential=nullptr;
+    if(!CredReadW(kSipCredentialTarget,CRED_TYPE_GENERIC,0,&credential))return false;
+    CredFree(credential);
+    return true;
+}
+void forget_sip_credential() {
+    if(!CredDeleteW(kSipCredentialTarget,CRED_TYPE_GENERIC,0) &&
+       GetLastError()!=ERROR_NOT_FOUND && g_process_status)
+        SetWindowTextW(g_process_status,L"Nao foi possivel excluir a senha salva do Windows.");
+}
+bool save_sip_credential(const std::wstring& secret) {
+    if(secret.empty() || secret.size()>256 || !g_server || !g_user)return false;
+    const auto identity=sip_credential_identity();
+    if(identity.size()<3 || identity.front()==L'\n' || identity.back()==L'\n')return false;
+    CREDENTIALW entry{};
+    entry.Type=CRED_TYPE_GENERIC;
+    entry.TargetName=const_cast<LPWSTR>(kSipCredentialTarget);
+    entry.UserName=const_cast<LPWSTR>(identity.c_str());
+    entry.CredentialBlob=reinterpret_cast<LPBYTE>(const_cast<wchar_t*>(secret.data()));
+    entry.CredentialBlobSize=static_cast<DWORD>(secret.size()*sizeof(wchar_t));
+    entry.Persist=CRED_PERSIST_LOCAL_MACHINE;
+    return CredWriteW(&entry,0)!=FALSE;
+}
+std::wstring load_sip_credential() {
+    PCREDENTIALW credential=nullptr;
+    if(!CredReadW(kSipCredentialTarget,CRED_TYPE_GENERIC,0,&credential))return {};
+    std::wstring secret;
+    if(credential->UserName &&
+       sip_credential_identity()==credential->UserName &&
+       credential->CredentialBlob &&
+       credential->CredentialBlobSize>0 &&
+       credential->CredentialBlobSize<=256*sizeof(wchar_t) &&
+       credential->CredentialBlobSize%sizeof(wchar_t)==0) {
+        const auto* data=reinterpret_cast<const wchar_t*>(credential->CredentialBlob);
+        secret.assign(data,data+credential->CredentialBlobSize/sizeof(wchar_t));
+    }
+    CredFree(credential);
+    return secret;
+}
 axv::NativeCallMediaState g_displayed_media;
 constexpr int kCallDurationLabel = 2503;
 constexpr int kRingtoneStatusLabel = 2504;
@@ -1787,11 +1837,15 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_user = make_edit(window, L"", kUserEdit, 39, 355, 216, 38, 1);
         g_port = make_edit(window, L"5060", kPortEdit, 267, 355, 122, 38, 1);
 #ifdef AXV_ENABLE_NATIVE_SIP
-        make_label(window,L"Senha (somente nesta sessao)",39,402,350,20,1);
+        make_label(window,L"Senha SIP",39,402,190,20,1);
         g_password=make_edit(window,L"",kPasswordEdit,39,425,350,32,1);
         SetWindowLongPtrW(g_password,GWL_STYLE,GetWindowLongPtrW(g_password,GWL_STYLE)|ES_PASSWORD);
         SendMessageW(g_password,EM_SETPASSWORDCHAR,L'*',0);
         SendMessageW(g_password,EM_SETLIMITTEXT,256,0);
+        g_remember_password=make_control(window,L"BUTTON",L"Salvar senha SIP",
+            WS_TABSTOP|BS_AUTOCHECKBOX|BS_NOTIFY,232,398,157,24,kRememberSipPassword,1);
+        SendMessageW(g_remember_password,BM_SETCHECK,
+            sip_credential_exists()?BST_CHECKED:BST_UNCHECKED,0);
         g_tls=make_control(window,L"BUTTON",L"TLS: exige CA confiavel; nao criptografa RTP",WS_TABSTOP|BS_AUTOCHECKBOX|BS_NOTIFY,39,464,350,28,kTlsCheckbox,1);
         make_label(window,L"Arquivo CA PEM (obrigatorio para TLS)",39,497,350,20,1);
         g_ca_file=make_edit(window,L"",kCaEdit,39,520,350,32,1);
@@ -2090,8 +2144,33 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             (void)native_engine().hangup_call(g_displayed_sip); return 0;
         }
 #endif
+        #ifdef AXV_ENABLE_NATIVE_SIP
+        if(LOWORD(wparam)==kRememberSipPassword && HIWORD(wparam)==BN_CLICKED){
+            const bool checked=SendMessageW(g_remember_password,BM_GETCHECK,0,0)==BST_CHECKED;
+            if(!checked){
+                forget_sip_credential();
+            } else {
+                auto secret=axv::pref_edit_text(g_password);
+                if(!secret.empty() && !save_sip_credential(secret))
+                    SetWindowTextW(g_process_status,L"Senha nao salva; confira servidor e usuario SIP.");
+                if(!secret.empty())SecureZeroMemory(secret.data(),secret.size()*sizeof(wchar_t));
+            }
+            return 0;
+        }
+#endif
         if (LOWORD(wparam) == kStartBaresipButton && HIWORD(wparam) == BN_CLICKED) {
 #ifdef AXV_ENABLE_NATIVE_SIP
+            if(g_remember_password &&
+               SendMessageW(g_remember_password,BM_GETCHECK,0,0)==BST_CHECKED){
+                auto secret=axv::pref_edit_text(g_password);
+                if(secret.empty()){
+                    secret=load_sip_credential();
+                    if(!secret.empty())SetWindowTextW(g_password,secret.c_str());
+                } else if(!save_sip_credential(secret)){
+                    SetWindowTextW(g_process_status,L"Nao foi possivel salvar a senha SIP no Windows.");
+                }
+                if(!secret.empty())SecureZeroMemory(secret.data(),secret.size()*sizeof(wchar_t));
+            }
             const auto result=axv::register_native_account_ui(native_engine(),
                 {g_server,g_user,g_port,g_password,g_ca_file,g_tls},g_selected_input_id,g_selected_output_id);
             SetWindowTextW(g_process_status,axv::native_registration_result_message(result));
