@@ -889,7 +889,7 @@ void paint_button(const DRAWITEMSTRUCT& item) {
         if(id==kMuteFuture||id==kHoldFuture||id==kTransferFuture) {
             wchar_t caption[96]{};
             GetWindowTextW(item.hwndItem,caption,96);
-            axv::essential::action_caption(item.hDC,item.rcItem,g_dpi,caption,g_dark,disabled);
+            axv::essential::action_caption(item.hDC,item.rcItem,g_dpi,id,caption,g_dark,disabled);
         }
         if(item.itemState&ODS_FOCUS) {
             RECT focus=item.rcItem;InflateRect(&focus,-axv::dpi_pixels(5,g_dpi),-axv::dpi_pixels(5,g_dpi));
