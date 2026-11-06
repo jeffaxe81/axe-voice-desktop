@@ -12,6 +12,18 @@ int main() {
     CHECK(axv::native_call_destination(L"101",account)=="sip:101@pbx.example:5060;transport=udp");
     CHECK(axv::native_call_destination(L"sip:200@elsewhere.example",account)=="sip:200@elsewhere.example");
     CHECK(axv::native_call_destination(L"100\r\nInjected: x",account).empty());
+    // Customer-like UDP/5060 profile, deliberately using synthetic identity.
+    // No password, actual SIP identity or remote registration is stored here.
+    const axv::SipAccount udp_profile{L"sip.example.invalid",L"test-extension",5060,false};
+    const auto udp_cfg=axv::native_account_config(udp_profile,L"");
+    CHECK(udp_cfg.valid);
+    CHECK(udp_cfg.config.find("sip_transports udp")!=std::string::npos);
+    CHECK(udp_cfg.config.find("sip_transports tls")==std::string::npos);
+    CHECK(udp_cfg.config.find("sip_cafile")==std::string::npos);
+    CHECK(udp_cfg.aor.find(":5060;transport=udp")!=std::string::npos);
+    CHECK(axv::native_call_destination(L"1002",udp_profile)==
+          "sip:1002@sip.example.invalid:5060;transport=udp");
+    CHECK(axv::native_call_destination(L"sips:1002@sip.example.invalid",udp_profile).empty());
     account.username=L"100;auth_pass=bad"; CHECK(!axv::native_account_config(account,L"").valid);
     account.username=L"1001"; account.use_tls=true; account.port=5061;
     CHECK(!axv::native_account_config(account,L"").valid);
