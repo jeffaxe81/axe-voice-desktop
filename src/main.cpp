@@ -694,7 +694,7 @@ void apply_faleweb_layout(HWND root) {
             const bool digit=id>=kDigitStart && id<kDigitStart+12;
             const bool shown=digit || item.handle==g_number ||
                 item.handle==g_runtime_banner || item.handle==g_brand_label ||
-                id==kTheme || id==kShowDial || id==kShowSettings ||
+                id==kTheme || id==kShowDial || id==kFalewebPrefsButton ||
                 id==kContactsButton || id==kRecentDestinationsButton ||
                 id==kCallButton || id==kMuteFuture || id==kHoldFuture ||
                 id==kTransferFuture || id==kHangupFuture
@@ -720,7 +720,7 @@ void apply_faleweb_layout(HWND root) {
         position_logical(GetDlgItem(root,kShowDial),23,649,94,67);
         position_logical(GetDlgItem(root,kContactsButton),125,649,94,67);
         position_logical(GetDlgItem(root,kRecentDestinationsButton),227,649,94,67);
-        position_logical(GetDlgItem(root,kShowSettings),329,649,94,67);
+        position_logical(g_faleweb_prefs_button,329,649,94,67);
         // Hangup/answer remain available from the functional call-state
         // controls, but do not crowd the approved idle keypad screen.
         ShowWindow(GetDlgItem(root,kHangupFuture),SW_HIDE);
@@ -731,11 +731,13 @@ void apply_faleweb_layout(HWND root) {
         SetWindowTextW(GetDlgItem(root,kShowDial),L"Teclado");
         SetWindowTextW(GetDlgItem(root,kContactsButton),L"Contatos");
         SetWindowTextW(GetDlgItem(root,kRecentDestinationsButton),L"Histórico");
-        SetWindowTextW(GetDlgItem(root,kShowSettings),L"Ajustes");
+        SetWindowTextW(g_faleweb_prefs_button,L"Ajustes");
         SetWindowTextW(GetDlgItem(root,kHoldFuture),L"Espera");
         SetWindowTextW(GetDlgItem(root,kTransferFuture),L"Transferir");
         SetWindowTextW(GetDlgItem(root,kMuteFuture),L"Mudo");
-        position_footer(root);
+        // The approved keypad has no legacy feedback footer overlaying navigation.
+        ShowWindow(g_footer_panel,SW_HIDE);
+        ShowWindow(g_status,SW_HIDE);
         InvalidateRect(root,nullptr,FALSE);
         return;
     }
