@@ -243,6 +243,7 @@ bool g_pinned = false;
 bool g_compact = false;
 bool g_faleweb_mode=false;
 bool g_faleweb_smoke=false;
+HWND g_brand_label=nullptr;
 HWND g_faleweb_prefs_button=nullptr;
 HWND g_faleweb_actions_button=nullptr;
 HBRUSH g_faleweb_display_brush=nullptr;
@@ -403,6 +404,9 @@ void refresh_brushes() {
     g_background_brush = CreateSolidBrush(background_color());
     g_field_brush = CreateSolidBrush(field_color());
     g_invalid_field_brush = CreateSolidBrush(invalid_field_color());
+    if(g_faleweb_display_brush)DeleteObject(g_faleweb_display_brush);
+    g_faleweb_display_brush=CreateSolidBrush(g_high_contrast?background_color():
+        (g_dark?RGB(19,48,86):RGB(225,242,255)));
 }
 HFONT create_font(int size, int weight) {
     return CreateFontW(-axv::dpi_pixels(size, g_dpi), 0, 0, 0, weight, FALSE, FALSE, FALSE,
@@ -686,7 +690,8 @@ void apply_faleweb_layout(HWND root) {
         const int id=GetDlgCtrlID(item.handle);
         const bool digit=id>=kDigitStart && id<kDigitStart+12;
         const bool shown=digit || item.handle==g_number ||
-             item.handle==g_runtime_banner ||
+             item.handle==g_runtime_banner || item.handle==g_brand_label ||
+             id==kTheme ||
 #ifdef AXV_ENABLE_NATIVE_SIP
              item.handle==g_call_duration_label ||
              item.handle==g_ringtone_status_label ||
@@ -701,7 +706,9 @@ void apply_faleweb_layout(HWND root) {
         if(item.handle==g_status)continue; // Fixed status remains its own area.
         ShowWindow(item.handle,shown?SW_SHOW:SW_HIDE);
     }
-    position_logical(g_runtime_banner,16,29,221,47);
+    position_logical(g_brand_label,12,5,165,31);
+    position_logical(GetDlgItem(root,kTheme),184,5,59,29);
+    position_logical(g_runtime_banner,13,43,227,35);
 #ifdef AXV_ENABLE_NATIVE_SIP
     position_logical(g_call_duration_label,17,82,210,21);
     position_logical(g_ringtone_status_label,130,101,109,19);
@@ -1540,9 +1547,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_font_digit = create_font(21, FW_SEMIBOLD);
         g_faleweb_digit_font=create_font(15,FW_SEMIBOLD);
         g_faleweb_letters_font=create_font(9,FW_NORMAL);
-        g_faleweb_display_brush=CreateSolidBrush(RGB(202,241,247));
         refresh_brushes();
-        make_label(window, L"AXE  VOICE", 24, 16, 240, 37, -1, g_font_title);
+        g_brand_label=make_label(window, L"AXE Voice", 24, 16, 240, 37, -1, g_font_title);
         make_label(window, L"SOFTPHONE DESKTOP  /  LAB", 25, 57, 270, 22, -1, g_font_small);
         make_button(window, g_compact ? L"MAX" : L"MINI", kCompact, 344, 65, 70, 29);
         make_button(window, L"?", kHelpButton, 301, 65, 34, 29);
@@ -2349,7 +2355,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
            || label==g_call_duration_label || label==g_ringtone_status_label
 #endif
            )){
-            SetBkColor(dc,RGB(202,241,247));SetTextColor(dc,RGB(16,60,89));
+            SetBkColor(dc,g_high_contrast?background_color():
+                (g_dark?RGB(19,48,86):RGB(225,242,255)));
+            SetTextColor(dc,g_high_contrast?text_color():
+                (g_dark?RGB(239,247,255):RGB(13,44,81)));
             SetBkMode(dc,OPAQUE);
             return reinterpret_cast<LRESULT>(g_faleweb_display_brush);
         }
@@ -2401,7 +2410,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         FillRect(dc,&rect,g_background_brush);
         if(g_faleweb_mode){
             const auto outer=logical_rect(7,7,247,116);
-            draw_card(dc,outer,RGB(202,241,247),13);
+            draw_card(dc,outer,g_high_contrast?background_color():
+                (g_dark?RGB(19,48,86):RGB(225,242,255)),13);
         }else{
         draw_card(dc,logical_rect(24,151,414,198),panel_color(),16);
         draw_card(dc,g_compact?logical_rect(24,206,414,289)
@@ -2653,8 +2663,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             g_faleweb_prefs_button && (GetWindowLongPtrW(g_faleweb_prefs_button,GWL_STYLE)&WS_VISIBLE) &&
             g_faleweb_actions_button && (GetWindowLongPtrW(g_faleweb_actions_button,GWL_STYLE)&WS_VISIBLE) &&
             g_runtime_banner && (GetWindowLongPtrW(g_runtime_banner,GWL_STYLE)&WS_VISIBLE) &&
-            g_number && (GetWindowLongPtrW(g_number,GWL_STYLE)&WS_VISIBLE);
-        RECT frame{},footer{},display{},number{},call{};
+            g_number && (GetWindowLongPtrW(g_number,GWL_STYLE)&WS_VISIBLE) &&
+            g_brand_label && (GetWindowLongPtrW(g_brand_label,GWL_STYLE)&WS_VISIBLE) &&
+            (GetWindowLongPtrW(GetDlgItem(window,kTheme),GWL_STYLE)&WS_VISIBLE);
+        RECT frame{},footer{},display{},number{},call{},brand{},theme{};
+        GetWindowRect(g_brand_label,&brand);
+        GetWindowRect(GetDlgItem(window,kTheme),&theme);
         GetWindowRect(window,&frame);
         GetWindowRect(g_footer_panel,&footer);
         GetWindowRect(g_runtime_banner,&display);
@@ -2662,7 +2676,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         GetWindowRect(GetDlgItem(window,kCallButton),&call);
         passed=passed && frame.right-frame.left==axv::dpi_pixels(kFalewebWidth,g_dpi) &&
             frame.bottom-frame.top==axv::dpi_pixels(kFalewebHeight,g_dpi) &&
-            display.bottom<number.top && number.bottom<call.top &&
+            brand.right<=theme.left && brand.bottom<=display.top &&
+            theme.bottom<=display.top && display.bottom<number.top && number.bottom<call.top &&
             call.bottom<footer.top && footer.bottom<=frame.bottom;
         for(int index=0;index<12;++index){
             HWND key=GetDlgItem(window,kDigitStart+index);
@@ -2686,7 +2701,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         // Both action rows must stay in the client content area at every DPI.
         for(unsigned scale:{96u,120u,144u}){
             SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(scale,scale),0);
-            RECT safe_footer{},hangup{},mute{},call_box{},answer{},number_box{};
+            RECT safe_footer{},hangup{},mute{},call_box{},answer{},number_box{},brand_box{},theme_box{},display_box{};
+            GetWindowRect(g_brand_label,&brand_box);
+            GetWindowRect(GetDlgItem(window,kTheme),&theme_box);
+            GetWindowRect(g_runtime_banner,&display_box);
+            passed=passed && brand_box.right<=theme_box.left &&
+                brand_box.bottom<=display_box.top && theme_box.bottom<=display_box.top;
             GetWindowRect(g_footer_panel,&safe_footer);
             GetWindowRect(GetDlgItem(window,kHangupFuture),&hangup);
             GetWindowRect(GetDlgItem(window,kMuteFuture),&mute);
@@ -2709,6 +2729,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             }
         }
         SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(96,96),0);
+        const bool original_theme=g_dark;
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kTheme,BN_CLICKED),0);
+        passed=passed && g_dark!=original_theme && g_scroll_max==0;
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kTheme,BN_CLICKED),0);
+        passed=passed && g_dark==original_theme && g_scroll_max==0;
         for(int step=0;step<1000;++step){
             SendMessageW(window,WM_MOUSEWHEEL,MAKEWPARAM(0,WHEEL_DELTA),0);
             SendMessageW(window,WM_VSCROLL,SB_BOTTOM,0);
