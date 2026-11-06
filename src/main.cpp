@@ -804,13 +804,20 @@ void apply_faleweb_layout(HWND root) {
 }
 void apply_compact_layout(HWND root) {
     if(g_faleweb_mode){
-        const int client_width=g_faleweb_smoke?kFalewebWidth:kEssentialWidth;
-        const int client_height=g_faleweb_smoke?kFalewebHeight:kEssentialHeight;
-        RECT desired={0,0,axv::dpi_pixels(client_width,g_dpi),axv::dpi_pixels(client_height,g_dpi)};
-        const DWORD style=static_cast<DWORD>(GetWindowLongPtrW(root,GWL_STYLE));
-        AdjustWindowRectExForDpi(&desired,style,FALSE,0,g_dpi);
-        SetWindowPos(root,nullptr,0,0,desired.right-desired.left,
-            desired.bottom-desired.top,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
+        if(g_faleweb_smoke) {
+            // Historical compact smoke measures the *outer* window dimensions.
+            SetWindowPos(root,nullptr,0,0,axv::dpi_pixels(kFalewebWidth,g_dpi),
+                         axv::dpi_pixels(kFalewebHeight,g_dpi),
+                         SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
+        } else {
+            RECT desired={0,0,axv::dpi_pixels(kEssentialWidth,g_dpi),
+                             axv::dpi_pixels(kEssentialHeight,g_dpi)};
+            const DWORD style=static_cast<DWORD>(GetWindowLongPtrW(root,GWL_STYLE));
+            AdjustWindowRectExForDpi(&desired,style,FALSE,0,g_dpi);
+            SetWindowPos(root,nullptr,0,0,desired.right-desired.left,
+                         desired.bottom-desired.top,
+                         SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
+        }
         apply_faleweb_layout(root);return;
     }
     if (g_compact && g_page != 0) show_page(root, 0);
