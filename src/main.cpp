@@ -835,6 +835,15 @@ void apply_compact_layout(HWND root) {
                          desired.bottom-desired.top,
                          SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
         }
+        if(!g_faleweb_smoke){
+            RECT bounds{};
+            GetWindowRect(root,&bounds);
+            const int radius=axv::dpi_pixels(18,g_dpi);
+            HRGN round_corners=CreateRoundRectRgn(0,0,bounds.right-bounds.left,
+                       bounds.bottom-bounds.top,radius,radius);
+            if(round_corners && SetWindowRgn(root,round_corners,TRUE)==0)
+                DeleteObject(round_corners);
+        }
         apply_faleweb_layout(root);return;
     }
     if (g_compact && g_page != 0) show_page(root, 0);
