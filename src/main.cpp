@@ -137,8 +137,10 @@ constexpr int kRuntimeStatusLabel = 2502;
 constexpr int kWindowWidth = 438;
 constexpr int kFalewebWidth=254;
 constexpr int kFalewebHeight=475;
-constexpr int kEssentialWidth=444;
-constexpr int kEssentialHeight=752;
+// The normal Essencial view is 80% of the approved reference canvas.
+constexpr int kEssentialScalePercent=80;
+constexpr int kEssentialWidth=355;
+constexpr int kEssentialHeight=602;
 unsigned g_dpi = axv::kBaseDpi;
 #ifdef AXV_ENABLE_NATIVE_SIP
 constexpr int kFullHeight = 886;
@@ -694,6 +696,10 @@ void show_page(HWND root, int page) {
 // Mini mode keeps only the target and true SIP state, without fake call actions.
 // FaleWEB-inspired compact dialer uses existing live SIP controls, not a
 // duplicate engine. The existing large settings pages remain in memory only.
+void position_essential(HWND child,int x,int y,int width,int height) {
+    auto shrink=[](int value){return (value*kEssentialScalePercent+50)/100;};
+    position_logical(child,shrink(x),shrink(y),shrink(width),shrink(height));
+}
 void apply_faleweb_layout(HWND root) {
     // Original FaleWEB smoke layout is retained unchanged for regression checks.
     // Normal desktop view follows the approved Essencial claro reference.
@@ -716,22 +722,22 @@ void apply_faleweb_layout(HWND root) {
             ShowWindow(item.handle,shown?SW_SHOW:SW_HIDE);
         }
         // Logical coordinates reproduce the proportions of the first approved mockup.
-        position_logical(g_brand_label,85,13,279,39);
-        position_logical(GetDlgItem(root,kTheme),369,15,52,32);
-        position_logical(g_runtime_banner,26,68,391,31);
-        position_logical(g_number,23,124,397,56);
+        position_essential(g_brand_label,85,13,279,39);
+        position_essential(GetDlgItem(root,kTheme),369,15,52,32);
+        position_essential(g_runtime_banner,26,68,391,31);
+        position_essential(g_number,23,124,397,56);
         for(int i=0;i<12;++i)
-            position_logical(GetDlgItem(root,kDigitStart+i),
-                             23+(i%3)*135,192+(i/3)*72,126,64);
-        position_logical(GetDlgItem(root,kCallButton),23,489,397,54);
+            position_essential(GetDlgItem(root,kDigitStart+i),
+                             23+(i%3)*132,192+(i/3)*68,129,64);
+        position_essential(GetDlgItem(root,kCallButton),23,477,397,54);
         // Existing call controls retain their original IDs and SIP handlers.
-        position_logical(GetDlgItem(root,kMuteFuture),23,558,126,45);
-        position_logical(GetDlgItem(root,kHoldFuture),158,558,126,45);
-        position_logical(GetDlgItem(root,kTransferFuture),293,558,127,45);
-        position_logical(GetDlgItem(root,kShowDial),23,649,94,67);
-        position_logical(GetDlgItem(root,kContactsButton),125,649,94,67);
-        position_logical(GetDlgItem(root,kRecentDestinationsButton),227,649,94,67);
-        position_logical(g_faleweb_prefs_button,329,649,94,67);
+        position_essential(GetDlgItem(root,kMuteFuture),23,546,126,45);
+        position_essential(GetDlgItem(root,kHoldFuture),158,546,126,45);
+        position_essential(GetDlgItem(root,kTransferFuture),293,546,127,45);
+        position_essential(GetDlgItem(root,kShowDial),23,637,94,67);
+        position_essential(GetDlgItem(root,kContactsButton),125,637,94,67);
+        position_essential(GetDlgItem(root,kRecentDestinationsButton),227,637,94,67);
+        position_essential(g_faleweb_prefs_button,329,637,94,67);
         // Hangup/answer remain available from the functional call-state
         // controls, but do not crowd the approved idle keypad screen.
         ShowWindow(GetDlgItem(root,kHangupFuture),SW_HIDE);
@@ -2543,7 +2549,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         HDC dc=old_bitmap?back_dc:window_dc;
         FillRect(dc,&rect,g_background_brush);
         if(g_faleweb_mode){
-            const auto outer=g_faleweb_smoke?logical_rect(7,7,247,116):logical_rect(7,7,437,113);
+            const auto outer=g_faleweb_smoke?logical_rect(7,7,247,116):
+                logical_rect(6,6,350,91);
             draw_card(dc,outer,g_high_contrast?background_color():
                 (g_dark?RGB(19,48,86):RGB(225,242,255)),13);
         }else{
