@@ -1607,6 +1607,20 @@ void show_faleweb_actions(HWND owner){
               reinterpret_cast<LPARAM>(GetDlgItem(owner,action.control)));
 }
 
+// Fit the approved fixed-size design to the monitor's usable work area.
+// Keeps the 444x752 proportions with no scrollbars, even at 125%/150% DPI.
+unsigned essential_fit_dpi(HWND window,unsigned requested){
+    if(!g_faleweb_mode || g_faleweb_smoke)return requested;
+    MONITORINFO display{}; display.cbSize=sizeof(display);
+    const HMONITOR monitor=MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST);
+    if(!monitor || !GetMonitorInfoW(monitor,&display))return requested;
+    const int work_width=display.rcWork.right-display.rcWork.left;
+    const int work_height=display.rcWork.bottom-display.rcWork.top;
+    if(work_width<=0 || work_height<=0)return requested;
+    const int fit_width=std::max(64,(work_width-20)*96/kEssentialWidth);
+    const int fit_height=std::max(64,(work_height-20)*96/kEssentialHeight);
+    return static_cast<unsigned>(std::min<int>(requested,std::min(fit_width,fit_height)));
+}
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
     case WM_NCHITTEST: {
@@ -1680,7 +1694,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
 #endif
     case WM_CREATE: {
         g_faleweb_mode=!g_smoke_mode || g_faleweb_smoke;
-        g_dpi=axv::normalized_dpi(GetDpiForWindow(window));
+        g_dpi=essential_fit_dpi(window,axv::normalized_dpi(GetDpiForWindow(window)));
         load_ui_preferences();
         read_windows_contrast();
         g_font_regular = create_font(15, FW_MEDIUM);
@@ -2362,7 +2376,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         break;
     case WM_DPICHANGED: {
         g_scroll_offset = 0; // pixel offsets are invalid after DPI transitions.
-        const unsigned next=axv::normalized_dpi(LOWORD(wparam));
+        const unsigned next=essential_fit_dpi(window,axv::normalized_dpi(LOWORD(wparam)));
         if(next!=g_dpi) {
             g_dpi=next;
             rebuild_fonts();
