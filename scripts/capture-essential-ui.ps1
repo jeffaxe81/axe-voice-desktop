@@ -26,6 +26,10 @@ public static class AxvWindowShot {
     public static extern bool GetWindowRect(IntPtr hwnd,out RECT rect);
     [DllImport("user32.dll", SetLastError=true)]
     public static extern bool PrintWindow(IntPtr hwnd,IntPtr hdc,uint flags);
+    [DllImport("user32.dll",SetLastError=true)]
+    public static extern IntPtr GetDlgItem(IntPtr hwnd,int controlId);
+    [DllImport("user32.dll")]
+    public static extern bool IsWindowVisible(IntPtr hwnd);
 }
 '@
 $process=$null
@@ -72,6 +76,40 @@ try {
     $folder=Split-Path -Parent $Output
     if($folder -and -not (Test-Path -LiteralPath $folder)){
         New-Item -ItemType Directory -Force -Path $folder | Out-Null
+    }
+    # Inspect real child HWNDs, not just an idealized coordinate model.
+    $required=@(1001,1002,2001,2013,2011,2015,2301,2302,2303,2800)
+    $required+=@(2100..2111)
+    foreach($id in $required){
+        $control=[AxvWindowShot]::GetDlgItem($handle,[int]$id)
+        if($control -eq [IntPtr]::Zero){
+            throw "Approved Option 1 control missing from real window: $id"
+        }
+        if(-not [AxvWindowShot]::IsWindowVisible($control)){
+            throw "Approved Option 1 control is hidden: $id"
+        }
+    }
+    for($digit=0;$digit -lt 12;$digit++){
+        $key=[AxvWindowShot]::GetDlgItem($handle,2100+$digit)
+        $r=New-Object AxvWindowShot+RECT
+        if(-not [AxvWindowShot]::GetWindowRect($key,[ref]$r)){
+            throw "Unable to inspect digit $digit"
+        }
+        if($r.Right -le $r.Left -or $r.Bottom -le $r.Top){
+            throw "Digit has invalid bounds: $digit"
+        }
+        if(($digit % 3) -ne 2){
+            $next=[AxvWindowShot]::GetDlgItem($handle,2101+$digit)
+            $n=New-Object AxvWindowShot+RECT
+            [void][AxvWindowShot]::GetWindowRect($next,[ref]$n)
+            if($r.Right -gt $n.Left){throw "Horizontal keypad overlap at digit $digit"}
+        }
+        if($digit -lt 9){
+            $next=[AxvWindowShot]::GetDlgItem($handle,2103+$digit)
+            $n=New-Object AxvWindowShot+RECT
+            [void][AxvWindowShot]::GetWindowRect($next,[ref]$n)
+            if($r.Bottom -gt $n.Top){throw "Vertical keypad overlap at digit $digit"}
+        }
     }
     $bitmap.Save($Output,[System.Drawing.Imaging.ImageFormat]::Png)
     Write-Host ("AXE Voice visual evidence: {0} ({1} x {2})" -f $Output,$width,$height)
