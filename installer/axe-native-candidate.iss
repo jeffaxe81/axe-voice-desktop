@@ -19,13 +19,17 @@ OutputBaseFilename=AXE-Voice-Native-Candidate-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=..\assets\axe_voice.ico
 UninstallDisplayIcon={app}\AXE-Voice.exe
 CloseApplications=no
 DisableProgramGroupPage=yes
 [Files]
 Source: "{#CandidateSource}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+[Tasks]
+Name: "desktopicon"; Description: "Criar atalho do AXE Voice na área de trabalho"; GroupDescription: "Atalhos:"; Flags: checkedonce
 [Icons]
-Name: "{group}\AXE Voice Native Candidate"; Filename: "{app}\AXE-Voice.exe"
+Name: "{group}\AXE Voice Native Candidate"; Filename: "{app}\AXE-Voice.exe"; IconFilename: "{app}\AXE-Voice.exe"
+Name: "{autodesktop}\AXE Voice"; Filename: "{app}\AXE-Voice.exe"; IconFilename: "{app}\AXE-Voice.exe"; Tasks: desktopicon
 [Registry]
 ; Per-user URL protocol. The running app always confirms external requests.
 Root: HKCU; Subkey: "Software\Classes\axvoice"; ValueType: string; ValueName: ""; ValueData: "URL:AXE Voice Click-to-Call"; Flags: uninsdeletekey
