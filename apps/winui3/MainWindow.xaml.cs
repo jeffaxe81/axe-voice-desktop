@@ -25,6 +25,13 @@ public sealed partial class MainWindow : Window
         AutomationProperties.SetName(ThemeToggle,"Usar tema escuro");
         _profile=_profileStore.Load();
         ApplyWindowSize();
+        try {
+            AppWindow.SetIcon(System.IO.Path.Combine(AppContext.BaseDirectory,
+                "Assets", "axe-voice.ico"));
+        }
+        catch (Exception) {
+            // Keep the app usable when the preview is launched without assets.
+        }
         RefreshMonitor();
         RefreshFavorites();
         ValidateDestination();

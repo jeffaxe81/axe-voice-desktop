@@ -10,6 +10,7 @@ on:
       - "CMakeLists.txt"
       - ".github/workflows/winui3-preview.yml"
       - "scripts/check-winui3-theme.ps1"
+      - "scripts/check-winui3-brand.ps1"
   push:
     branches: [main]
     paths:
@@ -20,6 +21,7 @@ on:
       - "CMakeLists.txt"
       - ".github/workflows/winui3-preview.yml"
       - "scripts/check-winui3-theme.ps1"
+      - "scripts/check-winui3-brand.ps1"
   workflow_dispatch:
 permissions:
   contents: read
@@ -32,6 +34,9 @@ jobs:
       - name: Verify WinUI 3 light/dark XAML theme contract
         shell: pwsh
         run: ./scripts/check-winui3-theme.ps1
+      - name: Verify approved multi-resolution AXE Voice branding
+        shell: pwsh
+        run: ./scripts/check-winui3-brand.ps1
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
@@ -67,6 +72,7 @@ jobs:
           Copy-Item build-winui-bridge/Release/axv_frontend_bridge.dll build/winui3-preview/ -ErrorAction Stop
           if (!(Test-Path build/winui3-preview/AXEVoice.WinUI3.exe)) { throw 'WinUI3 EXE missing' }
           if (!(Test-Path build/winui3-preview/axv_frontend_bridge.dll)) { throw 'Shared native bridge missing' }
+          if (!(Test-Path build/winui3-preview/Assets/axe-voice.ico)) { throw 'Approved AXE Voice icon missing from published preview' }
           "PREVIA DE INTERFACE, NAO INCLUI MOTOR SIP OPERACIONAL. Requer Windows App Runtime estavel compativel." | Set-Content -Encoding UTF8 build/winui3-preview/LEIA-ME.txt
       - uses: actions/upload-artifact@v4
         with:
