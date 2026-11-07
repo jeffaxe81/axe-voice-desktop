@@ -8,6 +8,10 @@ on:
       - 'tests/run_native_sip_loopback.py'
       - 'src/baresip_sip_engine.cpp'
       - 'src/native_account_config.h'
+      - 'src/main.cpp'
+      - 'src/sip_engine.h'
+      - 'src/account_form_feedback.h'
+      - 'tests/native_sip_engine_smoke.cpp'
   pull_request:
     branches: [main]
     paths:
