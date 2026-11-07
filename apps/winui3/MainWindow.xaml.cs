@@ -41,7 +41,7 @@ public sealed partial class MainWindow : Window
             _closing=true;
             _sipTimer.Stop();
             // Stop the reactor outside DllMain, before process unload.
-            (void)NativeBridge.Disconnect();
+            _ = NativeBridge.Disconnect();
         };
     }
 
@@ -141,21 +141,121 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private NativeCallUiProjection CurrentCallUi()
+    {
+        var value=NativeBridge.Validate(Destination.Text??"");
+        return NativeCallUiProjector.Project(
+            _ready,_snapshot.BackendAttached,_snapshot.Connection,_snapshot.View,
+            _snapshot.CanDial,_snapshot.CanAnswer,_snapshot.CanHangup,
+            _snapshot.Session,_snapshot.CallId,
+            value==NativeBridge.DestinationStatus.Valid);
+    }
+
+    private void UpdateCallControls()
+    {
+        var view=CurrentCallUi();
+        bool receiving=view.CanAnswer;
+        bool ending=view.CanHangup;
+        CallButton.Visibility=receiving||ending?Visibility.Collapsed:Visibility.Visible;
+        CallButton.IsEnabled=!_commandBusy && view.CanDial;
+        CallButton.Content=_ready && _snapshot.BackendAttached==1
+            ?"Ligar":"Ligar · indisponível";
+        AnswerButton.Visibility=receiving?Visibility.Visible:Visibility.Collapsed;
+        AnswerButton.IsEnabled=!_commandBusy && receiving;
+        HangupButton.Visibility=ending?Visibility.Visible:Visibility.Collapsed;
+        HangupButton.Content=receiving?"Recusar":"Encerrar";
+        HangupButton.IsEnabled=!_commandBusy && ending;
+        Grid.SetColumn(HangupButton,receiving?1:0);
+        Grid.SetColumnSpan(HangupButton,receiving?1:2);
+        ConnectButton.Content=view.CanDisconnect?"Desconectar":"Conectar";
+        ConnectButton.IsEnabled=!_commandBusy &&
+            (view.CanConnect||view.CanDisconnect);
+    }
+
+    private static string CommandFeedback(NativeBridge.CommandResult result) =>
+        result switch {
+            NativeBridge.CommandResult.Accepted=>
+                "Comando enviado ao motor SIP; confirmação da central pendente",
+            NativeBridge.CommandResult.MissingAccount=>
+                "Configure a conta no AXE Voice Win32 e marque salvar senha. "+
+                "Confira transporte UDP/TLS e certificado CA.",
+            NativeBridge.CommandResult.Unavailable=>
+                "Esta instalação é a prévia sem motor SIP nativo",
+            NativeBridge.CommandResult.Invalid=>"Destino SIP inválido",
+            _=>"Comando recusado: sessão mudou ou motor indisponível"
+        };
+
+    private async void Connect_Click(object sender,RoutedEventArgs e)
+    {
+        if(_closing || _commandBusy)return;
+        var state=CurrentCallUi();
+        if(!state.CanConnect && !state.CanDisconnect)return;
+        _commandBusy=true;
+        UpdateCallControls();
+        var result=await Task.Run(()=>
+            state.CanDisconnect?NativeBridge.Disconnect():NativeBridge.ConnectSaved());
+        if(_closing){
+            // Connection completed after window close: ensure reactor is stopped.
+            await Task.Run(NativeBridge.Disconnect);
+            return;
+        }
+        _commandBusy=false;
+        RefreshMonitor();
+        BackendHint.Text=result==NativeBridge.CommandResult.Accepted
+            ?(state.CanDisconnect
+                ?"Motor SIP desconectado"
+                :"Registro SIP solicitado; aguardando confirmação da central")
+            :CommandFeedback(result);
+        UpdateCallControls();
+    }
+
+    private void Call_Click(object sender,RoutedEventArgs e)
+    {
+        if(_commandBusy || !CurrentCallUi().CanDial)return;
+        var bound=_snapshot;
+        var result=NativeBridge.Dial(Destination.Text,bound.Session);
+        DestinationFeedback.Text=CommandFeedback(result);
+        RefreshMonitor();
+    }
+
+    private void Answer_Click(object sender,RoutedEventArgs e)
+    {
+        if(_commandBusy || !CurrentCallUi().CanAnswer)return;
+        var bound=_snapshot;
+        var result=NativeBridge.Answer(bound.Session,bound.CallId);
+        BackendHint.Text=CommandFeedback(result);
+        RefreshMonitor();
+    }
+
+    private void Hangup_Click(object sender,RoutedEventArgs e)
+    {
+        if(_commandBusy || !CurrentCallUi().CanHangup)return;
+        var bound=_snapshot;
+        var result=NativeBridge.Hangup(bound.Session,bound.CallId);
+        BackendHint.Text=CommandFeedback(result);
+        RefreshMonitor();
+    }
+
     private void RefreshMonitor()
     {
         _ready=NativeBridge.TryRead(out _snapshot);
-        SipStatusText.Text="● SIP INDISPONÍVEL";
-        BackendHint.Text=_ready
-            ? (_snapshot.BackendAttached==0
-                ? "Bridge C++ conectada · motor SIP não vinculado"
-                : "Bridge presente · comandos WinUI 3 ainda bloqueados")
-            : "Bridge nativa ausente ou incompatível";
+        var state=CurrentCallUi();
+        SipStatusText.Text=state.StatusLabel;
+        BackendHint.Text=!_ready
+            ?"Bridge nativa ausente ou incompatível"
+            :_snapshot.BackendAttached==0
+                ?"Prévia sem motor SIP: instale o candidato nativo"
+                :_snapshot.Connection==2
+                    ?"Registro confirmado pelo SDK; áudio exige homologação"
+                    :_snapshot.Connection==1
+                        ?"Aguardando confirmação de registro da central"
+                        :"Motor SIP disponível; conexão manual necessária";
         string report=SipDiagnosticReport.Format(
             _ready,_ready && _snapshot.BackendAttached!=0,
-            _ready?_snapshot.AbiVersion:0);
+            _ready?_snapshot.AbiVersion:0,_snapshot.Connection,_snapshot.View);
         if(MonitorTools.Visibility==Visibility.Visible)
             DetailsDescription.Text=report;
-        CallButton.IsEnabled=false;
+        UpdateCallControls();
     }
 
     private void RefreshMonitor_Click(object sender,RoutedEventArgs e)=>RefreshMonitor();
@@ -166,7 +266,7 @@ public sealed partial class MainWindow : Window
         var data=new DataPackage();
         data.SetText(SipDiagnosticReport.Format(
             _ready,_ready && _snapshot.BackendAttached!=0,
-            _ready?_snapshot.AbiVersion:0));
+            _ready?_snapshot.AbiVersion:0,_snapshot.Connection,_snapshot.View));
         Clipboard.SetContent(data);
         MonitorFeedback.Text="Diagnóstico técnico copiado (sem credenciais)";
     }
