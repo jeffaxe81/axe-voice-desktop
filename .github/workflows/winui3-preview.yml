@@ -1,0 +1,66 @@
+name: AXE Voice WinUI3 Preview
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/winui3/**"
+      - "src/frontend_shared/**"
+      - "src/essential_call_actions.h"
+      - "src/sip_runtime_observation.h"
+      - "CMakeLists.txt"
+      - ".github/workflows/winui3-preview.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/winui3/**"
+      - "src/frontend_shared/**"
+      - "src/essential_call_actions.h"
+      - "src/sip_runtime_observation.h"
+      - "CMakeLists.txt"
+      - ".github/workflows/winui3-preview.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-winui3:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Configure native shared presentation bridge
+        shell: pwsh
+        run: |
+          cmake -S . -B build-winui-bridge -G "Visual Studio 17 2022" -A x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Compile bridge and execute native contract test
+        shell: pwsh
+        run: |
+          cmake --build build-winui-bridge --config Release --target test_frontend_shared_abi
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir build-winui-bridge -C Release -R '^frontend_shared_abi$' --output-on-failure
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Restore and compile real WinUI 3 project
+        shell: pwsh
+        run: |
+          dotnet restore apps/winui3/AXEVoice.WinUI3.csproj -p:Platform=x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build apps/winui3/AXEVoice.WinUI3.csproj -c Release -p:Platform=x64 --no-restore
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Publish unpackaged UI-only preview with native bridge
+        shell: pwsh
+        run: |
+          dotnet publish apps/winui3/AXEVoice.WinUI3.csproj -c Release -r win-x64 -p:Platform=x64 -p:SelfContained=false -o build/winui3-preview
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item build-winui-bridge/Release/axv_frontend_bridge.dll build/winui3-preview/ -ErrorAction Stop
+          if (!(Test-Path build/winui3-preview/AXEVoice.WinUI3.exe)) { throw 'WinUI3 EXE missing' }
+          if (!(Test-Path build/winui3-preview/axv_frontend_bridge.dll)) { throw 'Shared native bridge missing' }
+          "PREVIA DE INTERFACE, NAO INCLUI MOTOR SIP OPERACIONAL. Requer Windows App Runtime estavel compativel." | Set-Content -Encoding UTF8 build/winui3-preview/LEIA-ME.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AXE-Voice-WinUI3-Preview-No-SIP
+          path: build/winui3-preview/
+          if-no-files-found: error
+          retention-days: 14
