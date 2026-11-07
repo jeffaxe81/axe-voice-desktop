@@ -103,6 +103,43 @@ jobs:
           Set-Content $Stale 'stale fixture'
           ./scripts/package-native-candidate.ps1
           if (Test-Path $Stale) { throw 'Stale staging DLL survived packaging' }
+      - uses: actions/setup-dotnet@v4
+        if: matrix.profile == 'tls-media'
+        with:
+          dotnet-version: '10.0.x'
+      - name: Package WinUI 3 with actual native SIP host (laboratory only)
+        if: matrix.profile == 'tls-media'
+        shell: pwsh
+        run: |
+          $Out = 'build/winui3-native-candidate'
+          dotnet publish apps/winui3/AXEVoice.WinUI3.csproj -c Release -r win-x64 -p:Platform=x64 -p:SelfContained=false -o $Out
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $Native = 'build/native-sdk-tls-media/product/Release/axv_frontend_bridge.dll'
+          if (!(Test-Path $Native)) { throw 'Native Baresip bridge missing' }
+          Copy-Item $Native $Out -Force
+          Get-ChildItem 'build/native-sdk-tls-media/prefix/bin' -Filter '*.dll' |
+            Copy-Item -Destination $Out -Force
+          New-Item -ItemType Directory -Force (Join-Path $Out 'licenses') | Out-Null
+          Copy-Item 'build/native-sdk-tls-media/prefix/licenses/*' (Join-Path $Out 'licenses') -Force
+          if (!(Test-Path (Join-Path $Out 'AXEVoice.WinUI3.exe'))) { throw 'WinUI 3 exe missing' }
+          if (!(Test-Path (Join-Path $Out 'axv_frontend_bridge.dll'))) { throw 'Native bridge missing' }
+          @(
+            'AXE VOICE WINUI 3 -- CANDIDATO NATIVO DE LABORATORIO',
+            'Nao homologado; sem assinatura; nao aprovado para producao.',
+            'Acoes SIP so sao liberadas apos clicar CONECTAR, utilizar conta previamente',
+            'salva no Windows pelo AXE Voice Win32 e obter confirmacao nativa do registro.',
+            'Transporte UDP/TLS explicito; TLS requer CA. Sem downgrades.',
+            'Requer Windows App Runtime 2.6.5 e .NET 10 desktop runtime compativeis.',
+            'Testes com central real e audio bidirecional ainda pendentes.'
+          ) | Set-Content -Encoding UTF8 (Join-Path $Out 'LEIA-ME-CANDIDATO.txt')
+      - name: Publish optional WinUI 3 native SIP candidate
+        if: matrix.profile == 'tls-media'
+        uses: actions/upload-artifact@v4
+        with:
+          name: AXE-Voice-WinUI3-Native-SIP-Lab-Candidate
+          path: build/winui3-native-candidate/
+          if-no-files-found: error
+          retention-days: 14
       - name: Publish candidate installer
         if: matrix.profile == 'tls-media'
         uses: actions/upload-artifact@v4
