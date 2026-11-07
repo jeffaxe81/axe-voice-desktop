@@ -323,6 +323,48 @@ bool g_account_invalid_user = false;
 bool g_account_invalid_port = false;
 bool g_tray_visible = false;
 constexpr wchar_t kPrefsKey[] = L"Software\\AXEVoice\\Desktop";
+#ifdef AXV_ENABLE_NATIVE_SIP
+// Persist only non-secret account identifiers, and only after opting into
+// remembering the SIP password. Password bytes always remain in Credential Manager.
+bool save_sip_account_identifiers() {
+    const auto server=axv::pref_edit_text(g_server);
+    const auto user=axv::pref_edit_text(g_user);
+    const auto port=axv::pref_edit_text(g_port);
+    if(server.empty() || user.empty() || port.empty())return false;
+    HKEY key=nullptr;
+    if(RegCreateKeyExW(HKEY_CURRENT_USER,kPrefsKey,0,nullptr,0,KEY_SET_VALUE,
+                       nullptr,&key,nullptr)!=ERROR_SUCCESS)return false;
+    const auto write=[&](const wchar_t* name,const std::wstring& value){
+        return RegSetValueExW(key,name,0,REG_SZ,
+            reinterpret_cast<const BYTE*>(value.c_str()),
+            static_cast<DWORD>((value.size()+1)*sizeof(wchar_t)))==ERROR_SUCCESS;
+    };
+    const bool ok=write(L"SipServer",server) && write(L"SipUser",user) && write(L"SipPort",port);
+    RegCloseKey(key);
+    return ok;
+}
+void clear_sip_account_identifiers(){
+    HKEY key=nullptr;
+    if(RegOpenKeyExW(HKEY_CURRENT_USER,kPrefsKey,0,KEY_SET_VALUE,&key)!=ERROR_SUCCESS)return;
+    RegDeleteValueW(key,L"SipServer");
+    RegDeleteValueW(key,L"SipUser");
+    RegDeleteValueW(key,L"SipPort");
+    RegCloseKey(key);
+}
+void restore_sip_account_identifiers(){
+    const auto restore=[](const wchar_t* name,HWND edit,DWORD max_chars){
+        if(!edit)return;
+        std::wstring buffer(static_cast<size_t>(max_chars)+1,L'\0');
+        DWORD bytes=static_cast<DWORD>(buffer.size()*sizeof(wchar_t));
+        if(RegGetValueW(HKEY_CURRENT_USER,kPrefsKey,name,RRF_RT_REG_SZ,nullptr,
+                        buffer.data(),&bytes)==ERROR_SUCCESS)
+            SetWindowTextW(edit,buffer.c_str());
+    };
+    restore(L"SipServer",g_server,255);
+    restore(L"SipUser",g_user,128);
+    restore(L"SipPort",g_port,20);
+}
+#endif
 int g_page = 0; // 0 = dial, 1 = settings, 2 = audio, 3 = monitor
 std::vector<HWND> g_dial_controls;
 std::vector<HWND> g_monitor_controls;
@@ -1635,10 +1677,12 @@ void open_faleweb_preferences(HWND owner) {
             if(!forget_sip_credential()){
                 SetWindowTextW(g_process_status,L"Nao foi possivel excluir a senha do Windows.");
                 remember=true;
-            }
+            } else clear_sip_account_identifiers();
         } else if(!prefs.password.empty() && !save_sip_credential(prefs.password)) {
             SetWindowTextW(g_process_status,L"Falha ao salvar senha SIP no Windows.");
             remember=false;
+        } else if(!prefs.password.empty() || sip_credential_exists()) {
+            (void)save_sip_account_identifiers();
         }
         SendMessageW(g_remember_password,BM_SETCHECK,
             remember?BST_CHECKED:BST_UNCHECKED,0);
@@ -1875,6 +1919,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_user = make_edit(window, L"", kUserEdit, 39, 355, 216, 38, 1);
         g_port = make_edit(window, L"5060", kPortEdit, 267, 355, 122, 38, 1);
 #ifdef AXV_ENABLE_NATIVE_SIP
+        restore_sip_account_identifiers();
         make_label(window,L"Senha SIP",39,402,190,20,1);
         g_password=make_edit(window,L"",kPasswordEdit,39,425,350,32,1);
         SetWindowLongPtrW(g_password,GWL_STYLE,GetWindowLongPtrW(g_password,GWL_STYLE)|ES_PASSWORD);
@@ -2189,12 +2234,14 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 if(!forget_sip_credential()) {
                     SendMessageW(g_remember_password,BM_SETCHECK,BST_CHECKED,0);
                     SetWindowTextW(g_process_status,L"Nao foi possivel excluir a senha salva do Windows.");
-                }
+                } else clear_sip_account_identifiers();
             } else {
                 auto secret=axv::pref_edit_text(g_password);
-                if(!secret.empty() && !save_sip_credential(secret)){
-                    SendMessageW(g_remember_password,BM_SETCHECK,BST_UNCHECKED,0);
-                    SetWindowTextW(g_process_status,L"Senha nao salva; confira servidor e usuario SIP.");
+                if(!secret.empty()){
+                    if(!save_sip_credential(secret)){
+                        SendMessageW(g_remember_password,BM_SETCHECK,BST_UNCHECKED,0);
+                        SetWindowTextW(g_process_status,L"Senha nao salva; confira servidor e usuario SIP.");
+                    } else (void)save_sip_account_identifiers();
                 }
                 if(!secret.empty())SecureZeroMemory(secret.data(),secret.size()*sizeof(wchar_t));
             }
@@ -2213,7 +2260,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 } else if(!save_sip_credential(secret)){
                     save_failed=true;
                     SendMessageW(g_remember_password,BM_SETCHECK,BST_UNCHECKED,0);
-                }
+                } else (void)save_sip_account_identifiers();
                 if(!secret.empty())SecureZeroMemory(secret.data(),secret.size()*sizeof(wchar_t));
             }
             const auto result=axv::register_native_account_ui(native_engine(),
