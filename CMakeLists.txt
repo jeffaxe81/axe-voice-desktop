@@ -214,6 +214,23 @@ add_library(axv_frontend_bridge SHARED src/frontend_shared/axv_frontend_api.cpp)
 target_compile_features(axv_frontend_bridge PRIVATE cxx_std_17)
 target_link_libraries(axv_frontend_bridge PRIVATE axv_sip_address)
 target_compile_definitions(axv_frontend_bridge PRIVATE AXV_FRONTEND_BRIDGE_BUILD)
+# In the audited native SDK profile only, the SAME Baresip implementation
+# is linked into the WinUI3 bridge. Generic Preview stays read-only/offline.
+if(AXV_ENABLE_NATIVE_SIP AND AXV_NATIVE_TLS_MEDIA)
+  target_sources(axv_frontend_bridge PRIVATE
+    src/frontend_shared/axv_native_host.cpp)
+  target_compile_definitions(axv_frontend_bridge PRIVATE
+    AXV_FRONTEND_NATIVE_SIP WIN32 NOMINMAX WIN32_LEAN_AND_MEAN)
+  target_link_libraries(axv_frontend_bridge PRIVATE axv_native_sip
+    advapi32 OpenSSL::SSL OpenSSL::Crypto
+    qwave iphlpapi wsock32 ws2_32 dbghelp
+    winmm gdi32 crypt32 strmiids ole32 oleaut32)
+  add_executable(axv_native_winui_host_smoke
+    tests/native_winui_host_smoke.cpp)
+  target_compile_features(axv_native_winui_host_smoke PRIVATE cxx_std_17)
+  target_link_libraries(axv_native_winui_host_smoke PRIVATE axv_frontend_bridge)
+endif()
+
 if(MSVC)
   target_compile_options(axv_frontend_bridge PRIVATE /utf-8 /W4)
 endif()
