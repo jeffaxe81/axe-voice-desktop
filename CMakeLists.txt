@@ -3,6 +3,8 @@ project(AXEVoiceDesktop VERSION 0.83.0 LANGUAGES CXX)
 if(NOT WIN32)
   message(FATAL_ERROR "This bootstrap currently supports Windows only")
 endif()
+enable_language(RC)
+
 add_library(axv_sip_address STATIC src/sip_address.cpp)
 target_compile_features(axv_sip_address PUBLIC cxx_std_17)
 add_library(axv_audio_devices STATIC src/audio_devices_win32.cpp)
@@ -216,7 +218,16 @@ if(MSVC)
   target_compile_options(axv_frontend_bridge PRIVATE /utf-8 /W4)
 endif()
 
-add_executable(AXEVoice WIN32 src/main.cpp src/diagnostic_clipboard_win32.cpp)
+# Include the approved compact brand icon in the actual EXE resources; do not
+# require a separate ICO beside the installed softphone.
+set(AXV_BRAND_ICON_PATH "${CMAKE_CURRENT_SOURCE_DIR}/assets/axe-voice.ico")
+if(NOT EXISTS "${AXV_BRAND_ICON_PATH}")
+  message(FATAL_ERROR "Approved AXE Voice brand icon missing: ${AXV_BRAND_ICON_PATH}")
+endif()
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/axe_voice.rc.in"
+               "${CMAKE_CURRENT_BINARY_DIR}/axe_voice.rc" @ONLY)
+add_executable(AXEVoice WIN32 src/main.cpp src/diagnostic_clipboard_win32.cpp
+  "${CMAKE_CURRENT_BINARY_DIR}/axe_voice.rc")
 target_compile_features(AXEVoice PRIVATE cxx_std_17)
 target_compile_definitions(AXEVoice PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX WINVER=0x0A00 _WIN32_WINNT=0x0A00)
 if(MSVC)
