@@ -74,5 +74,16 @@ int main() {
                false,incoming_call,true,false);
         expect("batch stale",s,s.session+1,true,V::Idle,false,false,false,false);
     }
+    // Status color must never turn green without native registration proof.
+    using S=axv::EssentialConnectionSignal;
+    if(axv::essential_connection_signal(stopped,0)!=S::Offline ||
+       axv::essential_connection_signal(registering,15)!=S::Pending ||
+       axv::essential_connection_signal(registered,15)!=S::Online ||
+       axv::essential_connection_signal(incoming,15)!=S::Online ||
+       axv::essential_connection_signal(established,15)!=S::Online ||
+       axv::essential_connection_signal(unverified,15)!=S::Offline ||
+       axv::essential_connection_signal(registered,16)!=S::Offline ||
+       axv::essential_connection_signal(failed,15)!=S::Offline)
+        std::abort();
     std::puts("Essential SIP action projector: 2,000 trusted + 2,000 stale simulated states OK");
 }
