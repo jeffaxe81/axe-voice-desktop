@@ -321,6 +321,7 @@ axv::EssentialCallActions g_essential_actions{};
 axv::EssentialConnectionSignal g_essential_signal=axv::EssentialConnectionSignal::Offline;
 HBRUSH g_essential_status_brush[3]{};
 HWND g_brand_label=nullptr;
+HWND g_brand_icon=nullptr;
 HWND g_faleweb_prefs_button=nullptr;
 HWND g_faleweb_actions_button=nullptr;
 HBRUSH g_faleweb_display_brush=nullptr;
@@ -463,6 +464,12 @@ void save_ui_preferences() {
     RegCloseKey(key);
 }
 
+constexpr int kBrandIconResourceId=101; // src/axe_voice.rc.in
+HICON axe_voice_brand_icon() {
+    const HICON icon=LoadIconW(GetModuleHandleW(nullptr),
+                              MAKEINTRESOURCEW(kBrandIconResourceId));
+    return icon?icon:LoadIconW(nullptr,IDI_APPLICATION);
+}
 NOTIFYICONDATAW create_tray_data(HWND window) {
     NOTIFYICONDATAW tray = {};
     tray.cbSize = sizeof(tray);
@@ -470,7 +477,7 @@ NOTIFYICONDATAW create_tray_data(HWND window) {
     tray.uID = kTrayIconId;
     tray.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     tray.uCallbackMessage = kTrayCallback;
-    tray.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    tray.hIcon = axe_voice_brand_icon();
     const wchar_t caption[] = L"AXE Voice - laboratorio";
     std::copy(std::begin(caption), std::end(caption), std::begin(tray.szTip));
     return tray;
@@ -844,12 +851,15 @@ void apply_faleweb_layout(HWND root) {
             for (const auto& item : g_layout) {
                 const int id=GetDlgCtrlID(item.handle);
                 const bool shown=item.handle==g_brand_label ||
+                    item.handle==g_brand_icon ||
                     item.handle==g_runtime_banner ||
                     item.handle==g_monitor_events ||
                     id==kTheme || id==kShowSipMonitor;
                 ShowWindow(item.handle,shown?SW_SHOW:SW_HIDE);
             }
-            position_essential(g_brand_label,23,13,215,39);
+            position_essential(g_brand_icon,23,13,42,39);
+            position_essential(g_brand_icon,23,13,42,39);
+        position_essential(g_brand_label,85,13,165,39);
             position_essential(GetDlgItem(root,kTheme),369,15,52,32);
             position_essential(GetDlgItem(root,kShowSipMonitor),253,15,108,32);
             position_essential(g_runtime_banner,23,68,397,31);
@@ -866,7 +876,7 @@ void apply_faleweb_layout(HWND root) {
             const bool digit=id>=kDigitStart && id<kDigitStart+12;
             const bool shown=digit || item.handle==g_number ||
                 item.handle==g_runtime_banner || item.handle==g_brand_label ||
-                id==kTheme || id==kShowSipMonitor || id==kShowDial || id==kFalewebPrefsButton ||
+                item.handle==g_brand_icon || id==kTheme || id==kShowSipMonitor || id==kShowDial || id==kFalewebPrefsButton ||
                 id==kContactsButton || id==kRecentDestinationsButton ||
                 id==kCallButton || id==kMuteFuture || id==kHoldFuture ||
                 id==kTransferFuture || id==kHangupFuture
@@ -1961,6 +1971,11 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         g_faleweb_letters_font=create_font(9,FW_NORMAL);
         refresh_brushes();
         g_brand_label=make_label(window, L"AXE Voice", 24, 16, 240, 37, -1, g_font_title);
+        g_brand_icon=make_control(window,L"STATIC",L"",SS_ICON|SS_CENTERIMAGE,
+            23,13,42,39,0);
+        SendMessageW(g_brand_icon,STM_SETICON,
+                     reinterpret_cast<WPARAM>(axe_voice_brand_icon()),0);
+        ShowWindow(g_brand_icon,g_faleweb_mode && !g_faleweb_smoke?SW_SHOW:SW_HIDE);
         make_label(window, L"SOFTPHONE DESKTOP  /  LAB", 25, 57, 270, 22, -1, g_font_small);
         make_button(window, g_compact ? L"MAX" : L"MINI", kCompact, 344, 65, 70, 29);
         make_button(window, L"?", kHelpButton, 301, 65, 34, 29);
@@ -3122,6 +3137,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
     wc.hInstance = instance;
     wc.lpszClassName = className;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    wc.hIcon=axe_voice_brand_icon();
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&wc)) return 1;
 #ifdef AXV_ENABLE_NATIVE_SIP
@@ -3185,7 +3201,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         // which only checked the dial input and primary call action.
         const auto essential_geometry_ok=[&](){
             std::vector<HWND> controls{
-                g_brand_label,GetDlgItem(window,kTheme),
+                g_brand_icon,g_brand_label,GetDlgItem(window,kTheme),
                 GetDlgItem(window,kShowSipMonitor),g_runtime_banner,g_number,
                 GetDlgItem(window,kCallButton),GetDlgItem(window,kHangupFuture),
                 GetDlgItem(window,kMuteFuture),GetDlgItem(window,kHoldFuture),
@@ -3272,6 +3288,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             }
             return true;
         };
+        passed=passed && axe_voice_brand_icon()!=LoadIconW(nullptr,IDI_APPLICATION) &&
+            GetClassLongPtrW(window,GCLP_HICON)!=0;
         const auto apply=[&](axv::SipStatus status,std::uint64_t call,
                              bool verified,axv::EssentialCallView expected){
             axv::SipRuntimeObservation snapshot{axv::RuntimeProcess::Running,status,
