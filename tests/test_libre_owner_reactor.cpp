@@ -186,9 +186,15 @@ int main() {
 
     BaresipNativeLibreReactor throwing([] {throw std::runtime_error("test-only");},
                                       {},{},5ms);
-    if(!throwing.start()) return fail_with_diagnostics(11);
-    // Require an actual reported hook fault before stopping. Fixed sleeps
-    // made the assertion depend on runner thread scheduling, not behavior.
+    // start() can return false if the 5ms timer executes the throwing hook
+    // before the calling thread reads its ready snapshot. That immediate,
+    // correctly reported HookFailed is not a startup failure.
+    const bool throwing_started=throwing.start();
+    if(!throwing_started &&
+       throwing.snapshot().fault!=LibreReactorFault::HookFailed)
+        return fail_with_diagnostics(11);
+    // Wait for a real callback fault rather than assuming an order between
+    // the worker's first tick and the caller's start() return.
     const bool fault_seen=observed_within([&] {
         return throwing.snapshot().fault==LibreReactorFault::HookFailed;
     });
