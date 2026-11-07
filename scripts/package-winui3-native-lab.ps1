@@ -10,6 +10,7 @@ $prefix=Join-Path $root 'build/native-sdk-tls-media/prefix'
 $output=Join-Path $root 'build/winui3-native-lab-installer'
 $target=Join-Path $root 'build/winui3-native-lab-install-check'
 $spec=Join-Path $root 'installer/axe-winui3-native-lab.iss'
+$setupLog=Join-Path $output 'winui3-install-lab.log'
 
 function Require-File([string]$path) {
     if(!(Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing laboratory distribution file: $path" }
@@ -67,11 +68,13 @@ if(!$desktop){throw 'Could not resolve interactive current-user Desktop folder'}
 $link=Join-Path $desktop 'AXE Voice WinUI 3 Native Lab.lnk'
 if(Test-Path -LiteralPath $link){throw 'WinUI 3 lab test requires no prior desktop shortcut'}
 function Wait-ProcessBounded([string]$file,[string[]]$arguments,[string]$stage,[int]$seconds=120) {
-    # Fail closed before invoking Inno. A missing /VERYSILENT would present
-    # an interactive wizard and block an unattended CI runner indefinitely.
+    # Inno Setup may display its startup prompt even with /VERYSILENT.
+    # /SP- disables it; /LOG provides evidence of actual setup execution.
     if (!($arguments -contains '/VERYSILENT') -or
         !($arguments -contains '/SUPPRESSMSGBOXES') -or
-        !($arguments -contains '/NORESTART')) {
+        !($arguments -contains '/NORESTART') -or
+        !($arguments -contains '/SP-') -or
+        !(@($arguments | Where-Object { $_ -like '/LOG=*' }).Count -eq 1)) {
         throw "$stage requires explicit silent installer arguments"
     }
     # Start-Process -Wait waits for the entire descendant process tree and may
@@ -113,7 +116,13 @@ function Wait-InstalledCompletion([int]$seconds=150) {
     } while([DateTime]::UtcNow -lt $deadline)
     $default=Join-Path $env:LOCALAPPDATA 'Programs/AXEVoiceWinUI3NativeLab/unins000.exe'
     $wrongLocation=Test-Path -LiteralPath $default -PathType Leaf
-    throw "WinUI 3 lab installation incomplete: expected EXE/uninstaller not verified at target, activeSetup=$activeCount, defaultDirectoryHasUninstaller=$wrongLocation. No process was killed."
+    $actualExe=Test-Path -LiteralPath $installedExe -PathType Leaf
+    $actualUninstaller=Test-Path -LiteralPath $uninstaller -PathType Leaf
+    $setupLogExists=Test-Path -LiteralPath $setupLog -PathType Leaf
+    $traceSize=if($setupLogExists){(Get-Item -LiteralPath $setupLog).Length}else{0}
+    # Do not dump raw Inno logs into public PR CI: they may contain user
+    # filesystem paths or other environment data. Emit existence and sizes.
+    throw "WinUI 3 lab installation incomplete: exe=$actualExe, uninstaller=$actualUninstaller, activeSetup=$activeCount, defaultDirectoryHasUninstaller=$wrongLocation, setupLogExists=$setupLogExists, setupLogBytes=$traceSize. No process was killed."
 }
 function Verify-Payload {
     foreach($file in @(Get-ChildItem -LiteralPath $source -Recurse -File)) {
@@ -149,7 +158,8 @@ function Invoke-Uninstall {
     throw "WinUI 3 lab uninstall incomplete: remainingPayload=$($remaining.Count), activeUninstaller=$($active.Count), desktopShortcutExists=$(Test-Path -LiteralPath $link)"
 
 }
-$common=@('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=`"$target`"")
+$common=@('/SP-','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',
+          "/DIR=`"$target`"","/LOG=`"$setupLog`"")
 try {
     Invoke-Setup $common
     Wait-InstalledCompletion
