@@ -44,7 +44,7 @@ struct BaresipSipEngine::Impl {
     SipRuntimeObservation view{RuntimeProcess::Stopped,SipStatus::Disconnected};
     int sdk_error=0;
     NativeDestinationFeedback destination_feedback;
-    bool start_rejected=false,configure_rejected=false;
+    bool start_rejected=false,configure_rejected=false,registration_timed_out=false;
     std::wstring sdk_stage;
     bool configured=false,core=false,ua_initialized=false,claimed=false,failed=false;
     unsigned timeout_ms=15000;
@@ -98,8 +98,14 @@ struct BaresipSipEngine::Impl {
     void tick() {
         if(failed || !owned) return;
         auto observed=project_native_sdk_batch(projection,mailbox.drain(),adapter.native_register_ok_seen());
+        const bool timed_out=!adapter.native_register_ok_seen() && now_ms()>=deadline &&
+            adapter.active() && observed.sip!=SipStatus::Failed;
+        if(timed_out) {
+            std::lock_guard<std::mutex> lock(mutex);
+            registration_timed_out=true;
+        }
         if(!adapter.active() || observed.evidence!=SipEvidence::VerifiedNativeApi ||
-           observed.sip==SipStatus::Failed || (!adapter.native_register_ok_seen() && now_ms()>=deadline)) {fail();return;}
+           observed.sip==SipStatus::Failed || timed_out) {fail();return;}
         if(adapter.native_register_ok_seen()) deadline=UINT64_MAX;
         else if(deadline==UINT64_MAX) deadline=now_ms()+timeout_ms;
         BaresipSdkCallPort calls(adapter);
@@ -146,7 +152,7 @@ struct BaresipSipEngine::Impl {
         view={RuntimeProcess::Failed,SipStatus::Failed};command={};media={};
         policy_selected=false;tls_required=false;audio_route={};
         destination_feedback.clear();sdk_error=0;sdk_stage.clear();
-        start_rejected=false;configure_rejected=true;
+        start_rejected=false;configure_rejected=true;registration_timed_out=false;
     }
     void end() {
         // No SDK callback can race this: all SDK work is serialized by re_main.
@@ -212,7 +218,7 @@ bool BaresipSipEngine::configure_authenticated(const SipAccount& a,const std::ws
         impl_->audio_route=std::move(next_audio);impl_->audio_issue=NativeAudioRouteStatus::Ready;
         impl_->policy_selected=true;impl_->tls_required=a.use_tls;
         impl_->destination_feedback.clear();impl_->start_rejected=false;impl_->configure_rejected=false;
-        impl_->sdk_error=0;impl_->sdk_stage.clear();
+        impl_->sdk_error=0;impl_->sdk_stage.clear();impl_->registration_timed_out=false;
         impl_->view={RuntimeProcess::Stopped,SipStatus::Disconnected};
         impl_->configured=true;impl_->timeout_ms=timeout;
         return true;
@@ -225,7 +231,7 @@ bool BaresipSipEngine::configure_authenticated(const SipAccount& a,const std::ws
 bool BaresipSipEngine::register_account(){
     if(!impl_->configured || impl_->reactor.snapshot().running)return false;
     impl_->configured=false;impl_->failed=false;
-    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->sdk_error=0;impl_->sdk_stage.clear();impl_->destination_feedback.clear();impl_->start_rejected=false;impl_->configure_rejected=false;}
+    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->sdk_error=0;impl_->sdk_stage.clear();impl_->registration_timed_out=false;impl_->destination_feedback.clear();impl_->start_rejected=false;impl_->configure_rejected=false;}
     {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->view={RuntimeProcess::Running,SipStatus::Registering};}
     try { if(impl_->reactor.start())return true; }
     catch (...) { /* Keep the failure path allocation-free until credentials are cleared. */ }
@@ -258,7 +264,7 @@ void BaresipSipEngine::hangup(){(void)hangup_call(observation());}
 void BaresipSipEngine::stop(){
     {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->view={RuntimeProcess::Stopping,SipStatus::Disconnected};impl_->command={};}
     impl_->reactor.stop();impl_->configured=false;erase(impl_->password);
-    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->view={RuntimeProcess::Stopped,SipStatus::Disconnected};impl_->media={};impl_->last_hold_error=0;impl_->mute_rejected=false;impl_->dtmf_rejected=false;impl_->audio_route={};impl_->audio_issue=NativeAudioRouteStatus::Ready;impl_->policy_selected=false;impl_->tls_required=false;impl_->destination_feedback.clear();impl_->start_rejected=false;impl_->configure_rejected=false;impl_->sdk_error=0;impl_->sdk_stage.clear();}
+    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->view={RuntimeProcess::Stopped,SipStatus::Disconnected};impl_->media={};impl_->last_hold_error=0;impl_->mute_rejected=false;impl_->dtmf_rejected=false;impl_->audio_route={};impl_->audio_issue=NativeAudioRouteStatus::Ready;impl_->policy_selected=false;impl_->tls_required=false;impl_->destination_feedback.clear();impl_->start_rejected=false;impl_->configure_rejected=false;impl_->sdk_error=0;impl_->sdk_stage.clear();impl_->registration_timed_out=false;}
 }
 std::wstring BaresipSipEngine::diagnostic()const {
     const auto reactor_fault=impl_->reactor.snapshot().fault;
@@ -267,6 +273,7 @@ std::wstring BaresipSipEngine::diagnostic()const {
      if(impl_->configure_rejected)return L"Nao foi possivel preparar a conta; senha descartada. Confira os recursos do computador e informe os dados novamente.";
      if(impl_->view.process==RuntimeProcess::Failed && reactor_fault!=LibreReactorFault::None)return libre_reactor_fault_message(reactor_fault);
      if(impl_->start_rejected)return L"Falha ao iniciar motor nativo; senha descartada. Confira os recursos do computador e tente registrar novamente.";
+     if(impl_->registration_timed_out)return L"Prazo do registro SIP esgotado: nenhuma confirmacao da central. Confira DNS, UDP/porta do servidor, firewall e respostas ao REGISTER.";
      if(impl_->destination_feedback.error()!=NativeDestinationError::None)return native_destination_error_message(impl_->destination_feedback.error());
      if(impl_->audio_issue!=NativeAudioRouteStatus::Ready)return native_audio_route_feedback(impl_->audio_issue);
      if(native_media_controls_current(impl_->media,impl_->view)){
