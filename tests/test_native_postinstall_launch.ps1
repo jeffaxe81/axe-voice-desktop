@@ -179,7 +179,7 @@ public static class NativePostinstallWindows {
             # are included; no arbitrary wizard page contents or credentials.
             $OwnedClasses = @()
             foreach ($Top in [NativePostinstallWindows]::Windows([IntPtr]::Zero)) {
-                if (Test-OwnedSetupWindow $Top -and [NativePostinstallWindows]::IsWindowVisible($Top)) {
+                if ((Test-OwnedSetupWindow $Top) -and [NativePostinstallWindows]::IsWindowVisible($Top)) {
                     $OwnedClasses += [NativePostinstallWindows]::Class($Top)
                 }
             }
