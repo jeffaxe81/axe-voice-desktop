@@ -14,6 +14,7 @@
 #include "sip_account.h"
 #include "sip_status.h"
 #include "sip_runtime_observation.h"
+#include "essential_call_actions.h"
 #include "baresip_event_mailbox.h"
 #include "sip_event_projection.h"
 #include "sip_runtime_session_guard.h"
@@ -301,6 +302,8 @@ bool g_pinned = false;
 bool g_compact = false;
 bool g_faleweb_mode=false;
 bool g_faleweb_smoke=false;
+bool g_essential_smoke=false;
+axv::EssentialCallActions g_essential_actions{};
 HWND g_brand_label=nullptr;
 HWND g_faleweb_prefs_button=nullptr;
 HWND g_faleweb_actions_button=nullptr;
@@ -814,8 +817,16 @@ void apply_faleweb_layout(HWND root) {
         for(int i=0;i<12;++i)
             position_essential(GetDlgItem(root,kDigitStart+i),
                              23+(i%3)*132,192+(i/3)*68,129,64);
+        // Preserve the approved 355x602 dialer. Only its call action row
+        // changes in response to a verified native call identity.
+        const auto view=g_essential_actions.view;
+        const bool incoming=view==axv::EssentialCallView::Incoming;
         position_essential(GetDlgItem(root,kCallButton),23,477,397,54);
-        // Existing call controls retain their original IDs and SIP handlers.
+#ifdef AXV_ENABLE_NATIVE_SIP
+        position_essential(GetDlgItem(root,kAnswerNative),23,477,194,54);
+#endif
+        position_essential(GetDlgItem(root,kHangupFuture),
+                           incoming?225:23,477,incoming?195:397,54);
         position_essential(GetDlgItem(root,kMuteFuture),23,546,126,45);
         position_essential(GetDlgItem(root,kHoldFuture),158,546,126,45);
         position_essential(GetDlgItem(root,kTransferFuture),293,546,127,45);
@@ -823,12 +834,27 @@ void apply_faleweb_layout(HWND root) {
         position_essential(GetDlgItem(root,kContactsButton),125,637,94,67);
         position_essential(GetDlgItem(root,kRecentDestinationsButton),227,637,94,67);
         position_essential(g_faleweb_prefs_button,329,637,94,67);
-        // Hangup/answer remain available from the functional call-state
-        // controls, but do not crowd the approved idle keypad screen.
-        ShowWindow(GetDlgItem(root,kHangupFuture),SW_HIDE);
+        // Exactly one verified primary action group is shown at a time.
+        // Visibility is presentation; command handlers still enforce native
+        // session + displayed-call identity before any SIP operation.
+        ShowWindow(GetDlgItem(root,kCallButton),
+                   view==axv::EssentialCallView::Idle?SW_SHOW:SW_HIDE);
+        ShowWindow(GetDlgItem(root,kHangupFuture),
+                   g_essential_actions.hangup?SW_SHOW:SW_HIDE);
 #ifdef AXV_ENABLE_NATIVE_SIP
-        ShowWindow(GetDlgItem(root,kAnswerNative),SW_HIDE);
+        ShowWindow(GetDlgItem(root,kAnswerNative),
+                   g_essential_actions.answer?SW_SHOW:SW_HIDE);
 #endif
+        const int secondary=g_essential_actions.secondary?SW_SHOW:SW_HIDE;
+        ShowWindow(GetDlgItem(root,kMuteFuture),secondary);
+        ShowWindow(GetDlgItem(root,kHoldFuture),secondary);
+        ShowWindow(GetDlgItem(root,kTransferFuture),secondary);
+        const HWND end_button=GetDlgItem(root,kHangupFuture);
+        const wchar_t* end_label=incoming?L"Recusar":L"Encerrar";
+        wchar_t previous_end[32]{};
+        GetWindowTextW(end_button,previous_end,32);
+        if(std::wcscmp(previous_end,end_label)!=0)
+            SetWindowTextW(end_button,end_label);
         SetWindowTextW(GetDlgItem(root,kCallButton),L"Ligar");
         SetWindowTextW(GetDlgItem(root,kShowDial),L"Teclado");
         SetWindowTextW(GetDlgItem(root,kContactsButton),L"Contatos");
@@ -1471,10 +1497,20 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     const HWND button = GetDlgItem(GetParent(g_runtime_banner), kCallButton);
     if (IsWindowEnabled(button) != (dial ? TRUE : FALSE))
         EnableWindow(button, dial ? TRUE : FALSE);
+    // UI never equates a process-up event with a verified SIP call.
+    const auto actions=axv::essential_call_actions(observed,current_session,dial);
+    const bool changed=actions.view!=g_essential_actions.view;
+    g_essential_actions=actions;
+    if(changed && g_faleweb_mode && !g_faleweb_smoke && g_page==0)
+        apply_faleweb_layout(GetParent(g_runtime_banner));
 #ifdef AXV_ENABLE_NATIVE_SIP
-    SetWindowTextW(button,L"CHAMAR");
-    EnableWindow(GetDlgItem(GetParent(g_runtime_banner),kAnswerNative),observed.sip==axv::SipStatus::Ringing);
-    EnableWindow(GetDlgItem(GetParent(g_runtime_banner),kHangupFuture),observed.call_id!=0);
+    const wchar_t* dial_label=g_faleweb_mode?L"Ligar":L"CHAMAR";
+    wchar_t old_dial_label[40]{};
+    GetWindowTextW(button,old_dial_label,40);
+    if(std::wcscmp(old_dial_label,dial_label)!=0)
+        SetWindowTextW(button,dial_label);
+    EnableWindow(GetDlgItem(GetParent(g_runtime_banner),kAnswerNative),actions.answer);
+    EnableWindow(GetDlgItem(GetParent(g_runtime_banner),kHangupFuture),actions.hangup);
     const auto media=native_engine().media_state();
     const bool controls=axv::native_media_controls_current(media,observed);
     g_displayed_media=controls?media:axv::NativeCallMediaState{};
