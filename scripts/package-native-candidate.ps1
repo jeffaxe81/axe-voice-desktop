@@ -60,6 +60,11 @@ foreach ($File in (Get-ChildItem -LiteralPath $Prefix -Recurse -File -Force | Wh
         throw "SDK file differs from manifest: $Relative"
     }
 }
+# Validate the optional branded desktop shortcut before building/installing.
+& (Join-Path $Root 'tests/test_native_desktop_shortcut.ps1')
+if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) {
+    throw 'Installer desktop shortcut contract failed'
+}
 # A repeated packaging run must not retain removed DLLs or license files.
 if (Test-Path $Stage) { Remove-Item $Stage -Recurse -Force }
 New-Item -ItemType Directory -Force $Stage,$Output | Out-Null
