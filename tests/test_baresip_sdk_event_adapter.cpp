@@ -286,6 +286,11 @@ int main() {
     g_keep_registered_on_refresh=false;
     if(!adapter.active() || !adapter.native_register_ok_seen())return 52;
     emit(BEVENT_CALL_ESTABLISHED,&one);
+    g_keep_registered_on_refresh=true;
+    emit(BEVENT_REGISTERING,&ua_event);
+    emit(BEVENT_REGISTER_OK,&ua_event);
+    g_keep_registered_on_refresh=false;
+    if(!adapter.active() || !adapter.native_register_ok_seen())return 58;
     emit(BEVENT_CALL_CLOSED,&one);
     auto refreshed=mailbox.drain();
     if(refreshed.size!=3 ||
