@@ -52,15 +52,22 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
         })) {
             fail(x,"modal dialog was not created");return;
         }
+        struct DialogCloser {
+            HWND hwnd;
+            ~DialogCloser(){
+                if(hwnd && IsWindow(hwnd))
+                    SendMessageW(hwnd,WM_COMMAND,MAKEWPARAM(IDCANCEL,BN_CLICKED),0);
+            }
+        } closer{dialog};
         const HWND yes=GetDlgItem(dialog,axv::kPrefsIncomingAnswer);
         const HWND no=GetDlgItem(dialog,axv::kPrefsIncomingReject);
-        if(!yes || !no) { fail(x,"answer/reject controls missing");goto done; }
+        if(!yes || !no) { fail(x,"answer/reject controls missing");return; }
         if(IsWindowVisible(yes)||IsWindowVisible(no))
             fail(x,"incoming controls visible without a call");
 
         x.incoming=true;
         if(!until([&]{return IsWindowVisible(yes)&&IsWindowVisible(no);}))
-            {fail(x,"incoming call controls not revealed");goto done;}
+            {fail(x,"incoming call controls not revealed");return;}
 
         // Call actions must not overlap each other or Save/Cancel even in
         // a compact preferences dialog.
@@ -91,7 +98,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
 
         x.incoming=false;
         if(!until([&]{return !IsWindowVisible(yes)&&!IsWindowVisible(no);}))
-            {fail(x,"stale incoming buttons remain visible");goto done;}
+            {fail(x,"stale incoming buttons remain visible");return;}
         SendMessageW(dialog,WM_COMMAND,
             MAKEWPARAM(axv::kPrefsIncomingAnswer,BN_CLICKED),
             reinterpret_cast<LPARAM>(yes));
@@ -99,14 +106,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
 
         x.incoming=true;
         if(!until([&]{return IsWindowVisible(yes)&&IsWindowVisible(no);}))
-            {fail(x,"new incoming call controls not available");goto done;}
+            {fail(x,"new incoming call controls not available");return;}
         SendMessageW(dialog,WM_COMMAND,
             MAKEWPARAM(axv::kPrefsIncomingReject,BN_CLICKED),
             reinterpret_cast<LPARAM>(no));
         if(x.declines.load()!=1)fail(x,"reject action not sent exactly once");
 
-done:
-        SendMessageW(dialog,WM_COMMAND,MAKEWPARAM(IDCANCEL,BN_CLICKED),0);
+
     });
     const bool saved=axv::edit_faleweb_preferences(owner,data,callbacks);
     worker.join();
