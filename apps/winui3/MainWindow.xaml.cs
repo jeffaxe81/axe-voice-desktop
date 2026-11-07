@@ -20,6 +20,8 @@ public sealed partial class MainWindow : Window
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _sipTimer;
     private bool _commandBusy;
     private bool _closing;
+    private string _transientFeedback="";
+    private DateTime _feedbackExpiresUtc=DateTime.MinValue;
     private readonly PreviewProfileStore _profileStore=PreviewProfileStore.ForCurrentUser();
     private readonly PreviewProfile _profile;
 
@@ -185,6 +187,13 @@ public sealed partial class MainWindow : Window
             _=>"Comando recusado: sessão mudou ou motor indisponível"
         };
 
+    private void ShowActionFeedback(string message)
+    {
+        _transientFeedback=message;
+        _feedbackExpiresUtc=DateTime.UtcNow.AddSeconds(10);
+        BackendHint.Text=message;
+    }
+
     private async void Connect_Click(object sender,RoutedEventArgs e)
     {
         if(_closing || _commandBusy)return;
@@ -201,11 +210,11 @@ public sealed partial class MainWindow : Window
         }
         _commandBusy=false;
         RefreshMonitor();
-        BackendHint.Text=result==NativeBridge.CommandResult.Accepted
+        ShowActionFeedback(result==NativeBridge.CommandResult.Accepted
             ?(state.CanDisconnect
                 ?"Motor SIP desconectado"
                 :"Registro SIP solicitado; aguardando confirmação da central")
-            :CommandFeedback(result);
+            :CommandFeedback(result));
         UpdateCallControls();
     }
 
@@ -223,8 +232,8 @@ public sealed partial class MainWindow : Window
         if(_commandBusy || !CurrentCallUi().CanAnswer)return;
         var bound=_snapshot;
         var result=NativeBridge.Answer(bound.Session,bound.CallId);
-        BackendHint.Text=CommandFeedback(result);
         RefreshMonitor();
+        ShowActionFeedback(CommandFeedback(result));
     }
 
     private void Hangup_Click(object sender,RoutedEventArgs e)
@@ -232,8 +241,8 @@ public sealed partial class MainWindow : Window
         if(_commandBusy || !CurrentCallUi().CanHangup)return;
         var bound=_snapshot;
         var result=NativeBridge.Hangup(bound.Session,bound.CallId);
-        BackendHint.Text=CommandFeedback(result);
         RefreshMonitor();
+        ShowActionFeedback(CommandFeedback(result));
     }
 
     private void RefreshMonitor()
@@ -250,6 +259,9 @@ public sealed partial class MainWindow : Window
                     :_snapshot.Connection==1
                         ?"Aguardando confirmação de registro da central"
                         :"Motor SIP disponível; conexão manual necessária";
+        if(DateTime.UtcNow<_feedbackExpiresUtc)
+            BackendHint.Text=_transientFeedback;
+        else _transientFeedback="";
         string report=SipDiagnosticReport.Format(
             _ready,_ready && _snapshot.BackendAttached!=0,
             _ready?_snapshot.AbiVersion:0,_snapshot.Connection,_snapshot.View);
