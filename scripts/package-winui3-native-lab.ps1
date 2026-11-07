@@ -66,11 +66,22 @@ $desktop=[Environment]::GetFolderPath('DesktopDirectory')
 if(!$desktop){throw 'Could not resolve interactive current-user Desktop folder'}
 $link=Join-Path $desktop 'AXE Voice WinUI 3 Native Lab.lnk'
 if(Test-Path -LiteralPath $link){throw 'WinUI 3 lab test requires no prior desktop shortcut'}
-function Invoke-Setup([string[]]$args) {
-    $process=Start-Process -FilePath $installer -ArgumentList $args -Wait -PassThru
+function Wait-ProcessBounded([string]$file,[string[]]$arguments,[string]$stage,[int]$seconds=120) {
+    # Start-Process -Wait waits for the entire descendant process tree and may
+    # block forever on a separate Inno child. Await the original process
+    # handle instead, then verify the actual installed payload and uninstaller.
+    $process=Start-Process -FilePath $file -ArgumentList $arguments -PassThru
     try {
-        if($process.ExitCode -ne 0) {throw "WinUI 3 lab setup failed with exit $($process.ExitCode)"}
+        if(!$process.WaitForExit($seconds*1000)) {
+            throw "$stage did not finish within $seconds seconds (PID $($process.Id)). Installer left for manual runner inspection; no process was killed."
+        }
+        if($process.ExitCode -ne 0) {
+            throw "$stage returned nonzero code $($process.ExitCode)"
+        }
     } finally {$process.Dispose()}
+}
+function Invoke-Setup([string[]]$args) {
+    Wait-ProcessBounded $installer $args 'WinUI 3 lab install'
 }
 function Verify-Payload {
     foreach($file in @(Get-ChildItem -LiteralPath $source -Recurse -File)) {
@@ -85,12 +96,9 @@ function Verify-Payload {
 function Invoke-Uninstall {
     $uninstaller=Join-Path $target 'unins000.exe'
     Require-File $uninstaller
-    $process=Start-Process -FilePath $uninstaller -ArgumentList @(
+    Wait-ProcessBounded $uninstaller @(
         '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'
-    ) -Wait -PassThru
-    try {
-        if($process.ExitCode -ne 0) {throw "WinUI 3 lab uninstall failed with exit $($process.ExitCode)"}
-    } finally {$process.Dispose()}
+    ) 'WinUI 3 lab uninstall'
     foreach($file in @(Get-ChildItem -LiteralPath $source -Recurse -File)) {
         $relative=$file.FullName.Substring($source.Length+1)
         if(Test-Path -LiteralPath (Join-Path $target $relative)) {
