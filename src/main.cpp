@@ -70,6 +70,7 @@
 #include "diagnostic_clipboard_win32.h"
 #include "ui_contrast_policy.h"
 #include "ui_dpi_policy.h"
+#include "ui_rounded_geometry.h"
 #include "ui_viewport_policy.h"
 #include <vector>
 #include <array>
@@ -1011,12 +1012,10 @@ void draw_card(HDC dc, RECT rect, COLORREF color, int radius) {
     HPEN border = CreatePen(PS_SOLID, 1, line_color());
     HGDIOBJ old_brush = SelectObject(dc, fill);
     HGDIOBJ old_pen = SelectObject(dc, border);
-    // Win32 takes ellipse diameter; use the intended visual corner radius.
-    // Clamp it so compact cards remain rounded without distorting their edges.
-    const int card_width=static_cast<int>(rect.right-rect.left);
-    const int card_height=static_cast<int>(rect.bottom-rect.top);
-    const int diameter=(std::min)(axv::dpi_pixels(radius*2,g_dpi),
-                                  (std::min)(card_width,card_height));
+    const int diameter=axv::rounded_rect_diameter(
+        static_cast<int>(rect.right-rect.left),
+        static_cast<int>(rect.bottom-rect.top),
+        axv::dpi_pixels(radius,g_dpi));
     RoundRect(dc, rect.left, rect.top, rect.right, rect.bottom,
               diameter,diameter);
     SelectObject(dc, old_pen);
@@ -1053,10 +1052,12 @@ void paint_button(const DRAWITEMSTRUCT& item) {
     HGDIOBJ brush_old = SelectObject(item.hDC, fill);
     HGDIOBJ pen_old = SelectObject(item.hDC, outline);
     const int offset=axv::dpi_pixels(1,g_dpi);
-    // Keep a pill-like radius on small keypad buttons without exceeding their height.
-    // Win32 RoundRect receives the full corner ellipse diameter, not a CSS radius.
-    const int button_height=static_cast<int>((std::max)(0L,rect.bottom-rect.top-2*offset));
-    const int curve=(std::min)(axv::dpi_pixels(24,g_dpi),button_height);
+    // More delicate and rounded controls. Clamp to the actual owner-drawn
+    // rectangle so small buttons and 125/150% DPI never paint outside bounds.
+    const int curve=axv::compact_button_diameter(
+        static_cast<int>(rect.right-rect.left),
+        static_cast<int>(rect.bottom-rect.top),
+        g_dpi,g_faleweb_mode,offset);
     RoundRect(item.hDC,rect.left+offset,rect.top+offset,
               rect.right-offset,rect.bottom-offset,curve,curve);
     SelectObject(item.hDC, pen_old);
