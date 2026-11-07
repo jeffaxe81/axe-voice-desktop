@@ -92,6 +92,30 @@ function Invoke-Setup([string[]]$SetupArguments) {
     # variable and may shadow the caller-provided silent install switches.
     Wait-ProcessBounded -file $installer -arguments $SetupArguments -stage 'WinUI 3 lab install'
 }
+function Wait-InstalledCompletion([int]$seconds=150) {
+    # Inno's first bootstrap process may return before its setup.tmp child has
+    # finished installing. Verify actual files AND require that both known
+    # installer processes have exited, instead of treating parent exit 0 as
+    # proof that the application was deployed.
+    $deadline=[DateTime]::UtcNow.AddSeconds($seconds)
+    $uninstaller=Join-Path $target 'unins000.exe'
+    $installedExe=Join-Path $target 'AXEVoice.WinUI3.exe'
+    $activeCount=0
+    do {
+        $active=@(Get-CimInstance Win32_Process -Filter
+            "Name LIKE 'AXE-Voice-WinUI3-Native-Lab-Setup%'")
+        $activeCount=$active.Count
+        if((Test-Path -LiteralPath $uninstaller -PathType Leaf) -and
+           (Test-Path -LiteralPath $installedExe -PathType Leaf) -and
+           $activeCount -eq 0) {
+            return
+        }
+        Start-Sleep -Milliseconds 400
+    } while([DateTime]::UtcNow -lt $deadline)
+    $default=Join-Path $env:LOCALAPPDATA 'Programs/AXEVoiceWinUI3NativeLab/unins000.exe'
+    $wrongLocation=Test-Path -LiteralPath $default -PathType Leaf
+    throw "WinUI 3 lab installation incomplete: expected EXE/uninstaller not verified at target, activeSetup=$activeCount, defaultDirectoryHasUninstaller=$wrongLocation. No process was killed."
+}
 function Verify-Payload {
     foreach($file in @(Get-ChildItem -LiteralPath $source -Recurse -File)) {
         $relative=$file.FullName.Substring($source.Length+1)
@@ -119,12 +143,14 @@ function Invoke-Uninstall {
 $common=@('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=`"$target`"")
 try {
     Invoke-Setup $common
+    Wait-InstalledCompletion
     Verify-Payload
     if(Test-Path -LiteralPath $link){throw 'Default installation unexpectedly created a desktop shortcut'}
     Invoke-Uninstall
     # Explicit user opt-in should create the correct executable link and
     # remove it on uninstall, without launching or connecting the softphone.
     Invoke-Setup ($common + @('/TASKS=desktopicon'))
+    Wait-InstalledCompletion
     Verify-Payload
     Require-File $link
     $shell=New-Object -ComObject WScript.Shell
