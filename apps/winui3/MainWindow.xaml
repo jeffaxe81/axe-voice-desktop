@@ -11,6 +11,7 @@
                      Avoid hard-coded light surfaces that stay white in dark mode. -->
                 <ResourceDictionary.ThemeDictionaries>
                     <ResourceDictionary x:Key="Light">
+                        <SolidColorBrush x:Key="AxvLogoTextBrush" Color="#FFFFFF"/>
                         <SolidColorBrush x:Key="AxvShellBrush" Color="#F5F8FD"/>
                         <SolidColorBrush x:Key="AxvBrandBrush" Color="#1365BE"/>
                         <SolidColorBrush x:Key="AxvTitleBrush" Color="#13375D"/>
@@ -27,6 +28,7 @@
                         <SolidColorBrush x:Key="AxvDetailsTextBrush" Color="#415A72"/>
                     </ResourceDictionary>
                     <ResourceDictionary x:Key="Dark">
+                        <SolidColorBrush x:Key="AxvLogoTextBrush" Color="#FFFFFF"/>
                         <SolidColorBrush x:Key="AxvShellBrush" Color="#081A31"/>
                         <SolidColorBrush x:Key="AxvBrandBrush" Color="#1683D8"/>
                         <SolidColorBrush x:Key="AxvTitleBrush" Color="#ECF4FF"/>
@@ -43,6 +45,7 @@
                         <SolidColorBrush x:Key="AxvDetailsTextBrush" Color="#C1D6F0"/>
                     </ResourceDictionary>
                     <ResourceDictionary x:Key="Default">
+                        <SolidColorBrush x:Key="AxvLogoTextBrush" Color="#FFFFFF"/>
                         <SolidColorBrush x:Key="AxvShellBrush" Color="#F5F8FD"/>
                         <SolidColorBrush x:Key="AxvBrandBrush" Color="#1365BE"/>
                         <SolidColorBrush x:Key="AxvTitleBrush" Color="#13375D"/>
@@ -77,15 +80,15 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <Border Grid.Column="0" Height="32" Width="32" Background=="{ThemeResource AxvBrandBrush}"
+                <Border Grid.Column="0" Height="32" Width="32" Background="{ThemeResource AxvBrandBrush}"
                         CornerRadius="10" HorizontalAlignment="Left" VerticalAlignment="Center">
-                    <TextBlock Text="A" FontSize="20" FontWeight="Bold" Foreground=="{ThemeResource AxvKeyBackgroundBrush}"
+                    <TextBlock Text="A" FontSize="20" FontWeight="Bold" Foreground="{ThemeResource AxvLogoTextBrush}"
                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Border>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
                     <TextBlock Text="AXE Voice" FontSize="16" FontWeight="SemiBold"
-                               Foreground=="{ThemeResource AxvTitleBrush}"/>
-                    <TextBlock Text="WinUI 3 · Avaliação" FontSize="10" Foreground=="{ThemeResource AxvSecondaryBrush}"/>
+                               Foreground="{ThemeResource AxvTitleBrush}"/>
+                    <TextBlock Text="WinUI 3 · Avaliação" FontSize="10" Foreground="{ThemeResource AxvSecondaryBrush}"/>
                 </StackPanel>
                 <Button Grid.Column="2" x:Name="ThemeToggle" Content="☾" AutomationProperties.Name="Usar tema escuro"
                         ToolTipService.ToolTip="Claro / escuro" Click="Theme_Click"
@@ -93,13 +96,13 @@
                         VerticalAlignment="Center"/>
             </Grid>
 
-            <Border Grid.Row="1" CornerRadius="10" Background=="{ThemeResource AxvStatusBackgroundBrush}" Padding="10"
+            <Border Grid.Row="1" CornerRadius="10" Background="{ThemeResource AxvStatusBackgroundBrush}" Padding="10"
                     Margin="0,6,0,7">
                 <StackPanel VerticalAlignment="Center" Spacing="2">
                     <TextBlock x:Name="SipStatusText" Text="● SIP INDISPONÍVEL"
-                               Foreground=="{ThemeResource AxvStatusTextBrush}" FontSize="12" FontWeight="SemiBold"/>
+                               Foreground="{ThemeResource AxvStatusTextBrush}" FontSize="12" FontWeight="SemiBold"/>
                     <TextBlock x:Name="BackendHint" Text="Motor nativo ainda não vinculado"
-                               FontSize="10" Foreground=="{ThemeResource AxvStatusDetailBrush}" TextWrapping="Wrap"/>
+                               FontSize="10" Foreground="{ThemeResource AxvStatusDetailBrush}" TextWrapping="Wrap"/>
                 </StackPanel>
             </Border>
 
@@ -113,8 +116,8 @@
                          MaxLength="128" AutomationProperties.Name="Número de destino"
                          VerticalAlignment="Stretch"/>
                 <Button Grid.Column="1" Content="⌫" FontSize="20" Click="Backspace_Click"
-                        CornerRadius="10" Background=="{ThemeResource AxvInputBrush}"
-                        Foreground=="{ThemeResource AxvInputTextBrush}" BorderThickness="0"
+                        CornerRadius="10" Background="{ThemeResource AxvInputBrush}"
+                        Foreground="{ThemeResource AxvInputTextBrush}" BorderThickness="0"
                         AutomationProperties.Name="Apagar último dígito"/>
             </Grid>
 
@@ -132,38 +135,38 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <Button Grid.Row="0" Grid.Column="0" Content="1" Tag="1" Click="Digit_Click"
-                        FontSize="23" CornerRadius="12" Background=="{ThemeResource AxvKeyBackgroundBrush}" Foreground=="{ThemeResource AxvKeyTextBrush}"/>
+                        FontSize="23" CornerRadius="12" Background="{ThemeResource AxvKeyBackgroundBrush}" Foreground="{ThemeResource AxvKeyTextBrush}"/>
                 <Button Grid.Row="0" Grid.Column="1" Content="2" Tag="2" Click="Digit_Click"
-                        FontSize="23" CornerRadius="12" Background=="{ThemeResource AxvKeyBackgroundBrush}" Foreground=="{ThemeResource AxvKeyTextBrush}"/>
+                        FontSize="23" CornerRadius="12" Background="{ThemeResource AxvKeyBackgroundBrush}" Foreground="{ThemeResource AxvKeyTextBrush}"/>
                 <Button Grid.Row="0" Grid.Column="2" Content="3" Tag="3" Click="Digit_Click"
-                        FontSize="23" CornerRadius="12" Background=="{ThemeResource AxvKeyBackgroundBrush}" Foreground=="{ThemeResource AxvKeyTextBrush}"/>
+                        FontSize="23" CornerRadius="12" Background="{ThemeResource AxvKeyBackgroundBrush}" Foreground="{ThemeResource AxvKeyTextBrush}"/>
                 <Button Grid.Row="1" Grid.Column="0" Content="4" Tag="4" Click="Digit_Click"
-                        FontSize="23" CornerRadius="12" Background=="{ThemeResource AxvKeyBackgroundBrush}" Foreground=="{ThemeResource AxvKeyTextBrush}"/>
+                        FontSize="23" CornerRadius="12" Background="{ThemeResource AxvKeyBackgroundBrush}" Foreground="{ThemeResource AxvKeyTextBrush}"/>
                 <Button Grid.Row="1" Grid.Column="1" Content="5" Tag="5" Click="Digit_Click"
-                        FontSize="23" CornerRadius="12" Background=="{ThemeResource AxvKeyBackgroundBrush}" Foreground=="{ThemeResource AxvKeyTextBrush}"/>
+                        FontSize="23" CornerRadius="12" Background="{ThemeResource AxvKeyBackgroundBrush}" Foreground="{ThemeResource AxvKeyTextBrush}"/>
                 <Button Grid.Row="1" Grid.Column="2" Content="6" Tag="6" Click="Digit_Click"
-                        FontSize="23" CornerRadius="12" Background=="{ThemeResource AxvKeyBackgroundBrush}" Foreground=="{ThemeResource AxvKeyTextBrush}"/>
+                        FontSize="23" CornerRadius="12" Background="{ThemeResource AxvKeyBackgroundBrush}" Foreground="{ThemeResource AxvKeyTextBrush}"/>
                 <Button Grid.Row="2" Grid.Column="0" Content="7" Tag="7" Click="Digit_Click"
-                        FontSize="23" CornerRadius="12" Background=="{ThemeResource AxvKeyBackgroundBrush}" Foreground=="{ThemeResource AxvKeyTextBrush}"/>
+                        FontSize="23" CornerRadius="12" Background="{ThemeResource AxvKeyBackgroundBrush}" Foreground="{ThemeResource AxvKeyTextBrush}"/>
                 <Button Grid.Row="2" Grid.Column="1" Content="8" Tag="8" Click="Digit_Click"
-                        FontSize="23" CornerRadius="12" Background=="{ThemeResource AxvKeyBackgroundBrush}" Foreground=="{ThemeResource AxvKeyTextBrush}"/>
+                        FontSize="23" CornerRadius="12" Background="{ThemeResource AxvKeyBackgroundBrush}" Foreground="{ThemeResource AxvKeyTextBrush}"/>
                 <Button Grid.Row="2" Grid.Column="2" Content="9" Tag="9" Click="Digit_Click"
-                        FontSize="23" CornerRadius="12" Background=="{ThemeResource AxvKeyBackgroundBrush}" Foreground=="{ThemeResource AxvKeyTextBrush}"/>
+                        FontSize="23" CornerRadius="12" Background="{ThemeResource AxvKeyBackgroundBrush}" Foreground="{ThemeResource AxvKeyTextBrush}"/>
                 <Button Grid.Row="3" Grid.Column="0" Content="*" Tag="*" Click="Digit_Click"
-                        FontSize="23" CornerRadius="12" Background=="{ThemeResource AxvKeyBackgroundBrush}" Foreground=="{ThemeResource AxvKeyTextBrush}"/>
+                        FontSize="23" CornerRadius="12" Background="{ThemeResource AxvKeyBackgroundBrush}" Foreground="{ThemeResource AxvKeyTextBrush}"/>
                 <Button Grid.Row="3" Grid.Column="1" Content="0" Tag="0" Click="Digit_Click"
-                        FontSize="23" CornerRadius="12" Background=="{ThemeResource AxvKeyBackgroundBrush}" Foreground=="{ThemeResource AxvKeyTextBrush}"/>
+                        FontSize="23" CornerRadius="12" Background="{ThemeResource AxvKeyBackgroundBrush}" Foreground="{ThemeResource AxvKeyTextBrush}"/>
                 <Button Grid.Row="3" Grid.Column="2" Content="#" Tag="#" Click="Digit_Click"
-                        FontSize="23" CornerRadius="12" Background=="{ThemeResource AxvKeyBackgroundBrush}" Foreground=="{ThemeResource AxvKeyTextBrush}"/>
+                        FontSize="23" CornerRadius="12" Background="{ThemeResource AxvKeyBackgroundBrush}" Foreground="{ThemeResource AxvKeyTextBrush}"/>
             </Grid>
 
             <Border x:Name="DetailsPanel" Grid.Row="3" Visibility="Collapsed"
-                    Background=="{ThemeResource AxvDetailsBackgroundBrush}" CornerRadius="12" Padding="14">
+                    Background="{ThemeResource AxvDetailsBackgroundBrush}" CornerRadius="12" Padding="14">
                 <StackPanel Spacing="12" VerticalAlignment="Center">
                     <TextBlock x:Name="DetailsTitle" FontSize="18" FontWeight="SemiBold"
-                               Foreground=="{ThemeResource AxvDetailsTitleBrush}" Text="Monitor SIP"/>
+                               Foreground="{ThemeResource AxvDetailsTitleBrush}" Text="Monitor SIP"/>
                     <TextBlock x:Name="DetailsDescription" FontSize="12"
-                               Foreground=="{ThemeResource AxvDetailsTextBrush}" TextWrapping="Wrap"
+                               Foreground="{ThemeResource AxvDetailsTextBrush}" TextWrapping="Wrap"
                                Text="Nenhum registro SIP disponível nesta prévia."/>
                 </StackPanel>
             </Border>
