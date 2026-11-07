@@ -1,4 +1,10 @@
-# Release candidata nativa0.67 — checklist atual
+# AXE Voice v0.83 — checklist do candidato nativo (escopo original)
+
+> **Liberação para produção ainda bloqueada.** Esta release mantém o Baresip e os recursos previamente solicitados. As cinco ideias para o mercado, registradas nas issues #234 a #238, ficam **fora deste escopo**.
+>
+> [Critérios verificáveis para declarar 100% da entrega atual](release/ACEITE-ESCOPO-ORIGINAL.md). Os testes de CI e a geração de instalador candidato não provam registro/recepção SIP e áudio RTP no PABX real. O marco de 80% em design também não deve ser confundido com conclusão do aplicativo.
+
+## Histórico de implementações do candidato (0.67 até 0.83)
 
 ## Implementações
 - [x] Motor Baresip/libre e OpenSSL fixados, registro/callbacks e comandos chamar/atender/encerrar no candidato.

@@ -24,8 +24,12 @@ CloseApplications=no
 DisableProgramGroupPage=yes
 [Files]
 Source: "{#CandidateSource}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+[Tasks]
+; Explicit opt-in: users choose whether to create a desktop shortcut.
+Name: "desktopicon"; Description: "Criar atalho na área de trabalho"; Flags: unchecked
 [Icons]
 Name: "{group}\AXE Voice Native Candidate"; Filename: "{app}\AXE-Voice.exe"
+Name: "{autodesktop}\AXE Voice Native Candidate"; Filename: "{app}\AXE-Voice.exe"; Tasks: desktopicon
 [Registry]
 ; Per-user URL protocol. The running app always confirms external requests.
 Root: HKCU; Subkey: "Software\Classes\axvoice"; ValueType: string; ValueName: ""; ValueData: "URL:AXE Voice Click-to-Call"; Flags: uninsdeletekey

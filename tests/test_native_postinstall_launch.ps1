@@ -123,6 +123,8 @@ public static class NativePostinstallWindows {
         }
         $Deadline = [DateTime]::UtcNow.AddSeconds(120)
         $LastAction = ''
+        $LastActionAt = [DateTime]::MinValue
+        $UnchangedCount = 0
         do {
             Update-OwnedProcesses
             foreach ($Window in [NativePostinstallWindows]::Windows([IntPtr]::Zero)) {
@@ -135,18 +137,30 @@ public static class NativePostinstallWindows {
                     ForEach-Object { [NativePostinstallWindows]::Text($_) }) -join "|"
                 foreach ($Control in $Controls) {
                     if (![NativePostinstallWindows]::IsWindowVisible($Control) -or
-                        ![NativePostinstallWindows]::IsWindowEnabled($Control) -or
-                        [NativePostinstallWindows]::Class($Control) -notin @('TNewButton', 'TButton')) { continue }
+                        ![NativePostinstallWindows]::IsWindowEnabled($Control)) { continue }
+                    $Class = [NativePostinstallWindows]::Class($Control)
+                    if ($Class -notmatch '^(T[A-Za-z0-9]*Button|Button)$') { continue }
                     $Caption = [NativePostinstallWindows]::Text($Control).Replace('&','').Trim()
-                    # The checked-by-default postinstall checklist is untouched.
-                    # Only the stock English wizard navigation is automated;
-                    # any unexpected/localized dialog fails within the deadline.
-                    if ($Caption -notin @('Next >', 'Install', 'Finish')) { continue }
+                    # Only known Inno navigation commands are clickable.
+                    # Never toggle an optional desktop shortcut or unchecked task.
+                    if ($Caption -notin @('Next >','Next','Install','Finish','Avançar >','Próximo >','Instalar','Concluir')) { continue }
                     $Action = "$Control/$Caption/$Page"
-                    if ($Action -eq $LastAction) { continue }
-                    if ($Caption -eq 'Finish') { $SawFinish = $true }
+                    if ($Action -eq $LastAction) {
+                        # A new task page can have identical label/control
+                        # signatures to the previous page. Retry at a bounded
+                        # interval while keeping the same real-Inno acceptance.
+                        if (([DateTime]::UtcNow - $LastActionAt).TotalSeconds -lt 4) { continue }
+                        $UnchangedCount++
+                        if ($UnchangedCount -gt 4) {
+                            throw "Installer navigation stalled despite bounded attempts"
+                        }
+                    } else {
+                        $UnchangedCount = 0
+                    }
+                    if ($Caption -in @('Finish','Concluir')) { $SawFinish = $true }
                     [NativePostinstallWindows]::Click($Control)
                     $LastAction = $Action
+                    $LastActionAt = [DateTime]::UtcNow
                     break
                 }
             }
@@ -155,7 +169,24 @@ public static class NativePostinstallWindows {
             if ($Setup.HasExited -and $ActiveSetup.Count -eq 0) { break }
             Start-Sleep -Milliseconds 200
         } while ([DateTime]::UtcNow -lt $Deadline)
-        if (!$Setup.HasExited -or $ActiveSetup.Count) { throw 'Interactive setup timed out; inspect the desktop for an unexpected wizard/dialog' }
+        if (!$Setup.HasExited -or $ActiveSetup.Count) {
+            $ControlsSeen = @()
+            foreach ($Top in [NativePostinstallWindows]::Windows([IntPtr]::Zero)) {
+                if (!(Test-OwnedSetupWindow $Top) -or
+                    ![NativePostinstallWindows]::IsWindowVisible($Top) -or
+                    [NativePostinstallWindows]::Class($Top) -ne 'TWizardForm') { continue }
+                foreach ($Child in [NativePostinstallWindows]::Windows($Top)) {
+                    $Class = [NativePostinstallWindows]::Class($Child)
+                    if ($Class -notmatch '^(T[A-Za-z0-9]*Button|Button)$') { continue }
+                    $ControlsSeen += $Class + '/visible=' +
+                        [NativePostinstallWindows]::IsWindowVisible($Child) +
+                        '/enabled=' + [NativePostinstallWindows]::IsWindowEnabled($Child)
+                }
+            }
+            # Only class/visibility/enablement are reported. No arbitrary
+            # page text, SIP endpoints, credentials, or form content in CI.
+            throw "Interactive setup timed out; wizard=$SawWizard finish=$SawFinish stockControls='$($ControlsSeen -join ',')' activeSetup=$($ActiveSetup.Count)"
+        }
         if ($Setup.ExitCode -ne 0) { throw "Interactive setup failed with exit code $($Setup.ExitCode)" }
         if (!$SawWizard -or !$SawFinish) { throw 'Did not observe and finish the real interactive Inno wizard' }
         if (Test-Marker $SetupMutexName) { throw 'Setup marker remained after interactive setup exited' }
