@@ -243,6 +243,7 @@ HWND g_output_audio_combo = nullptr;
 HWND g_ringtone_audio_combo = nullptr;
 HWND g_ringtone_preset_combo = nullptr;
 std::atomic<int> g_ringtone_preset{2};
+axv::NativeCodecMode g_codec_mode=axv::NativeCodecMode::Automatic;
 std::mutex g_ringtone_mp3_mutex;
 std::wstring g_ringtone_custom_mp3;
 HWND g_headset_status = nullptr;
@@ -1593,6 +1594,7 @@ void open_faleweb_preferences(HWND owner) {
 #endif
     prefs.tls=g_tls && SendMessageW(g_tls,BM_GETCHECK,0,0)==BST_CHECKED;
     prefs.ringtone=g_ringtone_preset.load();
+    prefs.codec_mode=g_codec_mode;
     for(const auto& device:g_audio_inputs){
         prefs.inputs.push_back(device.name);
         if(device.id==g_selected_input_id)prefs.input_index=static_cast<int>(prefs.inputs.size())-1;
@@ -1617,6 +1619,8 @@ void open_faleweb_preferences(HWND owner) {
     g_incoming_ringtone_muted=prefs.mute_ringtone;
 #endif
     if(g_tls)SendMessageW(g_tls,BM_SETCHECK,prefs.tls?BST_CHECKED:BST_UNCHECKED,0);
+    // Only future registrations use this choice. Active calls are unchanged.
+    if(axv::valid_native_codec_mode(prefs.codec_mode))g_codec_mode=prefs.codec_mode;
     if(prefs.ringtone>=0 && prefs.ringtone<=5){
         bool allowed=prefs.ringtone!=5;
         if(!allowed){
@@ -2176,7 +2180,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 if(!secret.empty())SecureZeroMemory(secret.data(),secret.size()*sizeof(wchar_t));
             }
             const auto result=axv::register_native_account_ui(native_engine(),
-                {g_server,g_user,g_port,g_password,g_ca_file,g_tls},g_selected_input_id,g_selected_output_id);
+                {g_server,g_user,g_port,g_password,g_ca_file,g_tls},g_selected_input_id,g_selected_output_id,g_codec_mode);
             SetWindowTextW(g_process_status,axv::native_registration_result_message(result));
             return 0;
 #endif
