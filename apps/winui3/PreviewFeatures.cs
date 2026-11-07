@@ -124,17 +124,62 @@ public sealed class PreviewProfileStore
             "AXEVoice","WinUI3","preview-profile.dat"));
 }
 
+public readonly record struct NativeCallUiProjection(
+    bool CanDial,bool CanAnswer,bool CanHangup,
+    bool CanConnect,bool CanDisconnect,string StatusLabel);
+
+public static class NativeCallUiProjector
+{
+    public static NativeCallUiProjection Project(
+        bool bridgeAvailable,uint backendAttached,uint connection,uint view,
+        uint nativeCanDial,uint nativeCanAnswer,uint nativeCanHangup,
+        ulong session,ulong callId,bool destinationValid)
+    {
+        bool installed=bridgeAvailable && backendAttached==1;
+        bool verified=installed && connection==2 && session!=0;
+        bool idle=view==0;
+        bool incoming=view==1;
+        bool active=view==2 || view==3;
+        string status=!bridgeAvailable?"● BRIDGE INDISPONÍVEL":
+            !installed?"● MOTOR SIP NÃO INSTALADO":
+            connection==1?"● REGISTRANDO SIP":
+            !verified?"● SIP DESCONECTADO":
+            incoming?"● CHAMADA RECEBIDA":
+            view==2?"● CHAMANDO":
+            view==3?"● EM CONVERSAÇÃO":
+            "● SIP REGISTRADO";
+        return new(
+            verified && idle && callId==0 && nativeCanDial==1 && destinationValid,
+            verified && incoming && callId!=0 && nativeCanAnswer==1,
+            verified && (incoming || active) && callId!=0 && nativeCanHangup==1,
+            installed && connection==0,
+            installed && connection!=0 && idle,
+            status);
+    }
+}
+
 public static class SipDiagnosticReport
 {
     // Fixed schema: no destinations, IP, account, passwords, SIP raw headers,
     // hostnames, logs or user-supplied data are copied to Clipboard.
     public static string Format(bool bridgeAvailable,bool backendAttached,
-                                uint abiVersion) =>
-        "AXE Voice WinUI 3 — diagnóstico local\n"+
-        "Bridge C++: "+(bridgeAvailable?"carregada":"indisponível")+"\n"+
-        "ABI: "+(bridgeAvailable?abiVersion.ToString():"não disponível")+"\n"+
-        "Motor SIP: "+(backendAttached&&bridgeAvailable
-            ?"integração ainda sem comandos habilitados":"SIP indisponível")+"\n"+
-        "Chamadas: desabilitadas nesta prévia\n"+
-        "Dados de conta, destino e credenciais: não incluídos";
+                                uint abiVersion,uint connection=0,uint view=0)
+    {
+        string state=!bridgeAvailable || !backendAttached
+            ?"SIP indisponível"
+            :connection==1?"Registrando SIP"
+            :connection!=2?"Sem registro SIP confirmado"
+            :view==1?"Chamada recebida"
+            :view==2?"Chamada originada"
+            :view==3?"Em conversação"
+            :"Registro SIP confirmado";
+        return "AXE Voice WinUI 3 — diagnóstico local\\n"+
+            "Bridge C++: "+(bridgeAvailable?"carregada":"indisponível")+"\\n"+
+            "ABI: "+(bridgeAvailable?abiVersion.ToString():"não disponível")+"\\n"+
+            "Motor SIP: "+(backendAttached&&bridgeAvailable
+                ?"SDK nativo disponível":"SIP indisponível")+"\\n"+
+            "Estado: "+state+"\\n"+
+            "Áudio/RTP: requer homologação física\\n"+
+            "Dados de conta, destino e credenciais: não incluídos";
+    }
 }
