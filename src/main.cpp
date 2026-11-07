@@ -1014,7 +1014,8 @@ void draw_card(HDC dc, RECT rect, COLORREF color, int radius) {
     // Clamp it so compact cards remain rounded without distorting their edges.
     const int diameter=(std::min)(
         axv::dpi_pixels(radius*2,g_dpi),
-        (std::min)(rect.right-rect.left,rect.bottom-rect.top));
+        (std::min)(static_cast<int>(rect.right-rect.left),
+                   static_cast<int>(rect.bottom-rect.top)));
     RoundRect(dc, rect.left, rect.top, rect.right, rect.bottom,
               diameter,diameter);
     SelectObject(dc, old_pen);
