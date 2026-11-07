@@ -25,12 +25,21 @@ AxvFrontendSnapshot project(const AxvFrontendObservation& input) {
     AxvFrontendSnapshot out{};
     const int rc=axv_frontend_project_snapshot(&input,sizeof(input),&out,sizeof(out));
     assert(rc==AXV_FRONTEND_OK);
-    assert(out.abi_version==1 && out.struct_size==sizeof(out));
+    assert(out.abi_version==2 && out.struct_size==sizeof(out));
     assert(out.backend_attached==0);
     return out;
 }
 int main(){
     assert(axv_frontend_abi_version()==AXV_FRONTEND_ABI_VERSION);
+    assert(axv_frontend_abi_version()==2u);
+    // Default WinUI 3 preview must never silently start SIP.
+    assert(axv_frontend_connect_saved()==AXV_FRONTEND_ERROR_UNAVAILABLE);
+    assert(axv_frontend_disconnect()==AXV_FRONTEND_ERROR_UNAVAILABLE);
+    assert(axv_frontend_dial(L"1001",4,10)==AXV_FRONTEND_ERROR_UNAVAILABLE);
+    assert(axv_frontend_answer(10,20)==AXV_FRONTEND_ERROR_UNAVAILABLE);
+    assert(axv_frontend_hangup(10,20)==AXV_FRONTEND_ERROR_UNAVAILABLE);
+    assert(axv_frontend_dial(nullptr,4,10)==AXV_FRONTEND_ERROR_INVALID);
+    assert(axv_frontend_dial(L"1001",129,10)==AXV_FRONTEND_ERROR_INVALID);
     AxvFrontendSnapshot live{};
     assert(axv_frontend_get_snapshot(&live,sizeof(live))==AXV_FRONTEND_OK);
     assert(live.backend_attached==0 && live.connection==0 &&

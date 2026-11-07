@@ -214,6 +214,23 @@ add_library(axv_frontend_bridge SHARED src/frontend_shared/axv_frontend_api.cpp)
 target_compile_features(axv_frontend_bridge PRIVATE cxx_std_17)
 target_link_libraries(axv_frontend_bridge PRIVATE axv_sip_address)
 target_compile_definitions(axv_frontend_bridge PRIVATE AXV_FRONTEND_BRIDGE_BUILD)
+# In the audited native SDK profile only, the SAME Baresip implementation
+# is linked into the WinUI3 bridge. Generic Preview stays read-only/offline.
+if(AXV_ENABLE_NATIVE_SIP AND AXV_NATIVE_TLS_MEDIA)
+  target_sources(axv_frontend_bridge PRIVATE
+    src/frontend_shared/axv_native_host.cpp)
+  target_compile_definitions(axv_frontend_bridge PRIVATE
+    AXV_FRONTEND_NATIVE_SIP WIN32 NOMINMAX WIN32_LEAN_AND_MEAN)
+  target_link_libraries(axv_frontend_bridge PRIVATE axv_native_sip
+    advapi32 OpenSSL::SSL OpenSSL::Crypto
+    qwave iphlpapi wsock32 ws2_32 dbghelp
+    winmm gdi32 crypt32 strmiids ole32 oleaut32)
+  add_executable(axv_native_winui_host_smoke
+    tests/native_winui_host_smoke.cpp)
+  target_compile_features(axv_native_winui_host_smoke PRIVATE cxx_std_17)
+  target_link_libraries(axv_native_winui_host_smoke PRIVATE axv_frontend_bridge)
+endif()
+
 if(MSVC)
   target_compile_options(axv_frontend_bridge PRIVATE /utf-8 /W4)
 endif()
@@ -248,6 +265,11 @@ if(BUILD_TESTING)
   target_link_libraries(test_voice_application_service PRIVATE axv_sip_address)
   add_test(NAME voice_application_service COMMAND test_voice_application_service)
   set_tests_properties(voice_application_service PROPERTIES LABELS "unit")
+  add_executable(test_winui_native_account_policy tests/test_winui_native_account_policy.cpp)
+  target_compile_features(test_winui_native_account_policy PRIVATE cxx_std_17)
+  target_link_libraries(test_winui_native_account_policy PRIVATE axv_sip_address)
+  add_test(NAME winui_native_account_policy COMMAND test_winui_native_account_policy)
+  set_tests_properties(winui_native_account_policy PROPERTIES LABELS "security;unit")
   add_executable(test_frontend_shared_abi tests/test_frontend_shared_abi.cpp)
   target_compile_features(test_frontend_shared_abi PRIVATE cxx_std_17)
   target_link_libraries(test_frontend_shared_abi PRIVATE axv_frontend_bridge)
