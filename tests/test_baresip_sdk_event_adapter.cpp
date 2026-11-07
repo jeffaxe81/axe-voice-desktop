@@ -16,6 +16,7 @@ static int g_ua_lookups = 0;
 // Fake registrar status, distinct from the callback delivery itself.
 static bool g_native_registered[8]{};
 static bool g_withhold_registration_confirmation = false;
+static bool g_keep_registered_on_refresh = false;
 // Deterministic fake-SDK callback pause inside bevent_get_ua().
 static std::mutex g_pause_mutex;
 static std::condition_variable g_pause_cv;
@@ -61,8 +62,9 @@ static void emit(bevent_ev kind, bevent* event) {
     // BEVENT_REGISTER_OK to be deliberately inconsistent in negative tests.
     if (event && event->owner && event->owner->test_id < 8) {
         const auto id = event->owner->test_id;
-        if (kind == BEVENT_REGISTERING || kind == BEVENT_REGISTER_FAIL ||
-            kind == BEVENT_UNREGISTERING) g_native_registered[id] = false;
+        if ((kind == BEVENT_REGISTERING && !g_keep_registered_on_refresh) ||
+            kind == BEVENT_REGISTER_FAIL || kind == BEVENT_UNREGISTERING)
+            g_native_registered[id] = false;
         if (kind == BEVENT_REGISTER_OK && !g_withhold_registration_confirmation)
             g_native_registered[id] = true;
     }
@@ -267,5 +269,47 @@ int main() {
     if (adapter.active() || mailbox.drain().session) return 47;
     adapter.stop();
     if (g_callback || g_registered != g_unregistered) return 48;
+
+    // A REGISTER refresh may occur while a SIP call is live. If the Baresip
+    // UA still confirms registration, refresh must not make the active call
+    // disappear or cause an erroneous new incoming-call rejection.
+    if (!adapter.start(&account)) return 49;
+    emit(BEVENT_REGISTERING,&ua_event);
+    emit(BEVENT_REGISTER_OK,&ua_event);
+    if(!adapter.native_register_ok_seen())return 50;
+    (void)mailbox.drain();
+    emit(BEVENT_CALL_INCOMING,&one);
+    if(!adapter.active())return 51;
+    g_keep_registered_on_refresh=true;
+    emit(BEVENT_REGISTERING,&ua_event);
+    emit(BEVENT_REGISTER_OK,&ua_event);
+    g_keep_registered_on_refresh=false;
+    if(!adapter.active() || !adapter.native_register_ok_seen())return 52;
+    emit(BEVENT_CALL_ESTABLISHED,&one);
+    g_keep_registered_on_refresh=true;
+    emit(BEVENT_REGISTERING,&ua_event);
+    emit(BEVENT_REGISTER_OK,&ua_event);
+    g_keep_registered_on_refresh=false;
+    if(!adapter.active() || !adapter.native_register_ok_seen())return 58;
+    emit(BEVENT_CALL_CLOSED,&one);
+    auto refreshed=mailbox.drain();
+    if(refreshed.size!=3 ||
+       refreshed.events[0].kind!=BaresipEventKind::CallIncoming ||
+       refreshed.events[1].kind!=BaresipEventKind::CallEstablished ||
+       refreshed.events[2].kind!=BaresipEventKind::CallClosed)
+        return 53;
+    adapter.stop();
+    if(g_callback || g_registered!=g_unregistered)return 54;
+
+    // When the native UA actually loses registration during a call,
+    // the protective behavior remains fail-closed: no stale call controls.
+    if(!adapter.start(&account))return 55;
+    emit(BEVENT_REGISTERING,&ua_event);
+    emit(BEVENT_REGISTER_OK,&ua_event);
+    emit(BEVENT_CALL_INCOMING,&one);
+    emit(BEVENT_REGISTERING,&ua_event); // Native UA now reports unregistered.
+    if(adapter.active() || adapter.session() || mailbox.drain().session)return 56;
+    adapter.stop();
+    if(g_callback || g_registered!=g_unregistered)return 57;
     return 0;
 }

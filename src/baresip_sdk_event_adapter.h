@@ -207,12 +207,25 @@ private:
             fail_closed();
             return;
         case BEVENT_REGISTERING:
+            // A registration refresh can overlap an established call. Do not
+            // regress that verified call to Registering merely because another
+            // REGISTER transaction started, but ONLY while the native UA still
+            // proves registration. A real deregistration fails closed.
+            if (active_call_) {
+                if (!sip_registered_ || !ua_isregistered(owner_)) fail_closed();
+                return;
+            }
             if (!lifecycle_.registration(callback_session, BaresipEventKind::Registering))
                 fail_closed();
             else sip_registered_ = false;
             return;
         case BEVENT_REGISTER_OK:
-            if (!ua_isregistered(owner_) || !lifecycle_.registration(callback_session, BaresipEventKind::RegisterOk))
+            if (!ua_isregistered(owner_)) { fail_closed(); return; }
+            // REGISTER_OK during a verified active call is an idempotent refresh.
+            // Emitting it into the call state reducer would incorrectly revoke
+            // the active call or turn an established call into Registering.
+            if (active_call_ && sip_registered_) return;
+            if (!lifecycle_.registration(callback_session, BaresipEventKind::RegisterOk))
                 fail_closed();
             else sip_registered_ = true;
             return;
