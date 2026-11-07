@@ -19,6 +19,11 @@ int main() {
     result = evaluate_account_form(L"bad host", L"1001", L"5060");
     if (result.kind != AccountFeedbackKind::Invalid ||
         result.error != AccountError::InvalidServer) return 5;
+    for (const auto* url : {L"https://pbx.example.org/", L"http://pbx.example.org", L"pbx.example.org/"}) {
+        result = evaluate_account_form(url, L"1001", L"5060");
+        if (result.kind != AccountFeedbackKind::Invalid || result.error != AccountError::InvalidServer ||
+            std::wstring(result.message).find(L"somente o host") == std::wstring::npos) return 10;
+    }
     result = evaluate_account_form(L"pbx.example.org", L"a@b", L"5060");
     if (result.kind != AccountFeedbackKind::Invalid ||
         result.error != AccountError::InvalidUser) return 6;
