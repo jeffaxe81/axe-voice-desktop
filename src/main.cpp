@@ -3149,6 +3149,81 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                    rect.right<=br.x && rect.bottom<=br.y &&
                    rect.right>rect.left && rect.bottom>rect.top;
         };
+        // Design acceptance: all visible interactive/identity controls must
+        // occupy distinct physical rectangles inside the usable client area.
+        // This catches overlap and clipped navigation beyond the older tests
+        // which only checked the dial input and primary call action.
+        const auto essential_geometry_ok=[&](){
+            std::vector<HWND> controls{
+                g_brand_label,GetDlgItem(window,kTheme),
+                GetDlgItem(window,kShowSipMonitor),g_runtime_banner,g_number,
+                GetDlgItem(window,kCallButton),GetDlgItem(window,kHangupFuture),
+                GetDlgItem(window,kMuteFuture),GetDlgItem(window,kHoldFuture),
+                GetDlgItem(window,kTransferFuture),GetDlgItem(window,kShowDial),
+                GetDlgItem(window,kContactsButton),
+                GetDlgItem(window,kRecentDestinationsButton),
+                g_faleweb_prefs_button
+            };
+#ifdef AXV_ENABLE_NATIVE_SIP
+            controls.push_back(GetDlgItem(window,kAnswerNative));
+#endif
+            for(int i=0;i<12;++i)
+                controls.push_back(GetDlgItem(window,kDigitStart+i));
+            std::vector<RECT> occupied;
+            for(const HWND control:controls){
+                if(!control)return false;
+                if(!visible(control))continue;
+                if(!in_client(control))return false;
+                RECT bounds{};
+                if(!GetWindowRect(control,&bounds))return false;
+                for(const RECT& other:occupied)
+                    if(bounds.left<other.right && other.left<bounds.right &&
+                       bounds.top<other.bottom && other.top<bounds.bottom)
+                        return false;
+                occupied.push_back(bounds);
+            }
+            return occupied.size()>=18 && !visible(g_footer_panel) &&
+                !visible(g_status) && g_scroll_max==0 && g_scroll_offset==0 &&
+                !(GetWindowLongPtrW(window,GWL_STYLE)&WS_VSCROLL);
+        };
+        // Owner-drawn action labels should fit without using the truncating
+        // DT_END_ELLIPSIS fallback (which hides a design regression).
+        const auto essential_labels_fit=[&](){
+            std::vector<HWND> labels{
+                GetDlgItem(window,kTheme),GetDlgItem(window,kShowSipMonitor),
+                GetDlgItem(window,kCallButton),GetDlgItem(window,kHangupFuture),
+                GetDlgItem(window,kMuteFuture),GetDlgItem(window,kHoldFuture),
+                GetDlgItem(window,kTransferFuture),GetDlgItem(window,kShowDial),
+                GetDlgItem(window,kContactsButton),
+                GetDlgItem(window,kRecentDestinationsButton),g_faleweb_prefs_button
+            };
+#ifdef AXV_ENABLE_NATIVE_SIP
+            labels.push_back(GetDlgItem(window,kAnswerNative));
+#endif
+            for(const HWND control:labels){
+                if(!control)return false;
+                if(!visible(control))continue;
+                wchar_t value[128]{};
+                const int length=GetWindowTextW(control,value,128);
+                if(length<=0)return false;
+                HDC dc=GetDC(control);
+                if(!dc)return false;
+                const HGDIOBJ old=SelectObject(dc,g_font_regular);
+                SIZE text_size{};
+                const bool measured=GetTextExtentPoint32W(dc,value,length,&text_size)!=0;
+                SelectObject(dc,old);
+                ReleaseDC(control,dc);
+                RECT bounds{};
+                GetWindowRect(control,&bounds);
+                const int horizontal_space= axv::dpi_pixels(8,g_dpi);
+                const int vertical_space= axv::dpi_pixels(4,g_dpi);
+                if(!measured ||
+                   text_size.cx>bounds.right-bounds.left-horizontal_space ||
+                   text_size.cy>bounds.bottom-bounds.top-vertical_space)
+                    return false;
+            }
+            return true;
+        };
         const auto apply=[&](axv::SipStatus status,std::uint64_t call,
                              bool verified,axv::EssentialCallView expected){
             axv::SipRuntimeObservation snapshot{axv::RuntimeProcess::Running,status,
@@ -3168,6 +3243,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                 visible(dial)==idle && visible(end)==!idle &&
                 visible(mute)==secondary && visible(hold)==secondary &&
                 visible(transfer)==secondary && in_client(g_number);
+            passed=passed && essential_geometry_ok() && essential_labels_fit();
             if(visible(dial))passed=passed && in_client(dial);
             if(visible(end))passed=passed && in_client(end);
 #ifdef AXV_ENABLE_NATIVE_SIP
@@ -3196,8 +3272,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             passed=passed && g_scroll_max==0 && g_scroll_offset==0 &&
                 (GetWindowLongPtrW(window,GWL_STYLE)&WS_VSCROLL)==0;
         };
-        for(unsigned dpi:{96u,120u,144u}){
+        for(unsigned dpi:{96u,120u,144u,192u}){
             SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(dpi,dpi),0);
+            RECT frame{};
+            GetWindowRect(window,&frame);
+            passed=passed &&
+                frame.right-frame.left==axv::dpi_pixels(kEssentialWidth,dpi) &&
+                frame.bottom-frame.top==axv::dpi_pixels(kEssentialHeight,dpi);
             apply(axv::SipStatus::Registered,0,true,axv::EssentialCallView::Idle);
             apply(axv::SipStatus::Ringing,101,true,axv::EssentialCallView::Incoming);
             apply(axv::SipStatus::Calling,101,true,axv::EssentialCallView::Outgoing);
@@ -3207,8 +3288,22 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             // Monitor navigation must preserve the active incoming layout.
             apply(axv::SipStatus::Ringing,102,true,axv::EssentialCallView::Incoming);
             show_page(window,3);
+            // The fourth page has an independent scroll-free viewport and
+            // must not leave dialpad controls behind the monitor.
+            passed=passed && visible(g_monitor_events) &&
+                in_client(g_monitor_events) && !visible(g_number) &&
+                !visible(GetDlgItem(window,kDigitStart)) &&
+                !visible(g_footer_panel) && g_scroll_max==0 &&
+                !(GetWindowLongPtrW(window,GWL_STYLE)&WS_VSCROLL);
+            const bool original_dark=g_dark;
+            SendMessageW(window,WM_COMMAND,MAKEWPARAM(kTheme,BN_CLICKED),0);
+            passed=passed && g_dark!=original_dark &&
+                in_client(g_monitor_events);
+            SendMessageW(window,WM_COMMAND,MAKEWPARAM(kTheme,BN_CLICKED),0);
+            passed=passed && g_dark==original_dark;
             show_page(window,0);
-            passed=passed && visible(GetDlgItem(window,kHangupFuture));
+            passed=passed && essential_geometry_ok() &&
+                essential_labels_fit() && visible(GetDlgItem(window,kHangupFuture));
 #ifdef AXV_ENABLE_NATIVE_SIP
             passed=passed && visible(GetDlgItem(window,kAnswerNative));
 #endif
