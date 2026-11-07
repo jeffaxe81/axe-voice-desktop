@@ -1,6 +1,8 @@
 #define AXV_FRONTEND_BRIDGE_BUILD
 #include "axv_frontend_api.h"
 #include "../essential_call_actions.h"
+#include "../destination_feedback.h"
+#include <string>
 #include <cstring>
 
 namespace {
@@ -25,6 +27,22 @@ bool valid_input(const AxvFrontendObservation& input) noexcept {
            input.evidence<=static_cast<uint32_t>(axv::SipEvidence::VerifiedNativeApi) &&
            input.dial_authorized<=1;
 }
+}
+
+extern "C" int32_t axv_frontend_validate_destination(
+    const wchar_t* destination,uint32_t length) {
+    if(!destination)return AXV_FRONTEND_ERROR_INVALID;
+    if(length>128)return AXV_DEST_INVALID;
+    if(length==0)return AXV_DEST_EMPTY;
+    for(uint32_t i=0;i<length;++i)
+        if(destination[i]==L'\0')return AXV_DEST_INVALID;
+    const auto feedback=axv::evaluate_destination(
+        std::wstring(destination,destination+length));
+    if(feedback.kind==axv::DestinationFeedbackKind::Valid)
+        return AXV_DEST_VALID;
+    if(feedback.kind==axv::DestinationFeedbackKind::Empty)
+        return AXV_DEST_EMPTY;
+    return AXV_DEST_INVALID;
 }
 
 extern "C" uint32_t axv_frontend_abi_version(void) {

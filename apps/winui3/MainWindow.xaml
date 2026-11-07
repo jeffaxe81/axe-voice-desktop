@@ -4,7 +4,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="AXE Voice — WinUI 3 (prévia)">
-    <Border x:Name="MainShell" Background="{ThemeResource AxvShellBrush}" Padding="12">
+    <Border x:Name="MainShell" Background="{ThemeResource AxvShellBrush}" Padding="12" KeyDown="MainShell_KeyDown">
         <Border.Resources>
             <ResourceDictionary>
                 <!-- Theme resources update when MainShell.RequestedTheme changes.
@@ -68,7 +68,7 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="48"/>
                 <RowDefinition Height="64"/>
-                <RowDefinition Height="62"/>
+                <RowDefinition Height="72"/>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="58"/>
                 <RowDefinition Height="60"/>
@@ -106,19 +106,35 @@
                 </StackPanel>
             </Border>
 
-            <Grid Grid.Row="2" ColumnSpacing="6" Margin="0,4,0,7">
+            <Grid Grid.Row="2" ColumnSpacing="5" Margin="0,4,0,6">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="42"/>
+                    <RowDefinition Height="20"/>
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="44"/>
+                    <ColumnDefinition Width="39"/>
+                    <ColumnDefinition Width="39"/>
                 </Grid.ColumnDefinitions>
-                <TextBox x:Name="Destination" Grid.Column="0" FontSize="19"
-                         CornerRadius="10" PlaceholderText="Digite um número"
-                         MaxLength="128" AutomationProperties.Name="Número de destino"
-                         VerticalAlignment="Stretch"/>
-                <Button Grid.Column="1" Content="⌫" FontSize="20" Click="Backspace_Click"
-                        CornerRadius="10" Background="{ThemeResource AxvInputBrush}"
+                <TextBox x:Name="Destination" Grid.Row="0" Grid.Column="0" FontSize="17"
+                         CornerRadius="10" PlaceholderText="Ramal ou URI SIP"
+                         MaxLength="128" TextChanged="Destination_TextChanged"
+                         KeyDown="Destination_KeyDown"
+                         AutomationProperties.Name="Número ou URI SIP de destino"/>
+                <Button Grid.Row="0" Grid.Column="1" Content="⌫" FontSize="18"
+                        Click="Backspace_Click" CornerRadius="10"
+                        Background="{ThemeResource AxvInputBrush}"
                         Foreground="{ThemeResource AxvInputTextBrush}" BorderThickness="0"
                         AutomationProperties.Name="Apagar último dígito"/>
+                <Button x:Name="AddFavoriteButton" Grid.Row="0" Grid.Column="2"
+                        Content="☆" FontSize="20" Click="AddFavorite_Click"
+                        CornerRadius="10" Background="{ThemeResource AxvInputBrush}"
+                        Foreground="{ThemeResource AxvInputTextBrush}" BorderThickness="0"
+                        AutomationProperties.Name="Adicionar destino aos favoritos protegidos"/>
+                <TextBlock x:Name="DestinationFeedback" Grid.Row="1" Grid.ColumnSpan="3"
+                           Text="Digite um destino" FontSize="10"
+                           Foreground="{ThemeResource AxvSecondaryBrush}"
+                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
             </Grid>
 
             <Grid x:Name="DialerPanel" Grid.Row="3" RowSpacing="5" ColumnSpacing="5"
@@ -161,13 +177,42 @@
             </Grid>
 
             <Border x:Name="DetailsPanel" Grid.Row="3" Visibility="Collapsed"
-                    Background="{ThemeResource AxvDetailsBackgroundBrush}" CornerRadius="12" Padding="14">
-                <StackPanel Spacing="12" VerticalAlignment="Center">
-                    <TextBlock x:Name="DetailsTitle" FontSize="18" FontWeight="SemiBold"
+                    Background="{ThemeResource AxvDetailsBackgroundBrush}" CornerRadius="12" Padding="10">
+                <StackPanel Spacing="7" VerticalAlignment="Center">
+                    <TextBlock x:Name="DetailsTitle" FontSize="17" FontWeight="SemiBold"
                                Foreground="{ThemeResource AxvDetailsTitleBrush}" Text="Monitor SIP"/>
-                    <TextBlock x:Name="DetailsDescription" FontSize="12"
+                    <TextBlock x:Name="DetailsDescription" FontSize="11"
                                Foreground="{ThemeResource AxvDetailsTextBrush}" TextWrapping="Wrap"
                                Text="Nenhum registro SIP disponível nesta prévia."/>
+                    <StackPanel x:Name="FavoritesTools" Visibility="Collapsed" Spacing="5">
+                        <TextBlock x:Name="FavoriteCount" FontSize="11"
+                                   Foreground="{ThemeResource AxvDetailsTextBrush}"/>
+                        <ListView x:Name="FavoriteList" Height="93"
+                                  SelectionMode="Single" IsItemClickEnabled="True"
+                                  ItemClick="Favorite_ItemClick"
+                                  AutomationProperties.Name="Lista de destinos favoritos locais"/>
+                        <Button Content="Remover selecionado" Click="DeleteFavorite_Click"
+                                CornerRadius="9" FontSize="11"/>
+                    </StackPanel>
+                    <StackPanel x:Name="MonitorTools" Visibility="Collapsed" Spacing="6">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Button Content="Atualizar" Click="RefreshMonitor_Click"
+                                    CornerRadius="9" FontSize="11"/>
+                            <Button Content="Copiar diagnóstico" Click="CopyDiagnostic_Click"
+                                    CornerRadius="9" FontSize="11"/>
+                        </StackPanel>
+                        <TextBlock x:Name="MonitorFeedback" FontSize="10"
+                                   Foreground="{ThemeResource AxvDetailsTextBrush}"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <StackPanel x:Name="SettingsTools" Visibility="Collapsed" Spacing="5">
+                        <Button x:Name="SizeModeButton"
+                                Content="Tamanho: compacto (alterar)"
+                                Click="ChangeSize_Click" FontSize="11" CornerRadius="9"/>
+                        <TextBlock Text="Compacto: 355×602 · Conforto: 400×680"
+                                   Foreground="{ThemeResource AxvDetailsTextBrush}"
+                                   FontSize="10" TextWrapping="Wrap"/>
+                    </StackPanel>
                 </StackPanel>
             </Border>
 
