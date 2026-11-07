@@ -11,6 +11,7 @@ int main() {
     static_assert(rounded_rect_diameter(40,40,0)==0,"square fallback");
     static_assert(rounded_rect_diameter(100,40,INT_MAX)==40,"no radius overflow");
     static_assert(rounded_rect_diameter(1,1,20,1)==0,"no negative inner rect");
+    static_assert(rounded_rect_diameter(3,3,20,1)==1,"one pixel remains within bounds");
 
     unsigned checked=0;
     for (unsigned dpi : {96u,120u,144u,192u}) {
