@@ -8,6 +8,19 @@
 #include "native_codec_mode.h"
 
 namespace axv {
+// A modal Preferences window disables the dialer owner. These optional
+// callbacks preserve the ability to answer/reject *verified* incoming calls
+// without exposing SIP internals, creating a second engine or losing edits.
+inline constexpr int kPrefsIncomingAnswer=720;
+inline constexpr int kPrefsIncomingReject=721;
+inline constexpr UINT_PTR kPrefsIncomingTimer=722;
+struct FalewebIncomingActions {
+ void* context=nullptr;
+ bool (*available)(void*)=nullptr;
+ void (*answer)(void*)=nullptr;
+ void (*reject)(void*)=nullptr;
+ bool wired()const noexcept{return available && answer && reject;}
+};
 struct FalewebPreferences {
  std::wstring server,user,port,password,ca_file;
  bool tls=false;
@@ -25,6 +38,9 @@ struct FalewebPrefsDialog {
  HWND server=nullptr,user=nullptr,port=nullptr,password=nullptr,ca=nullptr,tls=nullptr,remember_password=nullptr;
  HWND ringtone=nullptr,muted=nullptr,inputs=nullptr,outputs=nullptr,rings=nullptr;
  HWND codec=nullptr;
+ FalewebIncomingActions incoming{};
+ HWND incoming_label=nullptr,incoming_answer=nullptr,incoming_reject=nullptr;
+ bool incoming_visible=false;
  int page=0;
 };
 inline std::wstring pref_edit_text(HWND control){
@@ -79,6 +95,16 @@ inline void pref_select_page(FalewebPrefsDialog* state,int page){
    ShowWindow(child,i==page?SW_SHOW:SW_HIDE);
   if(state->tabs[i])SendMessageW(state->tabs[i],BM_SETSTATE,i==page,0);
  }
+}
+inline void pref_refresh_incoming(HWND dialog,FalewebPrefsDialog* state){
+ if(!state || !state->incoming.wired())return;
+ const bool visible=state->incoming.available(state->incoming.context);
+ if(state->incoming_visible==visible)return; // no timer-driven redraw or focus stealing
+ state->incoming_visible=visible;
+ ShowWindow(state->incoming_label,visible?SW_SHOW:SW_HIDE);
+ ShowWindow(state->incoming_answer,visible?SW_SHOW:SW_HIDE);
+ ShowWindow(state->incoming_reject,visible?SW_SHOW:SW_HIDE);
+ if(visible)InvalidateRect(dialog,nullptr,FALSE);
 }
 inline INT_PTR CALLBACK faleweb_preferences_proc(HWND dialog,UINT message,WPARAM wp,LPARAM lp){
  auto* state=reinterpret_cast<FalewebPrefsDialog*>(GetWindowLongPtrW(dialog,DWLP_USER));
@@ -166,13 +192,55 @@ inline INT_PTR CALLBACK faleweb_preferences_proc(HWND dialog,UINT message,WPARAM
   };
   button(L"SALVAR",IDOK,static_cast<int>(client.right)-pref_px(dialog,222));
   button(L"CANCELAR",IDCANCEL,static_cast<int>(client.right)-pref_px(dialog,115));
+  if(state->incoming.wired()){
+   // Fixed strip just above Save/Cancel, outside the six preference tabs.
+   // Its visibility follows the current native call identity, never focus.
+   const int margin=pref_px(dialog,12),gap=pref_px(dialog,7);
+   const int width=pref_px(dialog,93);
+   const int right=static_cast<int>(client.right)-margin;
+   const int y=bottom-pref_px(dialog,44);
+   const int left_answer=right-2*width-gap;
+   const int label_width=left_answer-margin-gap;
+   state->incoming_label=CreateWindowExW(0,L"STATIC",L"CHAMADA RECEBIDA",
+       WS_CHILD|SS_LEFT|SS_NOPREFIX|SS_ENDELLIPSIS,
+       margin,y,label_width,pref_px(dialog,28),dialog,nullptr,
+       GetModuleHandleW(nullptr),nullptr);
+   state->incoming_answer=CreateWindowExW(0,L"BUTTON",L"ATENDER",
+       WS_CHILD|WS_TABSTOP|BS_PUSHBUTTON,left_answer,y,width,pref_px(dialog,31),
+       dialog,reinterpret_cast<HMENU>(static_cast<INT_PTR>(kPrefsIncomingAnswer)),
+       GetModuleHandleW(nullptr),nullptr);
+   state->incoming_reject=CreateWindowExW(0,L"BUTTON",L"RECUSAR",
+       WS_CHILD|WS_TABSTOP|BS_PUSHBUTTON,right-width,y,width,pref_px(dialog,31),
+       dialog,reinterpret_cast<HMENU>(static_cast<INT_PTR>(kPrefsIncomingReject)),
+       GetModuleHandleW(nullptr),nullptr);
+   for(HWND h:{state->incoming_label,state->incoming_answer,state->incoming_reject}){
+    if(h)SendMessageW(h,WM_SETFONT,reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)),TRUE);
+   }
+   SetTimer(dialog,kPrefsIncomingTimer,150,nullptr);
+  }
   pref_select_page(state,0);
+  pref_refresh_incoming(dialog,state);
   return TRUE;
  }
  if(!state)return FALSE;
+ if(message==WM_TIMER && wp==kPrefsIncomingTimer){
+  pref_refresh_incoming(dialog,state);return TRUE;
+ }
+ if(message==WM_DESTROY){KillTimer(dialog,kPrefsIncomingTimer);return FALSE;}
  if(message==WM_COMMAND){
   const int id=LOWORD(wp);
   if(id>=700 && id<706){pref_select_page(state,id-700);return TRUE;}
+  if(id==kPrefsIncomingAnswer || id==kPrefsIncomingReject){
+   // Check again on click: a call can close between drawing and clicking.
+   if(state->incoming.wired() &&
+      state->incoming.available(state->incoming.context)){
+    if(id==kPrefsIncomingAnswer)
+     state->incoming.answer(state->incoming.context);
+    else state->incoming.reject(state->incoming.context);
+   }
+   pref_refresh_incoming(dialog,state);
+   return TRUE;
+  }
   if(id==IDCANCEL){EndDialog(dialog,IDCANCEL);return TRUE;}
   if(id==IDOK){
    state->data.server=pref_edit_text(state->server);
@@ -196,7 +264,8 @@ inline INT_PTR CALLBACK faleweb_preferences_proc(HWND dialog,UINT message,WPARAM
  if(message==WM_CLOSE){EndDialog(dialog,IDCANCEL);return TRUE;}
  return FALSE;
 }
-inline bool edit_faleweb_preferences(HWND owner,FalewebPreferences& data){
+inline bool edit_faleweb_preferences(HWND owner,FalewebPreferences& data,
+                                     FalewebIncomingActions incoming={}){
  struct alignas(DWORD) Template {
   DLGTEMPLATE header{};
   WORD menu=0,cls=0,title=0;
@@ -205,6 +274,7 @@ inline bool edit_faleweb_preferences(HWND owner,FalewebPreferences& data){
  spec.header.cx=355;spec.header.cy=290;
  FalewebPrefsDialog state{};
  state.data=data;
+ state.incoming=incoming;
  const auto result=DialogBoxIndirectParamW(GetModuleHandleW(nullptr),&spec.header,
   owner,faleweb_preferences_proc,reinterpret_cast<LPARAM>(&state));
  if(result!=IDOK)return false;
