@@ -62,6 +62,23 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
         if(!until([&]{return IsWindowVisible(yes)&&IsWindowVisible(no);}))
             {fail(x,"incoming call controls not revealed");goto done;}
 
+        // Call actions must not overlap each other or Save/Cancel even in
+        // a compact preferences dialog.
+        RECT yes_bounds{},no_bounds{},cancel_bounds{},client{};
+        GetWindowRect(yes,&yes_bounds);
+        GetWindowRect(no,&no_bounds);
+        GetWindowRect(GetDlgItem(dialog,IDCANCEL),&cancel_bounds);
+        GetClientRect(dialog,&client);
+        POINT top_left{client.left,client.top},bottom_right{client.right,client.bottom};
+        ClientToScreen(dialog,&top_left);
+        ClientToScreen(dialog,&bottom_right);
+        if(!(yes_bounds.right<no_bounds.left &&
+             yes_bounds.bottom<cancel_bounds.top &&
+             no_bounds.bottom<cancel_bounds.top &&
+             yes_bounds.left>=top_left.x && no_bounds.right<=bottom_right.x &&
+             yes_bounds.top>=top_left.y && no_bounds.bottom<=bottom_right.y))
+            fail(x,"incoming buttons clipped or overlapping preferences footer");
+
         // Tabs must not suppress the emergency call actions.
         SendMessageW(dialog,WM_COMMAND,MAKEWPARAM(705,BN_CLICKED),0);
         if(!IsWindowVisible(yes)||!IsWindowVisible(no))
