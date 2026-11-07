@@ -319,7 +319,9 @@ int main() {
     emit(BEVENT_REGISTER_OK,&ua_event);
     emit(BEVENT_CALL_INCOMING,&one);
     g_native_registered[account.test_id]=false;
+    g_withhold_registration_confirmation=true;
     emit(BEVENT_REGISTER_OK,&ua_event);
+    g_withhold_registration_confirmation=false;
     if(adapter.active() || adapter.session() || mailbox.drain().session)return 60;
     adapter.stop();
     if(g_callback || g_registered!=g_unregistered)return 61;
