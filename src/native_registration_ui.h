@@ -32,7 +32,8 @@ inline const wchar_t* native_registration_result_message(NativeRegistrationResul
 // until the callee's own guard takes over. No moved-from SSO buffer is created.
 template<class Engine>
 NativeRegistrationResult register_native_account_ui(Engine& engine,const NativeRegistrationControls& controls,
-                                                     const std::wstring& input_id,const std::wstring& output_id) noexcept {
+                                                     const std::wstring& input_id,const std::wstring& output_id,
+                                                     NativeCodecMode codec_mode=NativeCodecMode::Automatic) noexcept {
     wchar_t secret[257]{};
     std::string password;
     registration_ui_detail::SecretScope secrets{secret,password};
@@ -43,8 +44,8 @@ NativeRegistrationResult register_native_account_ui(Engine& engine,const NativeR
         GetWindowTextW(controls.server,server,256);GetWindowTextW(controls.user,user,129);
         GetWindowTextW(controls.port,port,129);GetWindowTextW(controls.ca,ca,260);
         const auto feedback=evaluate_account_form(server,user,port);
-        if(!feedback.valid())return NativeRegistrationResult::InvalidAccount;
-        const SipAccount account{server,user,feedback.port,SendMessageW(controls.tls,BM_GETCHECK,0,0)==BST_CHECKED};
+        if(!feedback.valid() || !valid_native_codec_mode(codec_mode))return NativeRegistrationResult::InvalidAccount;
+        const SipAccount account{server,user,feedback.port,SendMessageW(controls.tls,BM_GETCHECK,0,0)==BST_CHECKED,codec_mode};
         const std::wstring ca_file(ca);
         const NativeAudioRoute audio{input_id,output_id};
         GetWindowTextW(controls.password,secret,257);
