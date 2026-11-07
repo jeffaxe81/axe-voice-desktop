@@ -33,6 +33,53 @@ internal static class NativeBridge
         CallingConvention = CallingConvention.Cdecl)]
     private static extern int GetSnapshot(out Snapshot snapshot, uint size);
 
+    internal enum CommandResult
+    {
+        Accepted=0, Invalid=-1, Unavailable=-2, Rejected=-3, MissingAccount=-4
+    }
+
+    [DllImport("axv_frontend_bridge.dll",
+        EntryPoint="axv_frontend_connect_saved",CallingConvention=CallingConvention.Cdecl)]
+    private static extern int ConnectSavedNative();
+
+    [DllImport("axv_frontend_bridge.dll",
+        EntryPoint="axv_frontend_disconnect",CallingConvention=CallingConvention.Cdecl)]
+    private static extern int DisconnectNative();
+
+    [DllImport("axv_frontend_bridge.dll",
+        EntryPoint="axv_frontend_dial",CallingConvention=CallingConvention.Cdecl,
+        CharSet=CharSet.Unicode)]
+    private static extern int DialNative(
+        [MarshalAs(UnmanagedType.LPWStr)] string destination,uint length,
+        ulong expectedSession);
+
+    [DllImport("axv_frontend_bridge.dll",
+        EntryPoint="axv_frontend_answer",CallingConvention=CallingConvention.Cdecl)]
+    private static extern int AnswerNative(ulong session,ulong callId);
+
+    [DllImport("axv_frontend_bridge.dll",
+        EntryPoint="axv_frontend_hangup",CallingConvention=CallingConvention.Cdecl)]
+    private static extern int HangupNative(ulong session,ulong callId);
+
+    private static CommandResult Invoke(Func<int> call)
+    {
+        try {
+            if(GetVersion()!=SupportedAbi)return CommandResult.Unavailable;
+            return (CommandResult)call();
+        }
+        catch(DllNotFoundException){return CommandResult.Unavailable;}
+        catch(EntryPointNotFoundException){return CommandResult.Unavailable;}
+        catch(BadImageFormatException){return CommandResult.Unavailable;}
+    }
+    internal static CommandResult ConnectSaved()=>Invoke(ConnectSavedNative);
+    internal static CommandResult Disconnect()=>Invoke(DisconnectNative);
+    internal static CommandResult Dial(string destination,ulong expectedSession)
+        =>Invoke(()=>DialNative(destination,(uint)destination.Length,expectedSession));
+    internal static CommandResult Answer(ulong session,ulong callId)
+        =>Invoke(()=>AnswerNative(session,callId));
+    internal static CommandResult Hangup(ulong session,ulong callId)
+        =>Invoke(()=>HangupNative(session,callId));
+
     internal enum DestinationStatus { Valid=0, Empty=1, Invalid=2, Unavailable=3 }
 
     [DllImport("axv_frontend_bridge.dll",
