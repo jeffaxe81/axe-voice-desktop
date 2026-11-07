@@ -1,4 +1,8 @@
 #include "../src/frontend_shared/axv_saved_account_policy.h"
+// Keep security assertions active with MSVC Release /DNDEBUG.
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <cassert>
 #include <cstdio>
 using axv::SavedAccountStatus;
