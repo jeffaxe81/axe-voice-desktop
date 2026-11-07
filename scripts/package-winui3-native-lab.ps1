@@ -132,13 +132,23 @@ function Invoke-Uninstall {
     Wait-ProcessBounded $uninstaller @(
         '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'
     ) 'WinUI 3 lab uninstall'
-    foreach($file in @(Get-ChildItem -LiteralPath $source -Recurse -File)) {
-        $relative=$file.FullName.Substring($source.Length+1)
-        if(Test-Path -LiteralPath (Join-Path $target $relative)) {
-            throw "WinUI 3 lab payload survived uninstall: $relative"
-        }
-    }
-    if(Test-Path -LiteralPath $link){throw 'WinUI 3 desktop shortcut survived uninstall'}
+    # The Inno uninstaller can also spawn a helper which outlives the initial
+    # bootstrap handle. Require the real installed payload to be gone before
+    # asserting success. Never delete any files or terminate unknown processes.
+    $deadline=[DateTime]::UtcNow.AddSeconds(120)
+    $remaining=@()
+    do {
+        $remaining=@(Get-ChildItem -LiteralPath $source -Recurse -File | Where-Object {
+            $relative=$_.FullName.Substring($source.Length+1)
+            Test-Path -LiteralPath (Join-Path $target $relative)
+        })
+        $active=@(Get-CimInstance Win32_Process -Filter "Name LIKE 'unins000%'")
+        if($remaining.Count -eq 0 -and $active.Count -eq 0 -and
+           !(Test-Path -LiteralPath $link)) { return }
+        Start-Sleep -Milliseconds 400
+    } while([DateTime]::UtcNow -lt $deadline)
+    throw "WinUI 3 lab uninstall incomplete: remainingPayload=$($remaining.Count), activeUninstaller=$($active.Count), desktopShortcutExists=$(Test-Path -LiteralPath $link)"
+
 }
 $common=@('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=`"$target`"")
 try {
