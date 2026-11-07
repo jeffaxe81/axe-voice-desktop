@@ -14,6 +14,7 @@
 #include "sip_account.h"
 #include "sip_status.h"
 #include "sip_runtime_observation.h"
+#include "essential_call_actions.h"
 #include "baresip_event_mailbox.h"
 #include "sip_event_projection.h"
 #include "sip_runtime_session_guard.h"
@@ -306,6 +307,10 @@ bool g_pinned = false;
 bool g_compact = false;
 bool g_faleweb_mode=false;
 bool g_faleweb_smoke=false;
+bool g_essential_smoke=false;
+axv::EssentialCallActions g_essential_actions{};
+axv::EssentialConnectionSignal g_essential_signal=axv::EssentialConnectionSignal::Offline;
+HBRUSH g_essential_status_brush[3]{};
 HWND g_brand_label=nullptr;
 HWND g_faleweb_prefs_button=nullptr;
 HWND g_faleweb_actions_button=nullptr;
@@ -525,6 +530,16 @@ void refresh_brushes() {
     if(g_faleweb_display_brush)DeleteObject(g_faleweb_display_brush);
     g_faleweb_display_brush=CreateSolidBrush(g_high_contrast?background_color():
         (g_dark?RGB(19,48,86):RGB(247,250,254)));
+    // Online / pending / offline status chips respect current light/dark theme.
+    const COLORREF colors[3]={
+        g_dark?RGB(71,31,39):RGB(251,232,235),
+        g_dark?RGB(69,50,18):RGB(255,246,223),
+        g_dark?RGB(23,62,45):RGB(225,247,233)
+    };
+    for(int i=0;i<3;++i){
+        if(g_essential_status_brush[i])DeleteObject(g_essential_status_brush[i]);
+        g_essential_status_brush[i]=CreateSolidBrush(colors[i]);
+    }
 }
 HFONT create_font(int size, int weight) {
     return CreateFontW(-axv::dpi_pixels(size, g_dpi), 0, 0, 0, weight, FALSE, FALSE, FALSE,
@@ -861,8 +876,16 @@ void apply_faleweb_layout(HWND root) {
         for(int i=0;i<12;++i)
             position_essential(GetDlgItem(root,kDigitStart+i),
                              23+(i%3)*132,192+(i/3)*68,129,64);
+        // Preserve the approved 355x602 dialer. Only its call action row
+        // changes in response to a verified native call identity.
+        const auto view=g_essential_actions.view;
+        const bool incoming=view==axv::EssentialCallView::Incoming;
         position_essential(GetDlgItem(root,kCallButton),23,477,397,54);
-        // Existing call controls retain their original IDs and SIP handlers.
+#ifdef AXV_ENABLE_NATIVE_SIP
+        position_essential(GetDlgItem(root,kAnswerNative),23,477,194,54);
+#endif
+        position_essential(GetDlgItem(root,kHangupFuture),
+                           incoming?225:23,477,incoming?195:397,54);
         position_essential(GetDlgItem(root,kMuteFuture),23,546,126,45);
         position_essential(GetDlgItem(root,kHoldFuture),158,546,126,45);
         position_essential(GetDlgItem(root,kTransferFuture),293,546,127,45);
@@ -870,12 +893,27 @@ void apply_faleweb_layout(HWND root) {
         position_essential(GetDlgItem(root,kContactsButton),125,637,94,67);
         position_essential(GetDlgItem(root,kRecentDestinationsButton),227,637,94,67);
         position_essential(g_faleweb_prefs_button,329,637,94,67);
-        // Hangup/answer remain available from the functional call-state
-        // controls, but do not crowd the approved idle keypad screen.
-        ShowWindow(GetDlgItem(root,kHangupFuture),SW_HIDE);
+        // Exactly one verified primary action group is shown at a time.
+        // Visibility is presentation; command handlers still enforce native
+        // session + displayed-call identity before any SIP operation.
+        ShowWindow(GetDlgItem(root,kCallButton),
+                   view==axv::EssentialCallView::Idle?SW_SHOW:SW_HIDE);
+        ShowWindow(GetDlgItem(root,kHangupFuture),
+                   g_essential_actions.hangup?SW_SHOW:SW_HIDE);
 #ifdef AXV_ENABLE_NATIVE_SIP
-        ShowWindow(GetDlgItem(root,kAnswerNative),SW_HIDE);
+        ShowWindow(GetDlgItem(root,kAnswerNative),
+                   g_essential_actions.answer?SW_SHOW:SW_HIDE);
 #endif
+        const int secondary=g_essential_actions.secondary?SW_SHOW:SW_HIDE;
+        ShowWindow(GetDlgItem(root,kMuteFuture),secondary);
+        ShowWindow(GetDlgItem(root,kHoldFuture),secondary);
+        ShowWindow(GetDlgItem(root,kTransferFuture),secondary);
+        const HWND end_button=GetDlgItem(root,kHangupFuture);
+        const wchar_t* end_label=incoming?L"Recusar":L"Encerrar";
+        wchar_t previous_end[32]{};
+        GetWindowTextW(end_button,previous_end,32);
+        if(std::wcscmp(previous_end,end_label)!=0)
+            SetWindowTextW(end_button,end_label);
         SetWindowTextW(GetDlgItem(root,kCallButton),L"Ligar");
         SetWindowTextW(GetDlgItem(root,kShowDial),L"Teclado");
         SetWindowTextW(GetDlgItem(root,kContactsButton),L"Contatos");
@@ -1491,11 +1529,19 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
         SetWindowTextW(g_call_duration_label,duration_text.c_str());
 #endif
     const auto current_session = observed.session;
-    // No audited native producer is linked; process state never implies SIP proof.
+    const auto signal=axv::essential_connection_signal(observed,current_session);
+    if(g_essential_signal!=signal){
+        g_essential_signal=signal;
+        InvalidateRect(g_runtime_banner,nullptr,TRUE);
+    }
+    // Process state never implies SIP registration proof.
     // Without a native verified producer the UI cannot claim SIP registration.
     const wchar_t* banner = axv::runtime_status_banner(observed, current_session);
     if(g_faleweb_mode) {
-        if(!axv::sip_proof_is_current(observed,current_session))
+        if(observed.process==axv::RuntimeProcess::Running &&
+           observed.sip==axv::SipStatus::Registering)
+            banner=L"REGISTRANDO SIP...";
+        else if(!axv::sip_proof_is_current(observed,current_session))
             banner=L"SIP NAO REGISTRADO";
         else switch(observed.sip){
         case axv::SipStatus::Registered:banner=L"SIP REGISTRADO";break;
@@ -1518,10 +1564,20 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
     const HWND button = GetDlgItem(GetParent(g_runtime_banner), kCallButton);
     if (IsWindowEnabled(button) != (dial ? TRUE : FALSE))
         EnableWindow(button, dial ? TRUE : FALSE);
+    // UI never equates a process-up event with a verified SIP call.
+    const auto actions=axv::essential_call_actions(observed,current_session,dial);
+    const bool changed=actions.view!=g_essential_actions.view;
+    g_essential_actions=actions;
+    if(changed && g_faleweb_mode && !g_faleweb_smoke && g_page==0)
+        apply_faleweb_layout(GetParent(g_runtime_banner));
 #ifdef AXV_ENABLE_NATIVE_SIP
-    SetWindowTextW(button,L"CHAMAR");
-    EnableWindow(GetDlgItem(GetParent(g_runtime_banner),kAnswerNative),observed.sip==axv::SipStatus::Ringing);
-    EnableWindow(GetDlgItem(GetParent(g_runtime_banner),kHangupFuture),observed.call_id!=0);
+    const wchar_t* dial_label=g_faleweb_mode?L"Ligar":L"CHAMAR";
+    wchar_t old_dial_label[40]{};
+    GetWindowTextW(button,old_dial_label,40);
+    if(std::wcscmp(old_dial_label,dial_label)!=0)
+        SetWindowTextW(button,dial_label);
+    EnableWindow(GetDlgItem(GetParent(g_runtime_banner),kAnswerNative),actions.answer);
+    EnableWindow(GetDlgItem(GetParent(g_runtime_banner),kHangupFuture),actions.hangup);
     const auto media=native_engine().media_state();
     const bool controls=axv::native_media_controls_current(media,observed);
     g_displayed_media=controls?media:axv::NativeCallMediaState{};
@@ -1822,7 +1878,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         return 0;
 #endif
     case WM_CREATE: {
-        g_faleweb_mode=!g_smoke_mode || g_faleweb_smoke;
+        g_faleweb_mode=!g_smoke_mode || g_faleweb_smoke || g_essential_smoke;
         g_dpi=axv::normalized_dpi(GetDpiForWindow(window));
         load_ui_preferences();
         read_windows_contrast();
@@ -2702,6 +2758,23 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         }
 #endif
         SetTextColor(dc,foreground);
+        if(g_faleweb_mode && label==g_runtime_banner && !g_high_contrast){
+            const auto index=static_cast<int>(g_essential_signal);
+            const COLORREF bg[3]={
+                g_dark?RGB(71,31,39):RGB(251,232,235),
+                g_dark?RGB(69,50,18):RGB(255,246,223),
+                g_dark?RGB(23,62,45):RGB(225,247,233)
+            };
+            const COLORREF fg[3]={
+                g_dark?RGB(255,220,225):RGB(132,29,42),
+                g_dark?RGB(255,228,160):RGB(118,75,18),
+                g_dark?RGB(209,249,222):RGB(22,94,56)
+            };
+            SetBkColor(dc,bg[index]);
+            SetTextColor(dc,fg[index]);
+            SetBkMode(dc,OPAQUE);
+            return reinterpret_cast<LRESULT>(g_essential_status_brush[index]);
+        }
         if(g_faleweb_mode && (label==g_runtime_banner
 #ifdef AXV_ENABLE_NATIVE_SIP
            || label==g_call_duration_label || label==g_ringtone_status_label
@@ -2910,6 +2983,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         if (g_field_brush) DeleteObject(g_field_brush);
         if (g_invalid_field_brush) DeleteObject(g_invalid_field_brush);
         if(g_faleweb_display_brush)DeleteObject(g_faleweb_display_brush);
+        for(HBRUSH brush:g_essential_status_brush)
+            if(brush)DeleteObject(brush);
         if(g_faleweb_digit_font)DeleteObject(g_faleweb_digit_font);
         if(g_faleweb_letters_font)DeleteObject(g_faleweb_letters_font);
         // Normally stopped through WM_CLOSE. Forced fallback on external destruction.
@@ -2923,7 +2998,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show) {
     g_faleweb_smoke=command_line && std::wcscmp(command_line,L"--faleweb-ui-smoke")==0;
-    g_smoke_mode = g_faleweb_smoke || (command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
+    g_essential_smoke=command_line && std::wcscmp(command_line,L"--essential-ui-smoke")==0;
+    g_smoke_mode = g_faleweb_smoke || g_essential_smoke || (command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0 || std::wcscmp(command_line,L"--native-ui-smoke")==0));
 #ifdef AXV_ENABLE_NATIVE_SIP
     const auto guard_names = axv::native_install_guard_names();
@@ -2966,7 +3042,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             LocalFree(argv);
         }
     }
-    g_faleweb_mode=!g_smoke_mode;
+    g_faleweb_mode=!g_smoke_mode || g_essential_smoke;
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     g_dpi=axv::normalized_dpi(GetDpiForSystem());
     const wchar_t* className = L"AXEVoiceDesktopWindow";
@@ -3010,6 +3086,91 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         }
     }
 #endif
+    if(g_essential_smoke){
+        // Exercise the real owner-drawn Win32 controls and their physical
+        // rectangles without registering a SIP account or starting a call.
+        bool passed=true;
+        const auto visible=[](HWND control){
+            return control && (GetWindowLongPtrW(control,GWL_STYLE)&WS_VISIBLE)!=0;
+        };
+        const auto in_client=[&](HWND control){
+            if(!control)return false;
+            RECT client{},rect{};
+            GetClientRect(window,&client);
+            POINT tl{client.left,client.top},br{client.right,client.bottom};
+            ClientToScreen(window,&tl);ClientToScreen(window,&br);
+            GetWindowRect(control,&rect);
+            return rect.left>=tl.x && rect.top>=tl.y &&
+                   rect.right<=br.x && rect.bottom<=br.y &&
+                   rect.right>rect.left && rect.bottom>rect.top;
+        };
+        const auto apply=[&](axv::SipStatus status,std::uint64_t call,
+                             bool verified,axv::EssentialCallView expected){
+            axv::SipRuntimeObservation snapshot{axv::RuntimeProcess::Running,status,
+                verified?axv::SipEvidence::VerifiedNativeApi:axv::SipEvidence::None,
+                17,call};
+            g_essential_actions=axv::essential_call_actions(snapshot,17,true);
+            apply_faleweb_layout(window);
+            const HWND dial=GetDlgItem(window,kCallButton);
+            const HWND end=GetDlgItem(window,kHangupFuture);
+            const HWND mute=GetDlgItem(window,kMuteFuture);
+            const HWND hold=GetDlgItem(window,kHoldFuture);
+            const HWND transfer=GetDlgItem(window,kTransferFuture);
+            const bool incoming=expected==axv::EssentialCallView::Incoming;
+            const bool idle=expected==axv::EssentialCallView::Idle;
+            const bool secondary=expected==axv::EssentialCallView::Connected;
+            passed=passed && g_essential_actions.view==expected &&
+                visible(dial)==idle && visible(end)==!idle &&
+                visible(mute)==secondary && visible(hold)==secondary &&
+                visible(transfer)==secondary && in_client(g_number);
+            if(visible(dial))passed=passed && in_client(dial);
+            if(visible(end))passed=passed && in_client(end);
+#ifdef AXV_ENABLE_NATIVE_SIP
+            const HWND answer=GetDlgItem(window,kAnswerNative);
+            passed=passed && visible(answer)==incoming;
+            if(incoming){
+                RECT a{},b{};GetWindowRect(answer,&a);GetWindowRect(end,&b);
+                passed=passed && in_client(answer) && a.right<b.left &&
+                    a.top==b.top && a.bottom==b.bottom;
+            }
+#else
+            (void)incoming;
+#endif
+            if(secondary){
+                RECT primary{},lower{};
+                GetWindowRect(end,&primary);
+                GetWindowRect(mute,&lower);
+                passed=passed && in_client(mute) && in_client(hold) &&
+                    in_client(transfer) && primary.bottom<lower.top;
+            }
+            if(!idle){
+                wchar_t title[32]{};
+                GetWindowTextW(end,title,32);
+                passed=passed && std::wcscmp(title,incoming?L"Recusar":L"Encerrar")==0;
+            }
+            passed=passed && g_scroll_max==0 && g_scroll_offset==0 &&
+                (GetWindowLongPtrW(window,GWL_STYLE)&WS_VSCROLL)==0;
+        };
+        for(unsigned dpi:{96u,120u,144u}){
+            SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(dpi,dpi),0);
+            apply(axv::SipStatus::Registered,0,true,axv::EssentialCallView::Idle);
+            apply(axv::SipStatus::Ringing,101,true,axv::EssentialCallView::Incoming);
+            apply(axv::SipStatus::Calling,101,true,axv::EssentialCallView::Outgoing);
+            apply(axv::SipStatus::InCall,101,true,axv::EssentialCallView::Connected);
+            apply(axv::SipStatus::Ringing,101,false,axv::EssentialCallView::Idle);
+            apply(axv::SipStatus::Ringing,0,true,axv::EssentialCallView::Idle);
+            // Monitor navigation must preserve the active incoming layout.
+            apply(axv::SipStatus::Ringing,102,true,axv::EssentialCallView::Incoming);
+            show_page(window,3);
+            show_page(window,0);
+            passed=passed && visible(GetDlgItem(window,kHangupFuture));
+#ifdef AXV_ENABLE_NATIVE_SIP
+            passed=passed && visible(GetDlgItem(window,kAnswerNative));
+#endif
+        }
+        DestroyWindow(window);
+        return passed?0:97;
+    }
     if(g_faleweb_smoke){
         bool passed=g_faleweb_mode && !g_scroll_max &&
             !((GetWindowLongPtrW(window,GWL_STYLE))&WS_VSCROLL) &&
