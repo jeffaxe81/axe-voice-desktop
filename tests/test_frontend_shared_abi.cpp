@@ -1,5 +1,9 @@
 #include "../src/frontend_shared/axv_frontend_api.h"
 #include "../src/sip_runtime_observation.h"
+// MSVC Release defines NDEBUG; keep ABI contract checks live in CI.
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <cassert>
 #include <cstdio>
 #include <cstdint>
