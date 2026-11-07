@@ -11,7 +11,7 @@ inline constexpr int rounded_rect_diameter(int width_px, int height_px,
     if(width_px<=0 || height_px<=0 || radius_px<=0) return 0;
     const int inset = inset_px>0 ? inset_px : 0;
     // Avoid overflow in width - 2*inset and radius*2 for corrupted dimensions.
-    if(inset >= width_px/2 || inset >= height_px/2) return 0;
+    if(inset > (width_px-1)/2 || inset > (height_px-1)/2) return 0;
     const int safe_width = width_px - 2*inset;
     const int safe_height = height_px - 2*inset;
     const int max_diameter = (std::min)(safe_width,safe_height);
