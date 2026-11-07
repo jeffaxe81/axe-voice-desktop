@@ -28,4 +28,56 @@ int main(){
  b.size=2;b.events[0]={axv::BaresipEventKind::Registering,1,0};b.events[1]={axv::BaresipEventKind::RegisterOk,1,0};
  s=axv::project_native_sdk_batch(lost,b,true);CHECK(s.sip==axv::SipStatus::Registered);
  b.size=0;s=axv::project_native_sdk_batch(lost,b,false);CHECK(s.evidence==axv::SipEvidence::None);
+ // Two thousand fully synthetic call lifecycles exercise the Baresip event
+ // projection and native command guards. These are NOT real PBX/RTP calls.
+ for (std::uint64_t iteration=1;iteration<=1000;++iteration) {
+  axv::SipEventProjection receiver;
+  axv::BaresipEventMailbox::Batch incoming{};
+  incoming.session=iteration+100;
+  incoming.size=2;
+  incoming.events[0]={axv::BaresipEventKind::Registering,incoming.session,0};
+  incoming.events[1]={axv::BaresipEventKind::RegisterOk,incoming.session,0};
+  auto state=axv::project_native_sdk_batch(receiver,incoming,true);
+  CHECK(state.sip==axv::SipStatus::Registered && state.call_id==0);
+  incoming.size=1;
+  incoming.events[0]={axv::BaresipEventKind::CallIncoming,incoming.session,1};
+  state=axv::project_native_sdk_batch(receiver,incoming,true);
+  CHECK(state.sip==axv::SipStatus::Ringing && state.call_id==1);
+  const axv::NativeCallCommand accept{axv::NativeCallAction::Answer,incoming.session,1,{}};
+  axv::NativeCommandAdmission only_once;
+  CHECK(axv::native_command_is_current(accept,state));
+  CHECK(only_once.admit(accept,state) && !only_once.admit(accept,state));
+  incoming.events[0]={axv::BaresipEventKind::CallEstablished,incoming.session,1};
+  state=axv::project_native_sdk_batch(receiver,incoming,true);
+  CHECK(state.sip==axv::SipStatus::InCall && !axv::native_command_is_current(accept,state));
+  const axv::NativeCallCommand end{axv::NativeCallAction::Hangup,incoming.session,1,{}};
+  CHECK(only_once.admit(end,state) && !only_once.admit(end,state));
+  incoming.events[0]={axv::BaresipEventKind::CallClosed,incoming.session,1};
+  state=axv::project_native_sdk_batch(receiver,incoming,true);
+  CHECK(state.sip==axv::SipStatus::Registered && state.call_id==0);
+  CHECK(!axv::native_command_is_current(end,state));
+  // Reusing a closed call token must revoke proof, never show a new ring.
+  incoming.events[0]={axv::BaresipEventKind::CallIncoming,incoming.session,1};
+  state=axv::project_native_sdk_batch(receiver,incoming,true);
+  CHECK(state.evidence==axv::SipEvidence::None && state.sip!=axv::SipStatus::Ringing);
+
+  axv::SipEventProjection originator;
+  axv::BaresipEventMailbox::Batch outgoing{};
+  outgoing.session=iteration+1100;
+  outgoing.size=2;
+  outgoing.events[0]={axv::BaresipEventKind::Registering,outgoing.session,0};
+  outgoing.events[1]={axv::BaresipEventKind::RegisterOk,outgoing.session,0};
+  state=axv::project_native_sdk_batch(originator,outgoing,true);
+  CHECK(state.sip==axv::SipStatus::Registered);
+  outgoing.size=1;
+  outgoing.events[0]={axv::BaresipEventKind::CallOutgoing,outgoing.session,1};
+  state=axv::project_native_sdk_batch(originator,outgoing,true);
+  CHECK(state.sip==axv::SipStatus::Calling && state.call_id==1);
+  const axv::NativeCallCommand cancel{axv::NativeCallAction::Hangup,outgoing.session,1,{}};
+  CHECK(axv::native_command_is_current(cancel,state));
+  outgoing.events[0]={axv::BaresipEventKind::CallClosed,outgoing.session,1};
+  state=axv::project_native_sdk_batch(originator,outgoing,true);
+  CHECK(state.sip==axv::SipStatus::Registered && !axv::native_command_is_current(cancel,state));
+ }
+
 }
