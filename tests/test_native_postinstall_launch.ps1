@@ -138,13 +138,251 @@ public static class NativePostinstallWindows {
                     ForEach-Object { [NativePostinstallWindows]::Text($_) }) -join "|"
                 foreach ($Control in $Controls) {
                     if (![NativePostinstallWindows]::IsWindowVisible($Control) -or
-                        ![NativePostinstallWindows]::IsWindowEnabled($Control) -or
-                        [NativePostinstallWindows]::Class($Control) -notin @('TNewButton', 'TButton')) { continue }
+                        ![NativePostinstallWindows]::IsWindowEnabled($Control)) { continue }
+                    # Inno Setup versions use several standard Delphi VCL
+                    # button classes. Identify a button by its actual class
+                    # and exact stock navigation caption; never click unknown
+                    # controls or infer buttons by screen coordinates.
+                    $Class=[NativePostinstallWindows]::Class($Control)
+                    if ($Class -notmatch '^(?:T[A-Za-z0-9]*Button|Button)
+                    $Action = "$Control/$Caption/$Page"
+                    if ($Action -eq $LastAction) {
+                        # Inno task pages can reuse the same visible navigation
+                        # and page text signature. Never spin forever on a valid
+                        # Next button: retry conservatively after 3 seconds,
+                        # bounded by the overall timeout and repeat counter.
+                        if (([DateTime]::UtcNow - $LastActionAt).TotalSeconds -lt 3) {
+                            continue
+                        }
+                        $StableActionRepeats++
+                        if ($StableActionRepeats -gt 6) {
+                            throw "Installer navigation stalled on a known $Caption button after bounded retries"
+                        }
+                    } else {
+                        $StableActionRepeats = 0
+                    }
+                    if ($Caption -eq 'Finish') { $SawFinish = $true }
+                    [NativePostinstallWindows]::Click($Control)
+                    $LastAction = $Action
+                    $LastActionAt = [DateTime]::UtcNow
+                    $LastActionCaption = $Caption
+                    break
+                }
+            }
+            $Setup.Refresh()
+            $ActiveSetup = @($Known.Values | Where-Object { !$_.IsApp -and !$_.Process.HasExited })
+            if ($Setup.HasExited -and $ActiveSetup.Count -eq 0) { break }
+            Start-Sleep -Milliseconds 200
+        } while ([DateTime]::UtcNow -lt $Deadline)
+        if (!$Setup.HasExited -or $ActiveSetup.Count) {
+            # Only known bootstrap process identities and stock button captions
+            # are included; no arbitrary wizard page contents or credentials.
+            $OwnedClasses = @()
+            foreach ($Top in [NativePostinstallWindows]::Windows([IntPtr]::Zero)) {
+                if ((Test-OwnedSetupWindow $Top) -and [NativePostinstallWindows]::IsWindowVisible($Top)) {
+                    $OwnedClasses += [NativePostinstallWindows]::Class($Top)
+                }
+            }
+            $NavigationClasses=@()
+            foreach ($Top in [NativePostinstallWindows]::Windows([IntPtr]::Zero)) {
+                if (!(Test-OwnedSetupWindow $Top) -or
+                    ![NativePostinstallWindows]::IsWindowVisible($Top) -or
+                    [NativePostinstallWindows]::Class($Top) -ne 'TWizardForm') { continue }
+                foreach ($Child in [NativePostinstallWindows]::Windows($Top)) {
+                    $Class=[NativePostinstallWindows]::Class($Child)
+                    if ($Class -notmatch '^(?:T[A-Za-z0-9]*Button|Button)
+        }
+        if ($Setup.ExitCode -ne 0) { throw "Interactive setup failed with exit code $($Setup.ExitCode)" }
+        if (!$SawWizard -or !$SawFinish) { throw 'Did not observe and finish the real interactive Inno wizard' }
+        if (Test-Marker $SetupMutexName) { throw 'Setup marker remained after interactive setup exited' }
+        $Deadline = [DateTime]::UtcNow.AddSeconds(30)
+        do {
+            Update-OwnedProcesses
+            $Apps = @(Get-InstalledApp)
+            if ($Apps.Count -gt 1) { throw 'Postinstall launched multiple candidate GUIs' }
+            if ($Apps.Count -eq 1) {
+                $App = $Apps[0]
+                $App.Refresh()
+                if (!$App.HasExited -and $App.MainWindowHandle -ne [IntPtr]::Zero -and
+                    (Test-Marker $ApplicationMutexName)) { break }
+            }
+            Start-Sleep -Milliseconds 100
+        } while ([DateTime]::UtcNow -lt $Deadline)
+        if (!$App -or $App.HasExited -or $App.MainWindowHandle -eq [IntPtr]::Zero -or
+            !(Test-Marker $ApplicationMutexName)) { throw 'Production postinstall [Run] did not leave a real GUI holding the application marker' }
+        if (Test-Marker $SetupMutexName) { throw 'Setup marker exists while postinstall GUI is running' }
+    } finally {
+        # Never terminate AXE or setup: request ordinary window shutdown even on
+        # failure. Unexpected modal dialogs may require operator cleanup.
+        if ($Setup) {
+            $Setup.Refresh()
+            if ($Wizard -ne [IntPtr]::Zero -and (Test-OwnedSetupWindow $Wizard)) {
+                [void][NativePostinstallWindows]::PostMessage($Wizard, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+            }
+        }
+        foreach ($Running in @(Get-InstalledApp)) {
+            try {
+                $Running.Refresh()
+                if (!$Running.HasExited) {
+                    if (!$Running.CloseMainWindow()) { throw 'Could not request graceful postinstall GUI shutdown' }
+                    if (!$Running.WaitForExit(30000)) { throw 'Postinstall GUI did not close gracefully' }
+                }
+            } finally { }
+        }
+        foreach ($Identity in $Known.Values) { $Identity.Process.Dispose() }
+    }
+    if (Test-Marker $ApplicationMutexName) { throw 'Application marker remained after graceful postinstall GUI shutdown' }
+    Write-Output 'Production interactive Inno postinstall [Run] launched the installed GUI, with setup marker absent and application marker held; GUI closed gracefully'
+}
+) { continue }
                     $Caption = [NativePostinstallWindows]::Text($Control).Replace('&','').Trim()
                     # The checked-by-default postinstall checklist is untouched.
-                    # Only the stock English wizard navigation is automated;
-                    # any unexpected/localized dialog fails within the deadline.
-                    if ($Caption -notin @('Next >', 'Install', 'Finish')) { continue }
+                    # Allow both the classic and current wizard stock labels.
+                    # Any unexpected button remains untouched and fails closed.
+                    if ($Caption -notin @('Next >', 'Next', 'Install', 'Finish','Próximo >','Avançar >','Instalar','Concluir')) { continue }
+                    $Action = "$Control/$Caption/$Page"
+                    if ($Action -eq $LastAction) {
+                        # Inno task pages can reuse the same visible navigation
+                        # and page text signature. Never spin forever on a valid
+                        # Next button: retry conservatively after 3 seconds,
+                        # bounded by the overall timeout and repeat counter.
+                        if (([DateTime]::UtcNow - $LastActionAt).TotalSeconds -lt 3) {
+                            continue
+                        }
+                        $StableActionRepeats++
+                        if ($StableActionRepeats -gt 6) {
+                            throw "Installer navigation stalled on a known $Caption button after bounded retries"
+                        }
+                    } else {
+                        $StableActionRepeats = 0
+                    }
+                    if ($Caption -eq 'Finish') { $SawFinish = $true }
+                    [NativePostinstallWindows]::Click($Control)
+                    $LastAction = $Action
+                    $LastActionAt = [DateTime]::UtcNow
+                    $LastActionCaption = $Caption
+                    break
+                }
+            }
+            $Setup.Refresh()
+            $ActiveSetup = @($Known.Values | Where-Object { !$_.IsApp -and !$_.Process.HasExited })
+            if ($Setup.HasExited -and $ActiveSetup.Count -eq 0) { break }
+            Start-Sleep -Milliseconds 200
+        } while ([DateTime]::UtcNow -lt $Deadline)
+        if (!$Setup.HasExited -or $ActiveSetup.Count) {
+            # Only known bootstrap process identities and stock button captions
+            # are included; no arbitrary wizard page contents or credentials.
+            $OwnedClasses = @()
+            foreach ($Top in [NativePostinstallWindows]::Windows([IntPtr]::Zero)) {
+                if ((Test-OwnedSetupWindow $Top) -and [NativePostinstallWindows]::IsWindowVisible($Top)) {
+                    $OwnedClasses += [NativePostinstallWindows]::Class($Top)
+                }
+            }
+            throw "Interactive setup timed out; wizard=$SawWizard finish=$SawFinish lastButton='$LastActionCaption' visibleClasses='$($OwnedClasses -join ',')' activeSetup=$($ActiveSetup.Count)"
+        }
+        if ($Setup.ExitCode -ne 0) { throw "Interactive setup failed with exit code $($Setup.ExitCode)" }
+        if (!$SawWizard -or !$SawFinish) { throw 'Did not observe and finish the real interactive Inno wizard' }
+        if (Test-Marker $SetupMutexName) { throw 'Setup marker remained after interactive setup exited' }
+        $Deadline = [DateTime]::UtcNow.AddSeconds(30)
+        do {
+            Update-OwnedProcesses
+            $Apps = @(Get-InstalledApp)
+            if ($Apps.Count -gt 1) { throw 'Postinstall launched multiple candidate GUIs' }
+            if ($Apps.Count -eq 1) {
+                $App = $Apps[0]
+                $App.Refresh()
+                if (!$App.HasExited -and $App.MainWindowHandle -ne [IntPtr]::Zero -and
+                    (Test-Marker $ApplicationMutexName)) { break }
+            }
+            Start-Sleep -Milliseconds 100
+        } while ([DateTime]::UtcNow -lt $Deadline)
+        if (!$App -or $App.HasExited -or $App.MainWindowHandle -eq [IntPtr]::Zero -or
+            !(Test-Marker $ApplicationMutexName)) { throw 'Production postinstall [Run] did not leave a real GUI holding the application marker' }
+        if (Test-Marker $SetupMutexName) { throw 'Setup marker exists while postinstall GUI is running' }
+    } finally {
+        # Never terminate AXE or setup: request ordinary window shutdown even on
+        # failure. Unexpected modal dialogs may require operator cleanup.
+        if ($Setup) {
+            $Setup.Refresh()
+            if ($Wizard -ne [IntPtr]::Zero -and (Test-OwnedSetupWindow $Wizard)) {
+                [void][NativePostinstallWindows]::PostMessage($Wizard, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+            }
+        }
+        foreach ($Running in @(Get-InstalledApp)) {
+            try {
+                $Running.Refresh()
+                if (!$Running.HasExited) {
+                    if (!$Running.CloseMainWindow()) { throw 'Could not request graceful postinstall GUI shutdown' }
+                    if (!$Running.WaitForExit(30000)) { throw 'Postinstall GUI did not close gracefully' }
+                }
+            } finally { }
+        }
+        foreach ($Identity in $Known.Values) { $Identity.Process.Dispose() }
+    }
+    if (Test-Marker $ApplicationMutexName) { throw 'Application marker remained after graceful postinstall GUI shutdown' }
+    Write-Output 'Production interactive Inno postinstall [Run] launched the installed GUI, with setup marker absent and application marker held; GUI closed gracefully'
+}
+) { continue }
+                    $Caption=[NativePostinstallWindows]::Text($Child).Replace('&','').Trim()
+                    # Only disclose built-in navigation captions; do not log
+                    # arbitrary page/control text or user-supplied data.
+                    $Stock=@('Next >','Next','Install','Finish','Back','Cancel','Próximo >','Avançar >','Instalar','Concluir')
+                    $Label=if($Caption -in $Stock){$Caption}else{'unrecognized'}
+                    $NavigationClasses+=("$Class/$Label/visible="+
+                        [NativePostinstallWindows]::IsWindowVisible($Child)+
+                        "/enabled="+[NativePostinstallWindows]::IsWindowEnabled($Child))
+                }
+            }
+            throw "Interactive setup timed out; wizard=$SawWizard finish=$SawFinish lastButton='$LastActionCaption' buttons='$($NavigationClasses -join ',')' visibleClasses='$($OwnedClasses -join ',')' activeSetup=$($ActiveSetup.Count)"
+        }
+        if ($Setup.ExitCode -ne 0) { throw "Interactive setup failed with exit code $($Setup.ExitCode)" }
+        if (!$SawWizard -or !$SawFinish) { throw 'Did not observe and finish the real interactive Inno wizard' }
+        if (Test-Marker $SetupMutexName) { throw 'Setup marker remained after interactive setup exited' }
+        $Deadline = [DateTime]::UtcNow.AddSeconds(30)
+        do {
+            Update-OwnedProcesses
+            $Apps = @(Get-InstalledApp)
+            if ($Apps.Count -gt 1) { throw 'Postinstall launched multiple candidate GUIs' }
+            if ($Apps.Count -eq 1) {
+                $App = $Apps[0]
+                $App.Refresh()
+                if (!$App.HasExited -and $App.MainWindowHandle -ne [IntPtr]::Zero -and
+                    (Test-Marker $ApplicationMutexName)) { break }
+            }
+            Start-Sleep -Milliseconds 100
+        } while ([DateTime]::UtcNow -lt $Deadline)
+        if (!$App -or $App.HasExited -or $App.MainWindowHandle -eq [IntPtr]::Zero -or
+            !(Test-Marker $ApplicationMutexName)) { throw 'Production postinstall [Run] did not leave a real GUI holding the application marker' }
+        if (Test-Marker $SetupMutexName) { throw 'Setup marker exists while postinstall GUI is running' }
+    } finally {
+        # Never terminate AXE or setup: request ordinary window shutdown even on
+        # failure. Unexpected modal dialogs may require operator cleanup.
+        if ($Setup) {
+            $Setup.Refresh()
+            if ($Wizard -ne [IntPtr]::Zero -and (Test-OwnedSetupWindow $Wizard)) {
+                [void][NativePostinstallWindows]::PostMessage($Wizard, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+            }
+        }
+        foreach ($Running in @(Get-InstalledApp)) {
+            try {
+                $Running.Refresh()
+                if (!$Running.HasExited) {
+                    if (!$Running.CloseMainWindow()) { throw 'Could not request graceful postinstall GUI shutdown' }
+                    if (!$Running.WaitForExit(30000)) { throw 'Postinstall GUI did not close gracefully' }
+                }
+            } finally { }
+        }
+        foreach ($Identity in $Known.Values) { $Identity.Process.Dispose() }
+    }
+    if (Test-Marker $ApplicationMutexName) { throw 'Application marker remained after graceful postinstall GUI shutdown' }
+    Write-Output 'Production interactive Inno postinstall [Run] launched the installed GUI, with setup marker absent and application marker held; GUI closed gracefully'
+}
+) { continue }
+                    $Caption = [NativePostinstallWindows]::Text($Control).Replace('&','').Trim()
+                    # The checked-by-default postinstall checklist is untouched.
+                    # Allow both the classic and current wizard stock labels.
+                    # Any unexpected button remains untouched and fails closed.
+                    if ($Caption -notin @('Next >', 'Next', 'Install', 'Finish','Próximo >','Avançar >','Instalar','Concluir')) { continue }
                     $Action = "$Control/$Caption/$Page"
                     if ($Action -eq $LastAction) {
                         # Inno task pages can reuse the same visible navigation
