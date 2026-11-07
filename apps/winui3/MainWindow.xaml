@@ -80,11 +80,12 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <Border Grid.Column="0" Height="32" Width="32" Background="{ThemeResource AxvBrandBrush}"
-                        CornerRadius="10" HorizontalAlignment="Left" VerticalAlignment="Center">
-                    <TextBlock Text="A" FontSize="20" FontWeight="Bold" Foreground="{ThemeResource AxvLogoTextBrush}"
-                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                </Border>
+                <!-- Use the exact approved AXE Voice Windows icon rather than
+                     a generic A glyph.  Image supports multi-resolution ICO. -->
+                <Image Grid.Column="0" Height="32" Width="32"
+                       Source="ms-appx:///Assets/axe-voice.ico"
+                       Stretch="Uniform" AutomationProperties.Name="Logo AXE Voice"
+                       HorizontalAlignment="Left" VerticalAlignment="Center"/>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
                     <TextBlock Text="AXE Voice" FontSize="16" FontWeight="SemiBold"
                                Foreground="{ThemeResource AxvTitleBrush}"/>
