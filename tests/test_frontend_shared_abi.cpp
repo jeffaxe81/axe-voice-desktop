@@ -68,6 +68,14 @@ int main(){
         observed.current_session=i+1;
         assert(project(observed).can_answer==0);
     }
+    // The WinUI 3 preview checks SIP destination syntax through the SAME
+    // C++ domain validator as Win32, without issuing network calls.
+    assert(axv_frontend_validate_destination(L"1001",4)==AXV_DEST_VALID);
+    assert(axv_frontend_validate_destination(L"sip:alice@example.com",21)==AXV_DEST_VALID);
+    assert(axv_frontend_validate_destination(L"",0)==AXV_DEST_EMPTY);
+    assert(axv_frontend_validate_destination(L"http://invalid",14)==AXV_DEST_INVALID);
+    assert(axv_frontend_validate_destination(nullptr,4)==AXV_FRONTEND_ERROR_INVALID);
+    assert(axv_frontend_validate_destination(L"1001",129)==AXV_DEST_INVALID);
     registered.process=999;
     assert(axv_frontend_project_snapshot(&registered,sizeof(registered),&live,sizeof(live))==
            AXV_FRONTEND_ERROR_INVALID);

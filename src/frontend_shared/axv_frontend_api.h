@@ -20,6 +20,9 @@ extern "C" {
 #define AXV_FRONTEND_ABI_VERSION 1u
 #define AXV_FRONTEND_OK 0
 #define AXV_FRONTEND_ERROR_INVALID -1
+#define AXV_DEST_VALID 0
+#define AXV_DEST_EMPTY 1
+#define AXV_DEST_INVALID 2
 
 // All fields are fixed-width integers; callers supply the expected exact size.
 // State numbers mirror the existing C++ enum values and are validated.
@@ -53,6 +56,9 @@ AXV_FRONTEND_API uint32_t axv_frontend_abi_version(void);
 // candidate must NOT claim SIP support before a real native adapter exists.
 AXV_FRONTEND_API int32_t axv_frontend_get_snapshot(
     AxvFrontendSnapshot* out, uint32_t out_size);
+// Windows UTF-16 SIP destination syntax check. No DNS, registration or call.
+AXV_FRONTEND_API int32_t axv_frontend_validate_destination(
+    const wchar_t* destination, uint32_t length);
 // Pure projection for ABI tests and later trusted native-producer integration.
 // Does NOT attach a backend, authorize an action or originate SIP traffic.
 AXV_FRONTEND_API int32_t axv_frontend_project_snapshot(

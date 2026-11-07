@@ -210,6 +210,7 @@ endif()
 # existing native Baresip SIP engine. This bridge has no SIP command exports.
 add_library(axv_frontend_bridge SHARED src/frontend_shared/axv_frontend_api.cpp)
 target_compile_features(axv_frontend_bridge PRIVATE cxx_std_17)
+target_link_libraries(axv_frontend_bridge PRIVATE axv_sip_address)
 target_compile_definitions(axv_frontend_bridge PRIVATE AXV_FRONTEND_BRIDGE_BUILD)
 if(MSVC)
   target_compile_options(axv_frontend_bridge PRIVATE /utf-8 /W4)
