@@ -1,0 +1,3 @@
+// AXE Voice brand icon, embedded in Win32 executable and installer.
+// Resource ID matches kBrandIconResourceId in src/main.cpp.
+101 ICON "@AXV_BRAND_ICON_PATH@"
