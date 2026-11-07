@@ -67,6 +67,13 @@ if(!$desktop){throw 'Could not resolve interactive current-user Desktop folder'}
 $link=Join-Path $desktop 'AXE Voice WinUI 3 Native Lab.lnk'
 if(Test-Path -LiteralPath $link){throw 'WinUI 3 lab test requires no prior desktop shortcut'}
 function Wait-ProcessBounded([string]$file,[string[]]$arguments,[string]$stage,[int]$seconds=120) {
+    # Fail closed before invoking Inno. A missing /VERYSILENT would present
+    # an interactive wizard and block an unattended CI runner indefinitely.
+    if (!($arguments -contains '/VERYSILENT') -or
+        !($arguments -contains '/SUPPRESSMSGBOXES') -or
+        !($arguments -contains '/NORESTART')) {
+        throw "$stage requires explicit silent installer arguments"
+    }
     # Start-Process -Wait waits for the entire descendant process tree and may
     # block forever on a separate Inno child. Await the original process
     # handle instead, then verify the actual installed payload and uninstaller.
@@ -80,8 +87,10 @@ function Wait-ProcessBounded([string]$file,[string[]]$arguments,[string]$stage,[
         }
     } finally {$process.Dispose()}
 }
-function Invoke-Setup([string[]]$args) {
-    Wait-ProcessBounded $installer $args 'WinUI 3 lab install'
+function Invoke-Setup([string[]]$SetupArguments) {
+    # Do not declare a parameter called $args: it is a PowerShell automatic
+    # variable and may shadow the caller-provided silent install switches.
+    Wait-ProcessBounded -file $installer -arguments $SetupArguments -stage 'WinUI 3 lab install'
 }
 function Verify-Payload {
     foreach($file in @(Get-ChildItem -LiteralPath $source -Recurse -File)) {
