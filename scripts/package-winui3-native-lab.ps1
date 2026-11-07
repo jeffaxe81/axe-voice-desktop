@@ -102,8 +102,7 @@ function Wait-InstalledCompletion([int]$seconds=150) {
     $installedExe=Join-Path $target 'AXEVoice.WinUI3.exe'
     $activeCount=0
     do {
-        $active=@(Get-CimInstance Win32_Process -Filter
-            "Name LIKE 'AXE-Voice-WinUI3-Native-Lab-Setup%'")
+        $active=@(Get-CimInstance Win32_Process -Filter "Name LIKE 'AXE-Voice-WinUI3-Native-Lab-Setup%'")
         $activeCount=$active.Count
         if((Test-Path -LiteralPath $uninstaller -PathType Leaf) -and
            (Test-Path -LiteralPath $installedExe -PathType Leaf) -and
