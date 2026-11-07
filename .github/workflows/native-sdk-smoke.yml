@@ -48,6 +48,27 @@ jobs:
         profile: [abi, tls-media]
     steps:
       - uses: actions/checkout@v4
+      - name: Reject syntax errors in release PowerShell before the SDK build
+        shell: pwsh
+        run: |
+          $Scripts = @(
+            'scripts/package-native-candidate.ps1',
+            'tests/test_native_postinstall_launch.ps1',
+            'tests/test_native_desktop_shortcut.ps1',
+            'scripts/capture-windows-design.ps1'
+          )
+          foreach ($File in $Scripts) {
+            $Tokens = $null
+            $Errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path -LiteralPath $File).Path,
+              [ref]$Tokens, [ref]$Errors
+            )
+            if (@($Errors).Count -gt 0) {
+              throw "PowerShell parsing failed: $File ($(@($Errors).Count) issue(s))"
+            }
+            Write-Host "Parse PASS: $File"
+          }
       - uses: actions/cache/restore@v4
         id: sdk-cache
         with:
