@@ -44,6 +44,12 @@ inline AccountFormFeedback evaluate_account_form(const std::wstring& server,
         return {AccountFeedbackKind::Invalid, AccountError::InvalidPort, 0,
                 L"Porta SIP invalida: use 1 a 65535."};
     }
+    // A registrar expects a SIP host, not the HTTPS URL of the provider portal.
+    // Diagnose this frequent account-entry error before the generic host validator.
+    if (server.find(L"://") != std::wstring::npos || server.find(L'/') != std::wstring::npos) {
+        return {AccountFeedbackKind::Invalid, AccountError::InvalidServer, 0,
+                L"Servidor SIP: informe somente o host DNS/IP, sem https://, http:// ou barras."};
+    }
     const SipAccount candidate{server, username, static_cast<unsigned short>(parsed_port), false};
     const AccountError error = validate_account(candidate);
     if (error == AccountError::InvalidServer) {
