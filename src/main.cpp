@@ -199,13 +199,18 @@ std::wstring sip_credential_identity() {
 bool sip_credential_exists() {
     PCREDENTIALW credential=nullptr;
     if(!CredReadW(kSipCredentialTarget,CRED_TYPE_GENERIC,0,&credential))return false;
+    const auto identity=sip_credential_identity();
+    const bool matches=credential->UserName && !identity.empty() &&
+                       identity==credential->UserName;
     CredFree(credential);
-    return true;
+    return matches;
 }
-void forget_sip_credential() {
-    if(!CredDeleteW(kSipCredentialTarget,CRED_TYPE_GENERIC,0) &&
-       GetLastError()!=ERROR_NOT_FOUND && g_process_status)
-        SetWindowTextW(g_process_status,L"Nao foi possivel excluir a senha salva do Windows.");
+// Never delete another account's stored credential just because the current
+// form was changed. Return false only when Windows reports a deletion error.
+bool forget_sip_credential() {
+    if(!sip_credential_exists())return true;
+    if(CredDeleteW(kSipCredentialTarget,CRED_TYPE_GENERIC,0))return true;
+    return GetLastError()==ERROR_NOT_FOUND;
 }
 bool save_sip_credential(const std::wstring& secret) {
     if(secret.empty() || secret.size()>256 || !g_server || !g_user)return false;
@@ -1597,6 +1602,8 @@ void open_faleweb_preferences(HWND owner) {
     prefs.user=text_of(g_user);
     prefs.port=text_of(g_port);
 #ifdef AXV_ENABLE_NATIVE_SIP
+    prefs.remember_password=g_remember_password &&
+        SendMessageW(g_remember_password,BM_GETCHECK,0,0)==BST_CHECKED;
     prefs.ca_file=text_of(g_ca_file);
     prefs.mute_ringtone=g_incoming_ringtone_muted;
 #endif
@@ -1622,6 +1629,23 @@ void open_faleweb_preferences(HWND owner) {
 #ifdef AXV_ENABLE_NATIVE_SIP
     if(g_password && !prefs.password.empty())
         SetWindowTextW(g_password,prefs.password.c_str());
+    if(g_remember_password) {
+        bool remember=prefs.remember_password;
+        if(!remember) {
+            if(!forget_sip_credential()){
+                SetWindowTextW(g_process_status,L"Nao foi possivel excluir a senha do Windows.");
+                remember=true;
+            }
+        } else if(!prefs.password.empty() && !save_sip_credential(prefs.password)) {
+            SetWindowTextW(g_process_status,L"Falha ao salvar senha SIP no Windows.");
+            remember=false;
+        }
+        SendMessageW(g_remember_password,BM_SETCHECK,
+            remember?BST_CHECKED:BST_UNCHECKED,0);
+    }
+    if(!prefs.password.empty())
+        SecureZeroMemory(prefs.password.data(),prefs.password.size()*sizeof(wchar_t));
+    prefs.password.clear();
     if(g_ca_file)SetWindowTextW(g_ca_file,prefs.ca_file.c_str());
     if(prefs.mute_ringtone)g_ring_player.stop();
     g_incoming_ringtone_muted=prefs.mute_ringtone;
@@ -2162,7 +2186,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         if(LOWORD(wparam)==kRememberSipPassword && HIWORD(wparam)==BN_CLICKED){
             const bool checked=SendMessageW(g_remember_password,BM_GETCHECK,0,0)==BST_CHECKED;
             if(!checked){
-                forget_sip_credential();
+                if(!forget_sip_credential()) {
+                    SendMessageW(g_remember_password,BM_SETCHECK,BST_CHECKED,0);
+                    SetWindowTextW(g_process_status,L"Nao foi possivel excluir a senha salva do Windows.");
+                }
             } else {
                 auto secret=axv::pref_edit_text(g_password);
                 if(!secret.empty() && !save_sip_credential(secret)){
@@ -2176,6 +2203,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
 #endif
         if (LOWORD(wparam) == kStartBaresipButton && HIWORD(wparam) == BN_CLICKED) {
 #ifdef AXV_ENABLE_NATIVE_SIP
+            bool save_failed=false;
             if(g_remember_password &&
                SendMessageW(g_remember_password,BM_GETCHECK,0,0)==BST_CHECKED){
                 auto secret=axv::pref_edit_text(g_password);
@@ -2183,13 +2211,16 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                     secret=load_sip_credential();
                     if(!secret.empty())SetWindowTextW(g_password,secret.c_str());
                 } else if(!save_sip_credential(secret)){
-                    SetWindowTextW(g_process_status,L"Nao foi possivel salvar a senha SIP no Windows.");
+                    save_failed=true;
+                    SendMessageW(g_remember_password,BM_SETCHECK,BST_UNCHECKED,0);
                 }
                 if(!secret.empty())SecureZeroMemory(secret.data(),secret.size()*sizeof(wchar_t));
             }
             const auto result=axv::register_native_account_ui(native_engine(),
                 {g_server,g_user,g_port,g_password,g_ca_file,g_tls},g_selected_input_id,g_selected_output_id,g_codec_mode);
-            SetWindowTextW(g_process_status,axv::native_registration_result_message(result));
+            const auto feedback=std::wstring(axv::native_registration_result_message(result))+
+                (save_failed?L" Aviso: senha nao foi salva no Windows.":L"");
+            SetWindowTextW(g_process_status,feedback.c_str());
             return 0;
 #endif
             if (g_shutdown.pending()) {
@@ -3036,7 +3067,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
 #ifdef AXV_ENABLE_NATIVE_SIP
     if(command_line && std::wcscmp(command_line,L"--native-ui-smoke")==0) {
         if(g_compact){g_compact=false;apply_compact_layout(window);}
-        bool ok=g_password && g_ca_file && GetDlgItem(window,kAnswerNative) &&
+        bool ok=g_password && g_ca_file && g_remember_password &&
+            (GetWindowLongPtrW(g_remember_password,GWL_STYLE)&BS_AUTOCHECKBOX)==BS_AUTOCHECKBOX &&
+            GetDlgItem(window,kAnswerNative) &&
             GetDlgItem(window,kMuteFuture) && GetDlgItem(window,kHoldFuture) && GetDlgItem(window,kTransferFuture) &&
             !IsWindowEnabled(GetDlgItem(window,kTransferFuture)) &&
             !IsWindowEnabled(GetDlgItem(window,kMuteFuture)) && !IsWindowEnabled(GetDlgItem(window,kHoldFuture)) &&
