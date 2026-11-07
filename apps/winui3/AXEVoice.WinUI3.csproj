@@ -21,5 +21,8 @@
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7175" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.6.5" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
+    <!-- One approved brand source shared by Win32 and WinUI 3 builds. -->
+    <Content Include="..\..\assets\axe-voice.ico" Link="Assets\axe-voice.ico"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Always" />
   </ItemGroup>
 </Project>
