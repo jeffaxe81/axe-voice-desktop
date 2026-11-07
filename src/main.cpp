@@ -2052,6 +2052,17 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         if (HIWORD(wparam) == EN_CHANGE &&
             (LOWORD(wparam) == kServerEdit || LOWORD(wparam) == kUserEdit ||
              LOWORD(wparam) == kPortEdit)) {
+#ifdef AXV_ENABLE_NATIVE_SIP
+            // A changed identity must never reuse a password left in the
+            // edit control for a different SIP server/user combination.
+            if(LOWORD(wparam)==kServerEdit || LOWORD(wparam)==kUserEdit){
+                if(g_password && GetWindowTextLengthW(g_password)>0)
+                    SetWindowTextW(g_password,L"");
+                if(g_remember_password)
+                    SendMessageW(g_remember_password,BM_SETCHECK,
+                        sip_credential_exists()?BST_CHECKED:BST_UNCHECKED,0);
+            }
+#endif
             if (g_page == 1) refresh_account_feedback();
             return 0;
         }
