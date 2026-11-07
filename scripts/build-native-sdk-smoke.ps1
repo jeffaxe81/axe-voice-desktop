@@ -109,7 +109,7 @@ if ($TlsMedia) {
     Invoke-Checked 'cmake' @('--build',$ProductBuild,'--config','Release','--parallel','4','--target','axv_native_tls_media_probe')
     Get-ChildItem (Join-Path $Prefix 'bin') -Filter '*.dll' | Copy-Item -Destination (Join-Path $ProductBuild 'Release')
     Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_tls_media_probe.exe') @()
-    Invoke-Checked 'cmake' @('--build',$ProductBuild,'--config','Release','--parallel','4','--target','axv_native_engine_fault_smoke','axv_native_configure_rejection_smoke','axv_native_configure_failure_smoke','axv_native_diagnostic_lifecycle_smoke','axv_native_credential_lifecycle_smoke','axv_native_pending_secret_smoke','axv_native_sip_engine_smoke','axv_native_sdk_secret_smoke','axv_native_audio_config_smoke','axv_native_audio_mute_smoke','AXEVoice')
+    Invoke-Checked 'cmake' @('--build',$ProductBuild,'--config','Release','--parallel','4','--target','axv_native_engine_fault_smoke','axv_native_configure_rejection_smoke','axv_native_configure_failure_smoke','axv_native_diagnostic_lifecycle_smoke','axv_native_credential_lifecycle_smoke','axv_native_pending_secret_smoke','axv_native_sip_engine_smoke','axv_native_sdk_secret_smoke','axv_native_audio_config_smoke','axv_native_audio_mute_smoke','AXEVoice','axv_native_winui_host_smoke')
     Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_sip_engine_smoke.exe') @()
     Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_configure_rejection_smoke.exe') @()
     foreach ($FaultMode in 1..3) { Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_engine_fault_smoke.exe') @([string]$FaultMode) }
@@ -124,6 +124,8 @@ if ($TlsMedia) {
     Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_audio_mute_smoke.exe') @()
     Invoke-Checked 'python' @((Join-Path $Root 'tests/run_native_sip_loopback.py'),(Join-Path $ProductBuild 'Release/axv_native_sip_engine_smoke.exe'))
     Invoke-Checked (Join-Path $ProductBuild 'Release/AXE-Voice.exe') @('--native-ui-smoke')
+    # Host smoke never reads the saved password or starts SIP REGISTER.
+    Invoke-Checked (Join-Path $ProductBuild 'Release/axv_native_winui_host_smoke.exe') @()
 }
 # The ABI executables are build-only. Also execute the local libre reactor;
 # it creates no Baresip UA, account, SIP registration or media session.
