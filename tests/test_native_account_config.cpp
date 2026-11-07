@@ -9,6 +9,19 @@ int main() {
     CHECK(axv::native_account_config(local,L"").config.find("net_interface 127.0.0.1")!=std::string::npos);
     CHECK(cfg.config.find("net_interface")==std::string::npos);
     CHECK(cfg.valid && cfg.aor=="<sip:1001@pbx.example:5060;transport=udp>;regint=0;dtmfmode=info;audio_codecs=PCMU/8000/1,PCMA/8000/1");
+    // Codec choice must affect the actual native registration AOR/SDP policy.
+    account.codec_mode=axv::NativeCodecMode::Pcma;
+    auto manual=axv::native_account_config(account,L"");
+    CHECK(manual.valid && manual.aor.find("audio_codecs=PCMA/8000/1")!=std::string::npos);
+    CHECK(manual.aor.find("PCMU/8000/1")==std::string::npos);
+    account.codec_mode=axv::NativeCodecMode::Pcmu;
+    manual=axv::native_account_config(account,L"");
+    CHECK(manual.valid && manual.aor.find("audio_codecs=PCMU/8000/1")!=std::string::npos);
+    CHECK(manual.aor.find("PCMA/8000/1")==std::string::npos);
+    account.codec_mode=static_cast<axv::NativeCodecMode>(99);
+    CHECK(!axv::native_account_config(account,L"").valid);
+    account.codec_mode=axv::NativeCodecMode::Automatic;
+    CHECK(axv::native_account_config(account,L"").aor.find("PCMU/8000/1,PCMA/8000/1")!=std::string::npos);
     CHECK(axv::native_call_destination(L"101",account)=="sip:101@pbx.example:5060;transport=udp");
     CHECK(axv::native_call_destination(L"sip:200@elsewhere.example",account)=="sip:200@elsewhere.example");
     CHECK(axv::native_call_destination(L"100\r\nInjected: x",account).empty());
