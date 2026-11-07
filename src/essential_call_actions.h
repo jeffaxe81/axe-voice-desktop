@@ -5,6 +5,28 @@
 namespace axv {
 // Presentation only. Every SIP command is still reauthorized by the native
 // handler using its displayed call identity, never by a visibility flag.
+enum class EssentialConnectionSignal { Offline, Pending, Online };
+
+inline EssentialConnectionSignal essential_connection_signal(
+    const SipRuntimeObservation& observed,
+    std::uint64_t active_session) noexcept {
+    // A registration attempt can be pending without any proof of success.
+    if(observed.process == RuntimeProcess::Running &&
+       observed.sip == SipStatus::Registering)
+        return EssentialConnectionSignal::Pending;
+    if(!sip_proof_is_current(observed,active_session))
+        return EssentialConnectionSignal::Offline;
+    switch(observed.sip) {
+    case SipStatus::Registered:
+    case SipStatus::Ringing:
+    case SipStatus::Calling:
+    case SipStatus::InCall:
+        return EssentialConnectionSignal::Online;
+    default:
+        return EssentialConnectionSignal::Offline;
+    }
+}
+
 enum class EssentialCallView { Idle, Incoming, Outgoing, Connected };
 
 struct EssentialCallActions {
