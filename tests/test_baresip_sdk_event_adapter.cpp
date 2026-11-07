@@ -289,10 +289,14 @@ int main() {
     if(!adapter.active() || !adapter.native_register_ok_seen())return 52;
     emit(BEVENT_CALL_ESTABLISHED,&one);
     g_keep_registered_on_refresh=true;
-    emit(BEVENT_REGISTERING,&ua_event);
-    emit(BEVENT_REGISTER_OK,&ua_event);
+    // Stress a long-running established call with 1,000 successful renewal
+    // cycles. No redundant REGISTER event may displace the active call.
+    for(int refresh=0;refresh<1000;++refresh) {
+        emit(BEVENT_REGISTERING,&ua_event);
+        emit(BEVENT_REGISTER_OK,&ua_event);
+        if(!adapter.active() || !adapter.native_register_ok_seen())return 53;
+    }
     g_keep_registered_on_refresh=false;
-    if(!adapter.active() || !adapter.native_register_ok_seen())return 53;
     emit(BEVENT_CALL_CLOSED,&one);
     const auto refreshed=mailbox.drain();
     if(refreshed.size!=3 ||
