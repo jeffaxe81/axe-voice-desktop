@@ -20,6 +20,20 @@ namespace {
 constexpr wchar_t kRegistryPath[]=L"Software\\AXEVoice\\Desktop";
 constexpr wchar_t kCredentialTarget[]=L"AXEVoice/SIP/DefaultAccount";
 
+// Always erase credential memory even when C++ allocation/conversion throws.
+struct ScopedCredential {
+    PCREDENTIALW value=nullptr;
+    ScopedCredential()=default;
+    ScopedCredential(const ScopedCredential&)=delete;
+    ScopedCredential& operator=(const ScopedCredential&)=delete;
+    ~ScopedCredential() {
+        if(!value)return;
+        if(value->CredentialBlob && value->CredentialBlobSize)
+            SecureZeroMemory(value->CredentialBlob,value->CredentialBlobSize);
+        CredFree(value);
+    }
+};
+
 struct SavedAccount {
     SipAccount account;
     std::wstring ca;
@@ -50,37 +64,28 @@ bool read_saved_metadata(SavedSipFields& f) {
 }
 
 bool read_saved_secret(const SavedSipFields& fields,std::string& output) {
-    PCREDENTIALW credential=nullptr;
-    if(!CredReadW(kCredentialTarget,CRED_TYPE_GENERIC,0,&credential))
+    ScopedCredential credential{};
+    if(!CredReadW(kCredentialTarget,CRED_TYPE_GENERIC,0,&credential.value))
         return false;
-    const auto release=[&]{
-        if(credential->CredentialBlob && credential->CredentialBlobSize)
-            SecureZeroMemory(credential->CredentialBlob,
-                             credential->CredentialBlobSize);
-        CredFree(credential);
-    };
     const std::wstring identity=fields.server+L"\n"+fields.user;
-    if(!credential->UserName || identity!=credential->UserName ||
-       !credential->CredentialBlob ||
-       !credential->CredentialBlobSize ||
-       credential->CredentialBlobSize>256*sizeof(wchar_t) ||
-       credential->CredentialBlobSize%sizeof(wchar_t)){
-        release();return false;
-    }
-    const auto* data=reinterpret_cast<const wchar_t*>(credential->CredentialBlob);
+    if(!credential.value->UserName || identity!=credential.value->UserName ||
+       !credential.value->CredentialBlob ||
+       !credential.value->CredentialBlobSize ||
+       credential.value->CredentialBlobSize>256*sizeof(wchar_t) ||
+       credential.value->CredentialBlobSize%sizeof(wchar_t))
+        return false;
+    const auto* data=reinterpret_cast<const wchar_t*>(
+        credential.value->CredentialBlob);
     const int length=static_cast<int>(
-        credential->CredentialBlobSize/sizeof(wchar_t));
-    if(std::find(data,data+length,L'\0')!=data+length) {
-        release();return false;
-    }
+        credential.value->CredentialBlobSize/sizeof(wchar_t));
+    if(std::find(data,data+length,L'\0')!=data+length)return false;
     const int count=WideCharToMultiByte(
         CP_UTF8,WC_ERR_INVALID_CHARS,data,length,nullptr,0,nullptr,nullptr);
-    if(count<=0 || count>1024){release();return false;}
+    if(count<=0 || count>1024)return false;
     output.resize(static_cast<size_t>(count));
     const int wrote=WideCharToMultiByte(
         CP_UTF8,WC_ERR_INVALID_CHARS,data,length,output.data(),
         count,nullptr,nullptr);
-    release();
     if(wrote!=count){
         if(!output.empty())SecureZeroMemory(output.data(),output.size());
         output.clear();
