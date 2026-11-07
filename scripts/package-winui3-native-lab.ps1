@@ -72,10 +72,15 @@ function Wait-ProcessBounded([string]$file,[string[]]$arguments,[string]$stage,[
     # /SP- disables it; /LOG provides evidence of actual setup execution.
     if (!($arguments -contains '/VERYSILENT') -or
         !($arguments -contains '/SUPPRESSMSGBOXES') -or
-        !($arguments -contains '/NORESTART') -or
-        !($arguments -contains '/SP-') -or
-        !(@($arguments | Where-Object { $_ -like '/LOG=*' }).Count -eq 1)) {
-        throw "$stage requires explicit silent installer arguments"
+        !($arguments -contains '/NORESTART')) {
+        throw "$stage requires explicit silent switches"
+    }
+    # Inno setup supports /SP- for the install startup prompt; the
+    # uninstaller has no startup prompt and does not require those flags.
+    if ($stage -eq 'WinUI 3 lab install' -and
+        (!($arguments -contains '/SP-') -or
+         @($arguments | Where-Object { $_ -like '/LOG=*' }).Count -ne 1)) {
+        throw "$stage requires startup suppression and a dedicated trace"
     }
     # Start-Process -Wait waits for the entire descendant process tree and may
     # block forever on a separate Inno child. Await the original process
