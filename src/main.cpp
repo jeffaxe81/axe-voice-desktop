@@ -1010,8 +1010,13 @@ void draw_card(HDC dc, RECT rect, COLORREF color, int radius) {
     HPEN border = CreatePen(PS_SOLID, 1, line_color());
     HGDIOBJ old_brush = SelectObject(dc, fill);
     HGDIOBJ old_pen = SelectObject(dc, border);
+    // Win32 takes ellipse diameter; use the intended visual corner radius.
+    // Clamp it so compact cards remain rounded without distorting their edges.
+    const int diameter=(std::min)(
+        axv::dpi_pixels(radius*2,g_dpi),
+        (std::min)(rect.right-rect.left,rect.bottom-rect.top));
     RoundRect(dc, rect.left, rect.top, rect.right, rect.bottom,
-              axv::dpi_pixels(radius,g_dpi),axv::dpi_pixels(radius,g_dpi));
+              diameter,diameter);
     SelectObject(dc, old_pen);
     SelectObject(dc, old_brush);
     DeleteObject(border);
