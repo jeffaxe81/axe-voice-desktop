@@ -1,5 +1,13 @@
 name: AXE Voice native SDK smoke
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/native-sdk-smoke.yml'
+      - 'tests/run_1000_native_sip_connections.py'
+      - 'tests/run_native_sip_loopback.py'
+      - 'src/baresip_sip_engine.cpp'
+      - 'src/native_account_config.h'
   pull_request:
     branches: [main]
     paths:
@@ -62,6 +70,21 @@ jobs:
           } else {
             ./scripts/build-native-sdk-smoke.ps1
           }
+      - name: Execute 1000 native Baresip SIP loopback connection tests
+        if: matrix.profile == 'tls-media'
+        shell: pwsh
+        run: |
+          $Exe = Join-Path $PWD 'build/native-sdk-tls-media/product/Release/axv_native_sip_engine_smoke.exe'
+          python tests/run_1000_native_sip_connections.py $Exe --count 1000 --workers 12 --report build/native-sip-1000.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Publish evidence for 1000 SIP connection tests
+        if: always() && matrix.profile == 'tls-media'
+        uses: actions/upload-artifact@v4
+        with:
+          name: AXE-Voice-Native-SIP-1000-Results
+          path: build/native-sip-1000.json
+          if-no-files-found: warn
+          retention-days: 14
       - name: Reject mismatched candidate package inputs
         if: matrix.profile == 'tls-media'
         shell: pwsh
