@@ -17,7 +17,7 @@ public sealed partial class MainWindow : Window
     private bool _dark;
     private bool _ready;
     private NativeBridge.Snapshot _snapshot;
-    private readonly DispatcherQueueTimer _sipTimer;
+    private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _sipTimer;
     private bool _commandBusy;
     private bool _closing;
     private readonly PreviewProfileStore _profileStore=PreviewProfileStore.ForCurrentUser();
