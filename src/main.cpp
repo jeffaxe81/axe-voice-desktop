@@ -988,6 +988,31 @@ void apply_faleweb_layout(HWND root) {
 }
 void apply_compact_layout(HWND root) {
     if(g_faleweb_mode){
+        // The 355x602 Essencial proportions are the preferred 96-DPI design.
+        // On smaller Windows work areas a high scaling factor can make the
+        // physical height exceed the monitor. Scale the *entire* Win32 canvas
+        // down coherently (including its fonts) instead of clipping the
+        // bottom navigation or introducing a forbidden vertical scrollbar.
+        if(!g_faleweb_smoke) {
+            MONITORINFO monitor{};
+            monitor.cbSize=sizeof(monitor);
+            const HMONITOR display=MonitorFromWindow(root,MONITOR_DEFAULTTONEAREST);
+            if(display && GetMonitorInfoW(display,&monitor)) {
+                const int work_height=monitor.rcWork.bottom-monitor.rcWork.top;
+                constexpr int kWorkAreaMargin=16;
+                if(work_height>kEssentialHeight+kWorkAreaMargin) {
+                    const unsigned maximum=static_cast<unsigned>(
+                        (static_cast<std::int64_t>(work_height-kWorkAreaMargin)*96)
+                        /kEssentialHeight);
+                    const unsigned fitted=(std::min)(g_dpi,
+                        axv::normalized_dpi(maximum));
+                    if(fitted!=g_dpi){
+                        g_dpi=fitted;
+                        rebuild_fonts();
+                    }
+                }
+            }
+        }
         SetWindowPos(root,nullptr,0,0,axv::dpi_pixels(g_faleweb_smoke?kFalewebWidth:kEssentialWidth,g_dpi),
             axv::dpi_pixels(g_faleweb_smoke?kFalewebHeight:kEssentialHeight,g_dpi),SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
         apply_faleweb_layout(root);return;
@@ -3304,15 +3329,18 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(dpi,dpi),0);
             RECT frame{};
             GetWindowRect(window,&frame);
-            const bool frame_ok=
-                frame.right-frame.left==axv::dpi_pixels(kEssentialWidth,dpi) &&
-                frame.bottom-frame.top==axv::dpi_pixels(kEssentialHeight,dpi);
+            // On short Windows desktop work areas the entire canvas is
+            // proportionally reduced instead of letting Windows clip it.
+            const bool frame_ok=g_dpi>=96 && g_dpi<=dpi &&
+                frame.right-frame.left==axv::dpi_pixels(kEssentialWidth,g_dpi) &&
+                frame.bottom-frame.top==axv::dpi_pixels(kEssentialHeight,g_dpi);
             if(!frame_ok)report_design_failure(
                 L"Janela divergente: "+std::to_wstring(frame.right-frame.left)+
                 L"x"+std::to_wstring(frame.bottom-frame.top)+
-                L" ao inves de "+std::to_wstring(axv::dpi_pixels(kEssentialWidth,dpi))+
-                L"x"+std::to_wstring(axv::dpi_pixels(kEssentialHeight,dpi))+
-                L", DPI "+std::to_wstring(g_dpi));
+                L" ao inves de "+std::to_wstring(axv::dpi_pixels(kEssentialWidth,g_dpi))+
+                L"x"+std::to_wstring(axv::dpi_pixels(kEssentialHeight,g_dpi))+
+                L", DPI layout "+std::to_wstring(g_dpi)+
+                L", DPI sistema "+std::to_wstring(dpi));
             passed=passed && frame_ok;
             apply(axv::SipStatus::Registered,0,true,axv::EssentialCallView::Idle);
             report_failed_stage(L"registrado");
