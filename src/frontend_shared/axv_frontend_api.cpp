@@ -2,6 +2,9 @@
 #include "axv_frontend_api.h"
 #include "../essential_call_actions.h"
 #include "../destination_feedback.h"
+#ifdef AXV_FRONTEND_NATIVE_SIP
+#include "axv_native_host.h"
+#endif
 #include <string>
 #include <cstring>
 
@@ -45,14 +48,64 @@ extern "C" int32_t axv_frontend_validate_destination(
     return AXV_DEST_INVALID;
 }
 
+extern "C" int32_t axv_frontend_connect_saved(void) {
+#ifdef AXV_FRONTEND_NATIVE_SIP
+    return axv::native_host_connect_saved();
+#else
+    return AXV_FRONTEND_ERROR_UNAVAILABLE;
+#endif
+}
+extern "C" int32_t axv_frontend_disconnect(void) {
+#ifdef AXV_FRONTEND_NATIVE_SIP
+    return axv::native_host_disconnect();
+#else
+    return AXV_FRONTEND_ERROR_UNAVAILABLE;
+#endif
+}
+extern "C" int32_t axv_frontend_dial(
+    const wchar_t* destination,uint32_t length,uint64_t expected_session) {
+    if(!destination || length==0 || length>128 ||
+       axv_frontend_validate_destination(destination,length)!=AXV_DEST_VALID)
+        return AXV_FRONTEND_ERROR_INVALID;
+#ifdef AXV_FRONTEND_NATIVE_SIP
+    return axv::native_host_dial(
+        std::wstring(destination,destination+length),expected_session);
+#else
+    (void)expected_session;
+    return AXV_FRONTEND_ERROR_UNAVAILABLE;
+#endif
+}
+extern "C" int32_t axv_frontend_answer(
+    uint64_t expected_session,uint64_t expected_call_id) {
+#ifdef AXV_FRONTEND_NATIVE_SIP
+    return axv::native_host_answer(expected_session,expected_call_id);
+#else
+    (void)expected_session;(void)expected_call_id;
+    return AXV_FRONTEND_ERROR_UNAVAILABLE;
+#endif
+}
+extern "C" int32_t axv_frontend_hangup(
+    uint64_t expected_session,uint64_t expected_call_id) {
+#ifdef AXV_FRONTEND_NATIVE_SIP
+    return axv::native_host_hangup(expected_session,expected_call_id);
+#else
+    (void)expected_session;(void)expected_call_id;
+    return AXV_FRONTEND_ERROR_UNAVAILABLE;
+#endif
+}
+
 extern "C" uint32_t axv_frontend_abi_version(void) {
     return AXV_FRONTEND_ABI_VERSION;
 }
 extern "C" int32_t axv_frontend_get_snapshot(AxvFrontendSnapshot* out,uint32_t size) {
     if(!out || size!=sizeof(*out))return AXV_FRONTEND_ERROR_INVALID;
     make_offline(out);
-    // Nothing has attached a Baresip owner to this bridge yet.
+#ifdef AXV_FRONTEND_NATIVE_SIP
+    return axv::native_host_get_snapshot(out);
+#else
+    // The normal WinUI3 Preview cannot make a real call.
     return AXV_FRONTEND_OK;
+#endif
 }
 extern "C" int32_t axv_frontend_project_snapshot(
     const AxvFrontendObservation* input,uint32_t input_size,
