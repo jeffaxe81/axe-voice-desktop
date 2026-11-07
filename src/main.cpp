@@ -858,8 +858,7 @@ void apply_faleweb_layout(HWND root) {
                 ShowWindow(item.handle,shown?SW_SHOW:SW_HIDE);
             }
             position_essential(g_brand_icon,23,13,42,39);
-            position_essential(g_brand_icon,23,13,42,39);
-        position_essential(g_brand_label,85,13,165,39);
+            position_essential(g_brand_label,85,13,165,39);
             position_essential(GetDlgItem(root,kTheme),369,15,52,32);
             position_essential(GetDlgItem(root,kShowSipMonitor),253,15,108,32);
             position_essential(g_runtime_banner,23,68,397,31);
@@ -887,6 +886,7 @@ void apply_faleweb_layout(HWND root) {
             ShowWindow(item.handle,shown?SW_SHOW:SW_HIDE);
         }
         // Logical coordinates reproduce the proportions of the first approved mockup.
+        position_essential(g_brand_icon,23,13,42,39);
         position_essential(g_brand_label,85,13,165,39);
         position_essential(GetDlgItem(root,kShowSipMonitor),253,15,108,32);
         position_essential(GetDlgItem(root,kTheme),369,15,52,32);
