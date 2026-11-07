@@ -304,6 +304,8 @@ bool g_faleweb_mode=false;
 bool g_faleweb_smoke=false;
 bool g_essential_smoke=false;
 axv::EssentialCallActions g_essential_actions{};
+axv::EssentialConnectionSignal g_essential_signal=axv::EssentialConnectionSignal::Offline;
+HBRUSH g_essential_status_brush[3]{};
 HWND g_brand_label=nullptr;
 HWND g_faleweb_prefs_button=nullptr;
 HWND g_faleweb_actions_button=nullptr;
@@ -481,6 +483,16 @@ void refresh_brushes() {
     if(g_faleweb_display_brush)DeleteObject(g_faleweb_display_brush);
     g_faleweb_display_brush=CreateSolidBrush(g_high_contrast?background_color():
         (g_dark?RGB(19,48,86):RGB(247,250,254)));
+    // Online / pending / offline status chips respect current light/dark theme.
+    const COLORREF colors[3]={
+        g_dark?RGB(71,31,39):RGB(251,232,235),
+        g_dark?RGB(69,50,18):RGB(255,246,223),
+        g_dark?RGB(23,62,45):RGB(225,247,233)
+    };
+    for(int i=0;i<3;++i){
+        if(g_essential_status_brush[i])DeleteObject(g_essential_status_brush[i]);
+        g_essential_status_brush[i]=CreateSolidBrush(colors[i]);
+    }
 }
 HFONT create_font(int size, int weight) {
     return CreateFontW(-axv::dpi_pixels(size, g_dpi), 0, 0, 0, weight, FALSE, FALSE, FALSE,
@@ -1470,11 +1482,19 @@ void refresh_runtime_banner(axv::ProcessStatus state) {
         SetWindowTextW(g_call_duration_label,duration_text.c_str());
 #endif
     const auto current_session = observed.session;
-    // No audited native producer is linked; process state never implies SIP proof.
+    const auto signal=axv::essential_connection_signal(observed,current_session);
+    if(g_essential_signal!=signal){
+        g_essential_signal=signal;
+        InvalidateRect(g_runtime_banner,nullptr,TRUE);
+    }
+    // Process state never implies SIP registration proof.
     // Without a native verified producer the UI cannot claim SIP registration.
     const wchar_t* banner = axv::runtime_status_banner(observed, current_session);
     if(g_faleweb_mode) {
-        if(!axv::sip_proof_is_current(observed,current_session))
+        if(observed.process==axv::RuntimeProcess::Running &&
+           observed.sip==axv::SipStatus::Registering)
+            banner=L"REGISTRANDO SIP...";
+        else if(!axv::sip_proof_is_current(observed,current_session))
             banner=L"SIP NAO REGISTRADO";
         else switch(observed.sip){
         case axv::SipStatus::Registered:banner=L"SIP REGISTRADO";break;
@@ -2649,6 +2669,23 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         }
 #endif
         SetTextColor(dc,foreground);
+        if(g_faleweb_mode && label==g_runtime_banner && !g_high_contrast){
+            const auto index=static_cast<int>(g_essential_signal);
+            const COLORREF bg[3]={
+                g_dark?RGB(71,31,39):RGB(251,232,235),
+                g_dark?RGB(69,50,18):RGB(255,246,223),
+                g_dark?RGB(23,62,45):RGB(225,247,233)
+            };
+            const COLORREF fg[3]={
+                g_dark?RGB(255,220,225):RGB(132,29,42),
+                g_dark?RGB(255,228,160):RGB(118,75,18),
+                g_dark?RGB(209,249,222):RGB(22,94,56)
+            };
+            SetBkColor(dc,bg[index]);
+            SetTextColor(dc,fg[index]);
+            SetBkMode(dc,OPAQUE);
+            return reinterpret_cast<LRESULT>(g_essential_status_brush[index]);
+        }
         if(g_faleweb_mode && (label==g_runtime_banner
 #ifdef AXV_ENABLE_NATIVE_SIP
            || label==g_call_duration_label || label==g_ringtone_status_label
@@ -2857,6 +2894,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         if (g_field_brush) DeleteObject(g_field_brush);
         if (g_invalid_field_brush) DeleteObject(g_invalid_field_brush);
         if(g_faleweb_display_brush)DeleteObject(g_faleweb_display_brush);
+        for(HBRUSH brush:g_essential_status_brush)
+            if(brush)DeleteObject(brush);
         if(g_faleweb_digit_font)DeleteObject(g_faleweb_digit_font);
         if(g_faleweb_letters_font)DeleteObject(g_faleweb_letters_font);
         // Normally stopped through WM_CLOSE. Forced fallback on external destruction.
