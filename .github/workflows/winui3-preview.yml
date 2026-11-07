@@ -9,6 +9,7 @@ on:
       - "src/sip_runtime_observation.h"
       - "CMakeLists.txt"
       - ".github/workflows/winui3-preview.yml"
+      - "scripts/check-winui3-theme.ps1"
   push:
     branches: [main]
     paths:
@@ -18,6 +19,7 @@ on:
       - "src/sip_runtime_observation.h"
       - "CMakeLists.txt"
       - ".github/workflows/winui3-preview.yml"
+      - "scripts/check-winui3-theme.ps1"
   workflow_dispatch:
 permissions:
   contents: read
@@ -27,6 +29,9 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      - name: Verify WinUI 3 light/dark XAML theme contract
+        shell: pwsh
+        run: ./scripts/check-winui3-theme.ps1
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
