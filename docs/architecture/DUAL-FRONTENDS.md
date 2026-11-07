@@ -24,6 +24,25 @@ reaproveitado pela bridge — nenhum segundo stack SIP foi escrito.
   Baresip/libre nativo (somente Win32, por enquanto)
 ```
 
+## Estágio 2A — camada de aplicação C++ compartilhada
+
+O arquivo `src/voice_application_service.h` agora concentra a projeção
+imutável de status e os comandos **Ligar, Atender e Encerrar**. A edição Win32
+consome essa fachada e continua utilizando **a mesma instância Baresip**,
+sem alterações de senha, codecs, conta ou motor. Toda ação é verificada
+contra a sessão e a identidade da chamada exibidas antes de chegar ao
+SDK; o próprio motor verifica novamente na fila nativa.
+
+Os testes `tests/test_voice_application_service.cpp` cobrem 2.000 comandos
+com sessão válida e 2.000 obsoletos, além de estados inválidos, rejeição
+de destino e falha da fila. São testes simulados, sem chamadas externas.
+
+**Limite importante:** o `VoiceApplicationService` deste estágio é uma
+fachada **não proprietária** sobre o Baresip, já consumida pelo Win32.
+O WinUI 3 ainda possui apenas a bridge de **apresentação**, não um host
+de telefonia; portanto continua mostrando SIP indisponível. O backend
+não foi duplicado nem transferido integralmente para uma DLL.
+
 ## Próxima extração do backend
 
 Implementar `VoiceApplicationService` C++ como dono único do Baresip,

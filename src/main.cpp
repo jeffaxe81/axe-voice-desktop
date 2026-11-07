@@ -46,6 +46,7 @@
 #include "preferences_incoming_policy.h"
 #ifdef AXV_ENABLE_NATIVE_SIP
 #include "native_install_guard.h"
+#include "voice_application_service.h"
 #include "contact_dialog.h"
 #include "contact_ui_actions.h"
 #include "incoming_ringtone_player.h"
@@ -293,6 +294,12 @@ axv::EngineSelection g_sip_selection = axv::create_sip_engine();
 #ifdef AXV_ENABLE_NATIVE_SIP
 axv::BaresipSipEngine& native_engine() {
     return static_cast<axv::BaresipSipEngine&>(*g_sip_selection.engine);
+}
+axv::VoiceApplicationService<axv::BaresipSipEngine>& native_voice_service() {
+    // Same Baresip instance as the existing Win32 application. No duplicate
+    // engine or credentials; guards are checked here and by the SDK worker.
+    static axv::VoiceApplicationService<axv::BaresipSipEngine> service(native_engine());
+    return service;
 }
 #endif
 // Prepared for future native callbacks; current laboratory build has no producer.
@@ -1400,7 +1407,7 @@ axv::RuntimeProcess observed_process(axv::ProcessStatus status, bool stopping) {
 axv::SipRuntimeObservation current_sip_observation(axv::ProcessStatus state) {
 #ifdef AXV_ENABLE_NATIVE_SIP
     (void)state;
-    return native_engine().observation();
+    return native_voice_service().snapshot(false).observation;
 #else
     return g_sip_session_guard.observe(observed_process(state,g_shutdown.pending()),
         axv::SipEvidence::None,g_native_event_mailbox,g_sip_projection);
@@ -1663,7 +1670,14 @@ bool try_dial_from_ui(HWND window,const std::wstring& typed_destination) {
         return false;
     }
     g_microphone_test.request_stop();
-    if(!g_sip_selection.engine->start_call(permission.normalized_destination)) {
+#ifdef AXV_ENABLE_NATIVE_SIP
+    const bool submitted=native_voice_service().dial(
+        observed,permission.normalized_destination);
+#else
+    const bool submitted=g_sip_selection.engine->start_call(
+        permission.normalized_destination);
+#endif
+    if(!submitted) {
         SetWindowTextW(g_status,g_sip_selection.engine->diagnostic().c_str());
         return false;
     }
@@ -2317,11 +2331,11 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         }
         if(LOWORD(wparam)==kAnswerNative && HIWORD(wparam)==BN_CLICKED) {
             acknowledge_incoming_alert();
-            (void)native_engine().answer_call(g_displayed_sip); return 0;
+            (void)native_voice_service().answer(g_displayed_sip); return 0;
         }
         if(LOWORD(wparam)==kHangupFuture && HIWORD(wparam)==BN_CLICKED) {
             acknowledge_incoming_alert();
-            (void)native_engine().hangup_call(g_displayed_sip); return 0;
+            (void)native_voice_service().hangup(g_displayed_sip); return 0;
         }
 #endif
         #ifdef AXV_ENABLE_NATIVE_SIP
