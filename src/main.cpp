@@ -345,6 +345,9 @@ bool save_sip_account_identifiers() {
     const auto server=axv::pref_edit_text(g_server);
     const auto user=axv::pref_edit_text(g_user);
     const auto port=axv::pref_edit_text(g_port);
+    const bool tls=g_tls && SendMessageW(g_tls,BM_GETCHECK,0,0)==BST_CHECKED;
+    const auto transport=tls?std::wstring(L"tls"):std::wstring(L"udp");
+    const auto ca=tls?axv::pref_edit_text(g_ca_file):std::wstring{};
     if(server.empty() || user.empty() || port.empty())return false;
     HKEY key=nullptr;
     if(RegCreateKeyExW(HKEY_CURRENT_USER,kPrefsKey,0,nullptr,0,KEY_SET_VALUE,
@@ -354,7 +357,9 @@ bool save_sip_account_identifiers() {
             reinterpret_cast<const BYTE*>(value.c_str()),
             static_cast<DWORD>((value.size()+1)*sizeof(wchar_t)))==ERROR_SUCCESS;
     };
-    const bool ok=write(L"SipServer",server) && write(L"SipUser",user) && write(L"SipPort",port);
+    const bool ok=write(L"SipServer",server) && write(L"SipUser",user) &&
+        write(L"SipPort",port) && write(L"SipTransport",transport) &&
+        write(L"SipCaFile",ca);
     RegCloseKey(key);
     return ok;
 }
@@ -364,6 +369,8 @@ void clear_sip_account_identifiers(){
     RegDeleteValueW(key,L"SipServer");
     RegDeleteValueW(key,L"SipUser");
     RegDeleteValueW(key,L"SipPort");
+    RegDeleteValueW(key,L"SipTransport");
+    RegDeleteValueW(key,L"SipCaFile");
     RegCloseKey(key);
 }
 void restore_sip_account_identifiers(){
