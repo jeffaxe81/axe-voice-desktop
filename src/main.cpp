@@ -3165,11 +3165,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                 GetDlgItem(window,kCallButton),GetDlgItem(window,kHangupFuture),
                 GetDlgItem(window,kMuteFuture),GetDlgItem(window,kHoldFuture),
                 GetDlgItem(window,kTransferFuture),GetDlgItem(window,kShowDial),
-                GetDlgItem(window,kContactsButton),
-                GetDlgItem(window,kRecentDestinationsButton),
                 g_faleweb_prefs_button
             };
 #ifdef AXV_ENABLE_NATIVE_SIP
+            controls.push_back(GetDlgItem(window,kContactsButton));
+            controls.push_back(GetDlgItem(window,kRecentDestinationsButton));
             controls.push_back(GetDlgItem(window,kAnswerNative));
 #endif
             for(int i=0;i<12;++i)
@@ -3208,10 +3208,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                 GetDlgItem(window,kCallButton),GetDlgItem(window,kHangupFuture),
                 GetDlgItem(window,kMuteFuture),GetDlgItem(window,kHoldFuture),
                 GetDlgItem(window,kTransferFuture),GetDlgItem(window,kShowDial),
-                GetDlgItem(window,kContactsButton),
-                GetDlgItem(window,kRecentDestinationsButton),g_faleweb_prefs_button
+                g_faleweb_prefs_button
             };
 #ifdef AXV_ENABLE_NATIVE_SIP
+            labels.push_back(GetDlgItem(window,kContactsButton));
+            labels.push_back(GetDlgItem(window,kRecentDestinationsButton));
             labels.push_back(GetDlgItem(window,kAnswerNative));
 #endif
             for(const HWND control:labels){
