@@ -1,6 +1,7 @@
 using System;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Automation;
 using Windows.Graphics;
 
 namespace AXEVoice.WinUI3;
@@ -13,6 +14,10 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        // The approved Essencial design starts light, irrespective of the
+        // Windows system theme. ThemeResource values track this local choice.
+        MainShell.RequestedTheme = ElementTheme.Light;
+        AutomationProperties.SetName(ThemeToggle, "Usar tema escuro");
         try { AppWindow.Resize(new SizeInt32(355, 602)); }
         catch (Exception) { /* Keep system default when AppWindow resize unavailable. */ }
 
@@ -44,6 +49,9 @@ public sealed partial class MainWindow : Window
     {
         _dark = !_dark;
         MainShell.RequestedTheme = _dark ? ElementTheme.Dark : ElementTheme.Light;
+        ThemeToggle.Content = _dark ? "☀" : "☾";
+        AutomationProperties.SetName(ThemeToggle,
+            _dark ? "Usar tema claro" : "Usar tema escuro");
     }
 
     private void SwitchTo(string title, string explanation, bool dialer)
