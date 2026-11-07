@@ -77,15 +77,17 @@ public sealed class PreviewProfileStore
             if(!File.Exists(StoragePath))return new PreviewProfile();
             byte[] ciphertext=File.ReadAllBytes(StoragePath);
             byte[] clear=ProtectedData.Unprotect(ciphertext,null,DataProtectionScope.CurrentUser);
-            var stored=JsonSerializer.Deserialize<PreviewProfile>(clear);
-            if(stored is null)return new PreviewProfile();
-            var sanitized=new PreviewProfile{
-                Size=stored.Size==PreviewSizeMode.Comfortable
-                    ?PreviewSizeMode.Comfortable:PreviewSizeMode.Compact};
-            foreach(string value in stored.Favorites??new List<string>())
-                sanitized.AddFavorite(value);
-            CryptographicOperations.ZeroMemory(clear);
-            return sanitized;
+            try {
+                var stored=JsonSerializer.Deserialize<PreviewProfile>(clear);
+                if(stored is null)return new PreviewProfile();
+                var sanitized=new PreviewProfile{
+                    Size=stored.Size==PreviewSizeMode.Comfortable
+                        ?PreviewSizeMode.Comfortable:PreviewSizeMode.Compact};
+                foreach(string value in stored.Favorites??new List<string>())
+                    sanitized.AddFavorite(value);
+                return sanitized;
+            }
+            finally {CryptographicOperations.ZeroMemory(clear);}
         } catch (Exception ex) when(
             ex is IOException or UnauthorizedAccessException or CryptographicException
                 or JsonException or ArgumentException) {
