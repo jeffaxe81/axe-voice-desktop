@@ -11,6 +11,7 @@ namespace axv {
 struct FalewebPreferences {
  std::wstring server,user,port,password,ca_file;
  bool tls=false;
+ bool remember_password=false; // only an opt-in; never persist the secret in preferences
  int ringtone=2;
  bool mute_ringtone=false;
  NativeCodecMode codec_mode=NativeCodecMode::Automatic;
@@ -21,7 +22,7 @@ struct FalewebPrefsDialog {
  FalewebPreferences data;
  std::array<std::vector<HWND>,6> controls{};
  std::array<HWND,6> tabs{};
- HWND server=nullptr,user=nullptr,port=nullptr,password=nullptr,ca=nullptr,tls=nullptr;
+ HWND server=nullptr,user=nullptr,port=nullptr,password=nullptr,ca=nullptr,tls=nullptr,remember_password=nullptr;
  HWND ringtone=nullptr,muted=nullptr,inputs=nullptr,outputs=nullptr,rings=nullptr;
  HWND codec=nullptr;
  int page=0;
@@ -105,9 +106,14 @@ inline INT_PTR CALLBACK faleweb_preferences_proc(HWND dialog,UINT message,WPARAM
   state->user=pref_edit(dialog,state,0,state->data.user,240,112,230);
   pref_label(dialog,state,0,L"Porta do servidor",28,155,200);
   state->port=pref_edit(dialog,state,0,state->data.port,240,152,230);
-  pref_label(dialog,state,0,L"Senha (nao armazenada)",28,195,206);
+  pref_label(dialog,state,0,L"Senha SIP",28,195,206);
   state->password=pref_edit(dialog,state,0,L"",240,192,230,true);
-  pref_label(dialog,state,0,L"Deixe em branco para manter a senha atual.",28,226,440,20);
+  pref_label(dialog,state,0,L"Em branco: manter senha atual.",28,226,217,20);
+  state->remember_password=pref_control(dialog,state,0,L"BUTTON",
+   L"Salvar senha SIP",WS_TABSTOP|BS_AUTOCHECKBOX|BS_NOTIFY,248,223,220,26);
+  if(state->remember_password)
+   SendMessageW(state->remember_password,BM_SETCHECK,
+    state->data.remember_password?BST_CHECKED:BST_UNCHECKED,0);
   state->tls=pref_control(dialog,state,0,L"BUTTON",L"Usar TLS (CA validada)",
    WS_TABSTOP|BS_AUTOCHECKBOX,28,260,280,26);
   if(state->tls)SendMessageW(state->tls,BM_SETCHECK,state->data.tls?BST_CHECKED:BST_UNCHECKED,0);
@@ -171,6 +177,8 @@ inline INT_PTR CALLBACK faleweb_preferences_proc(HWND dialog,UINT message,WPARAM
    state->data.user=pref_edit_text(state->user);
    state->data.port=pref_edit_text(state->port);
    state->data.password=pref_edit_text(state->password);
+   state->data.remember_password=state->remember_password &&
+    SendMessageW(state->remember_password,BM_GETCHECK,0,0)==BST_CHECKED;
    state->data.ca_file=pref_edit_text(state->ca);
    state->data.tls=SendMessageW(state->tls,BM_GETCHECK,0,0)==BST_CHECKED;
    state->data.mute_ringtone=SendMessageW(state->muted,BM_GETCHECK,0,0)!=BST_CHECKED;
