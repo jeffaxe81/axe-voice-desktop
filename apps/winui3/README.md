@@ -30,15 +30,16 @@ com uma central de homologação, preferencialmente Dígitro.
 
 Aplicação Windows independente do AXE Voice Win32, com identidade visual
 Essencial Inteligente, janela compacta, teclado 12 teclas, apagar, temas e
-navegação local. **Não faz chamadas nem registra SIP nesta fase.**
+navegação local. **A distribuição Preview não registra nem realiza chamadas; a variante Native SIP Lab Candidate tem integração experimental.**
 
 ## Tecnologias
 
 - Frontend: C#/.NET 10 + WinUI 3/XAML, Windows App SDK **2.6.5 estável**.
-- Núcleo de apresentação: `axv_frontend_bridge.dll` (C++17, C ABI v1),
+- Núcleo de apresentação: `axv_frontend_bridge.dll` (C++17, C ABI v2),
   exportado de `src/frontend_shared` no mesmo repositório.
-- Motor de telefonia: **Baresip/libre existente** no projeto Win32.
-  Ainda **não está conectado** a este frontend; nenhum segundo SIP stack.
+- Motor de telefonia: **o mesmo código Baresip/libre do Win32**, incluído
+  opcionalmente na DLL de laboratório. A edição Preview permanece offline;
+  a variante Native Lab habilita conexão explícita e validação de sessões.
 
 ## Compilar (Windows 10/11 x64)
 
@@ -56,7 +57,7 @@ dotnet build apps/winui3/AXEVoice.WinUI3.csproj -c Release -p:Platform=x64
 **Distinção de releases:** o executável desta edição será entregue como
 `AXE-Voice-WinUI3-Preview`. O executável Win32 nativo e o instalador
 `AXE-Voice-Native-Candidate-Setup` são independentes e permanecem
-inalterados. A presença da bridge não habilita comandos SIP.
+inalterados. A presença da bridge Preview não habilita comandos SIP; somente o candidato nativo habilita comandos após registro verificado.
 
 A distribuição unpackaged depende de instalação prévia do Windows App SDK
 Runtime correspondente. CI valida compilação; testes com headset/PABX Dígitro
