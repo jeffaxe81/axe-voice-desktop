@@ -207,12 +207,24 @@ private:
             fail_closed();
             return;
         case BEVENT_REGISTERING:
+            // Baresip can refresh REGISTER while a verified call is ringing or
+            // established. A refresh must not revoke the active call simply
+            // because the native UA remains registered. If the UA really lost
+            // registration, fail closed and revoke all call controls.
+            if (active_call_) {
+                if (!sip_registered_ || !ua_isregistered(owner_)) fail_closed();
+                return;
+            }
             if (!lifecycle_.registration(callback_session, BaresipEventKind::Registering))
                 fail_closed();
             else sip_registered_ = false;
             return;
         case BEVENT_REGISTER_OK:
-            if (!ua_isregistered(owner_) || !lifecycle_.registration(callback_session, BaresipEventKind::RegisterOk))
+            if (!ua_isregistered(owner_)) { fail_closed(); return; }
+            // REGISTER_OK after a successful refresh is idempotent while a
+            // call is active. Its event must not enter the call-state reducer.
+            if (active_call_ && sip_registered_) return;
+            if (!lifecycle_.registration(callback_session, BaresipEventKind::RegisterOk))
                 fail_closed();
             else sip_registered_ = true;
             return;
