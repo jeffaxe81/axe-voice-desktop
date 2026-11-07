@@ -853,7 +853,7 @@ void apply_faleweb_layout(HWND root) {
             position_essential(GetDlgItem(root,kTheme),369,15,52,32);
             position_essential(GetDlgItem(root,kShowSipMonitor),253,15,108,32);
             position_essential(g_runtime_banner,23,68,397,31);
-            position_essential(g_monitor_events,23,116,397,590);
+            position_essential(g_monitor_events,23,116,397,575);
             SetWindowTextW(GetDlgItem(root,kShowSipMonitor),L"TECLADO");
             ShowWindow(g_footer_panel,SW_HIDE);
             ShowWindow(g_status,SW_HIDE);
@@ -898,10 +898,10 @@ void apply_faleweb_layout(HWND root) {
         position_essential(GetDlgItem(root,kMuteFuture),23,546,126,45);
         position_essential(GetDlgItem(root,kHoldFuture),158,546,126,45);
         position_essential(GetDlgItem(root,kTransferFuture),293,546,127,45);
-        position_essential(GetDlgItem(root,kShowDial),23,637,94,67);
-        position_essential(GetDlgItem(root,kContactsButton),125,637,94,67);
-        position_essential(GetDlgItem(root,kRecentDestinationsButton),227,637,94,67);
-        position_essential(g_faleweb_prefs_button,329,637,94,67);
+        position_essential(GetDlgItem(root,kShowDial),23,622,94,67);
+        position_essential(GetDlgItem(root,kContactsButton),125,622,94,67);
+        position_essential(GetDlgItem(root,kRecentDestinationsButton),227,622,94,67);
+        position_essential(g_faleweb_prefs_button,329,622,94,67);
         // Exactly one verified primary action group is shown at a time.
         // Visibility is presentation; command handlers still enforce native
         // session + displayed-call identity before any SIP operation.
@@ -988,6 +988,31 @@ void apply_faleweb_layout(HWND root) {
 }
 void apply_compact_layout(HWND root) {
     if(g_faleweb_mode){
+        // The 355x602 Essencial proportions are the preferred 96-DPI design.
+        // On smaller Windows work areas a high scaling factor can make the
+        // physical height exceed the monitor. Scale the *entire* Win32 canvas
+        // down coherently (including its fonts) instead of clipping the
+        // bottom navigation or introducing a forbidden vertical scrollbar.
+        if(!g_faleweb_smoke) {
+            MONITORINFO monitor{};
+            monitor.cbSize=sizeof(monitor);
+            const HMONITOR display=MonitorFromWindow(root,MONITOR_DEFAULTTONEAREST);
+            if(display && GetMonitorInfoW(display,&monitor)) {
+                const int work_height=monitor.rcWork.bottom-monitor.rcWork.top;
+                constexpr int kWorkAreaMargin=16;
+                if(work_height>kEssentialHeight+kWorkAreaMargin) {
+                    const unsigned maximum=static_cast<unsigned>(
+                        (static_cast<std::int64_t>(work_height-kWorkAreaMargin)*96)
+                        /kEssentialHeight);
+                    const unsigned fitted=(std::min)(g_dpi,
+                        axv::normalized_dpi(maximum));
+                    if(fitted!=g_dpi){
+                        g_dpi=fitted;
+                        rebuild_fonts();
+                    }
+                }
+            }
+        }
         SetWindowPos(root,nullptr,0,0,axv::dpi_pixels(g_faleweb_smoke?kFalewebWidth:kEssentialWidth,g_dpi),
             axv::dpi_pixels(g_faleweb_smoke?kFalewebHeight:kEssentialHeight,g_dpi),SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
         apply_faleweb_layout(root);return;
@@ -1122,7 +1147,8 @@ void paint_button(const DRAWITEMSTRUCT& item) {
         }
         SelectObject(item.hDC, old);
     } else {
-        HGDIOBJ old_font = SelectObject(item.hDC, g_font_regular);
+        HGDIOBJ old_font = SelectObject(item.hDC,
+            id==kTheme && g_faleweb_mode ? g_font_small : g_font_regular);
         DrawTextW(item.hDC, title, -1, &rect,
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
         SelectObject(item.hDC, old_font);
@@ -1939,7 +1965,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_button(window, g_compact ? L"MAX" : L"MINI", kCompact, 344, 65, 70, 29);
         make_button(window, L"?", kHelpButton, 301, 65, 34, 29);
         make_button(window, g_pinned ? L"SOLTAR" : L"FIXAR", kPin, 265, 18, 70, 36);
-        make_button(window, g_dark ? L"CLARO" : L"ESCURO", kTheme, 344, 18, 70, 36);
+        make_button(window, g_faleweb_mode && !g_faleweb_smoke ? (g_dark ? L"☀" : L"☾") : (g_dark ? L"CLARO" : L"ESCURO"), kTheme, 344, 18, 70, 36);
         if (g_pinned) SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0,
                                    SWP_NOMOVE | SWP_NOSIZE);
         make_button(window, L"TECLADO", kShowDial, 24, 103, 92, 42);
@@ -2247,7 +2273,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             }
             if (control == kTheme) {
                 g_dark = !g_dark;
-                SetWindowTextW(GetDlgItem(window, kTheme), g_dark ? L"CLARO" : L"ESCURO");
+                SetWindowTextW(GetDlgItem(window, kTheme), g_faleweb_mode && !g_faleweb_smoke ? (g_dark ? L"☀" : L"☾") : (g_dark ? L"CLARO" : L"ESCURO"));
                 refresh_brushes();
                 save_ui_preferences();
                 InvalidateRect(window, nullptr, TRUE);
@@ -3135,6 +3161,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         // Exercise the real owner-drawn Win32 controls and their physical
         // rectangles without registering a SIP account or starting a call.
         bool passed=true;
+        std::wstring design_failure;
+        const auto report_design_failure=[&](const std::wstring& reason) {
+            if(design_failure.empty()) design_failure=reason;
+        };
         const auto visible=[](HWND control){
             return control && (GetWindowLongPtrW(control,GWL_STYLE)&WS_VISIBLE)!=0;
         };
@@ -3148,6 +3178,99 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             return rect.left>=tl.x && rect.top>=tl.y &&
                    rect.right<=br.x && rect.bottom<=br.y &&
                    rect.right>rect.left && rect.bottom>rect.top;
+        };
+        // Design acceptance: all visible interactive/identity controls must
+        // occupy distinct physical rectangles inside the usable client area.
+        // This catches overlap and clipped navigation beyond the older tests
+        // which only checked the dial input and primary call action.
+        const auto essential_geometry_ok=[&](){
+            std::vector<HWND> controls{
+                g_brand_label,GetDlgItem(window,kTheme),
+                GetDlgItem(window,kShowSipMonitor),g_runtime_banner,g_number,
+                GetDlgItem(window,kCallButton),GetDlgItem(window,kHangupFuture),
+                GetDlgItem(window,kMuteFuture),GetDlgItem(window,kHoldFuture),
+                GetDlgItem(window,kTransferFuture),GetDlgItem(window,kShowDial),
+                g_faleweb_prefs_button
+            };
+#ifdef AXV_ENABLE_NATIVE_SIP
+            controls.push_back(GetDlgItem(window,kContactsButton));
+            controls.push_back(GetDlgItem(window,kRecentDestinationsButton));
+            controls.push_back(GetDlgItem(window,kAnswerNative));
+#endif
+            for(int i=0;i<12;++i)
+                controls.push_back(GetDlgItem(window,kDigitStart+i));
+            std::vector<RECT> occupied;
+            for(const HWND control:controls){
+                if(!control) {report_design_failure(L"Controle obrigatório não existe.");return false;}
+                if(!visible(control))continue;
+                if(!in_client(control)) {
+                    report_design_failure(L"Controle fora da janela: ID "+
+                        std::to_wstring(GetDlgCtrlID(control))+
+                        L", DPI "+std::to_wstring(g_dpi));
+                    return false;
+                }
+                RECT bounds{};
+                if(!GetWindowRect(control,&bounds))return false;
+                for(const RECT& other:occupied)
+                    if(bounds.left<other.right && other.left<bounds.right &&
+                       bounds.top<other.bottom && other.top<bounds.bottom) {
+                        report_design_failure(L"Sobreposição: ID "+
+                            std::to_wstring(GetDlgCtrlID(control))+
+                            L", DPI "+std::to_wstring(g_dpi));
+                        return false;
+                    }
+                occupied.push_back(bounds);
+            }
+            return occupied.size()>=18 && !visible(g_footer_panel) &&
+                !visible(g_status) && g_scroll_max==0 && g_scroll_offset==0 &&
+                !(GetWindowLongPtrW(window,GWL_STYLE)&WS_VSCROLL);
+        };
+        // Owner-drawn action labels should fit without using the truncating
+        // DT_END_ELLIPSIS fallback (which hides a design regression).
+        const auto essential_labels_fit=[&](){
+            std::vector<HWND> labels{
+                GetDlgItem(window,kTheme),GetDlgItem(window,kShowSipMonitor),
+                GetDlgItem(window,kCallButton),GetDlgItem(window,kHangupFuture),
+                GetDlgItem(window,kMuteFuture),GetDlgItem(window,kHoldFuture),
+                GetDlgItem(window,kTransferFuture),GetDlgItem(window,kShowDial),
+                g_faleweb_prefs_button
+            };
+#ifdef AXV_ENABLE_NATIVE_SIP
+            labels.push_back(GetDlgItem(window,kContactsButton));
+            labels.push_back(GetDlgItem(window,kRecentDestinationsButton));
+            labels.push_back(GetDlgItem(window,kAnswerNative));
+#endif
+            for(const HWND control:labels){
+                if(!control)return false;
+                if(!visible(control))continue;
+                wchar_t value[128]{};
+                const int length=GetWindowTextW(control,value,128);
+                if(length<=0)return false;
+                HDC dc=GetDC(control);
+                if(!dc)return false;
+                const HGDIOBJ old=SelectObject(dc,
+                    control==GetDlgItem(window,kTheme) ? g_font_small : g_font_regular);
+                SIZE text_size{};
+                const bool measured=GetTextExtentPoint32W(dc,value,length,&text_size)!=0;
+                SelectObject(dc,old);
+                ReleaseDC(control,dc);
+                RECT bounds{};
+                GetWindowRect(control,&bounds);
+                const int horizontal_space= axv::dpi_pixels(8,g_dpi);
+                const int vertical_space= axv::dpi_pixels(4,g_dpi);
+                if(!measured ||
+                   text_size.cx>bounds.right-bounds.left-horizontal_space ||
+                   text_size.cy>bounds.bottom-bounds.top-vertical_space) {
+                    report_design_failure(L"Texto cortado: "+
+                        std::wstring(value)+L", ID "+
+                        std::to_wstring(GetDlgCtrlID(control))+
+                        L", espaço "+std::to_wstring(bounds.right-bounds.left)+
+                        L", texto "+std::to_wstring(text_size.cx)+
+                        L", DPI "+std::to_wstring(g_dpi));
+                    return false;
+                }
+            }
+            return true;
         };
         const auto apply=[&](axv::SipStatus status,std::uint64_t call,
                              bool verified,axv::EssentialCallView expected){
@@ -3168,6 +3291,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                 visible(dial)==idle && visible(end)==!idle &&
                 visible(mute)==secondary && visible(hold)==secondary &&
                 visible(transfer)==secondary && in_client(g_number);
+            passed=passed && essential_geometry_ok() && essential_labels_fit();
             if(visible(dial))passed=passed && in_client(dial);
             if(visible(end))passed=passed && in_client(end);
 #ifdef AXV_ENABLE_NATIVE_SIP
@@ -3196,22 +3320,75 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             passed=passed && g_scroll_max==0 && g_scroll_offset==0 &&
                 (GetWindowLongPtrW(window,GWL_STYLE)&WS_VSCROLL)==0;
         };
-        for(unsigned dpi:{96u,120u,144u}){
+        const auto report_failed_stage=[&](const wchar_t* stage){
+            if(!passed)
+                report_design_failure(std::wstring(L"Falhou na etapa ") +
+                    stage+L" com DPI "+std::to_wstring(g_dpi));
+        };
+        for(unsigned dpi:{96u,120u,144u,192u}){
             SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(dpi,dpi),0);
+            RECT frame{};
+            GetWindowRect(window,&frame);
+            // On short Windows desktop work areas the entire canvas is
+            // proportionally reduced instead of letting Windows clip it.
+            const bool frame_ok=g_dpi>=96 && g_dpi<=dpi &&
+                frame.right-frame.left==axv::dpi_pixels(kEssentialWidth,g_dpi) &&
+                frame.bottom-frame.top==axv::dpi_pixels(kEssentialHeight,g_dpi);
+            if(!frame_ok)report_design_failure(
+                L"Janela divergente: "+std::to_wstring(frame.right-frame.left)+
+                L"x"+std::to_wstring(frame.bottom-frame.top)+
+                L" ao inves de "+std::to_wstring(axv::dpi_pixels(kEssentialWidth,g_dpi))+
+                L"x"+std::to_wstring(axv::dpi_pixels(kEssentialHeight,g_dpi))+
+                L", DPI layout "+std::to_wstring(g_dpi)+
+                L", DPI sistema "+std::to_wstring(dpi));
+            passed=passed && frame_ok;
             apply(axv::SipStatus::Registered,0,true,axv::EssentialCallView::Idle);
+            report_failed_stage(L"registrado");
             apply(axv::SipStatus::Ringing,101,true,axv::EssentialCallView::Incoming);
+            report_failed_stage(L"recebendo");
             apply(axv::SipStatus::Calling,101,true,axv::EssentialCallView::Outgoing);
+            report_failed_stage(L"originando");
             apply(axv::SipStatus::InCall,101,true,axv::EssentialCallView::Connected);
+            report_failed_stage(L"em_chamada");
             apply(axv::SipStatus::Ringing,101,false,axv::EssentialCallView::Idle);
+            report_failed_stage(L"evento_nao_confiavel");
             apply(axv::SipStatus::Ringing,0,true,axv::EssentialCallView::Idle);
+            report_failed_stage(L"token_zerado");
             // Monitor navigation must preserve the active incoming layout.
             apply(axv::SipStatus::Ringing,102,true,axv::EssentialCallView::Incoming);
+            report_failed_stage(L"recebendo_apos_refresh");
             show_page(window,3);
+            // The fourth page has an independent scroll-free viewport and
+            // must not leave dialpad controls behind the monitor.
+            passed=passed && visible(g_monitor_events) &&
+                in_client(g_monitor_events) && !visible(g_number) &&
+                !visible(GetDlgItem(window,kDigitStart)) &&
+                !visible(g_footer_panel) && g_scroll_max==0 &&
+                !(GetWindowLongPtrW(window,GWL_STYLE)&WS_VSCROLL);
+            report_failed_stage(L"monitor");
+            const bool original_dark=g_dark;
+            SendMessageW(window,WM_COMMAND,MAKEWPARAM(kTheme,BN_CLICKED),0);
+            passed=passed && g_dark!=original_dark &&
+                in_client(g_monitor_events);
+            SendMessageW(window,WM_COMMAND,MAKEWPARAM(kTheme,BN_CLICKED),0);
+            passed=passed && g_dark==original_dark;
+            report_failed_stage(L"tema");
             show_page(window,0);
-            passed=passed && visible(GetDlgItem(window,kHangupFuture));
+            passed=passed && essential_geometry_ok() &&
+                essential_labels_fit() && visible(GetDlgItem(window,kHangupFuture));
+            report_failed_stage(L"retorno_monitor");
 #ifdef AXV_ENABLE_NATIVE_SIP
             passed=passed && visible(GetDlgItem(window,kAnswerNative));
 #endif
+        }
+        if(!passed) {
+            if(design_failure.empty())
+                design_failure=L"Outro critério de aceitação do layout não passou.";
+            FILE* report=nullptr;
+            if(_wfopen_s(&report,L"AXV_DESIGN_FAILURE.txt",L"wt")==0 && report) {
+                std::fwprintf(report,L"%ls\n",design_failure.c_str());
+                std::fclose(report);
+            }
         }
         DestroyWindow(window);
         return passed?0:97;

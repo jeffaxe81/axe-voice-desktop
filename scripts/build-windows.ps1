@@ -30,7 +30,14 @@ if ($LASTEXITCODE -ne 0) { throw "Compilação falhou ($LASTEXITCODE)." }
 
 Write-Host '[3/3] Executando CTest...'
 & ctest --test-dir $buildDir -C $Configuration --output-on-failure
-if ($LASTEXITCODE -ne 0) { throw "Testes falharam ($LASTEXITCODE)." }
+if ($LASTEXITCODE -ne 0) {
+    Get-ChildItem -LiteralPath $buildDir -Filter 'AXV_DESIGN_FAILURE.txt' -File -Recurse -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            Write-Host "[AXE Voice Design QA] $($_.FullName)"
+            Get-Content -LiteralPath $_.FullName -Encoding UTF8 | Write-Host
+        }
+    throw "Testes falharam ($LASTEXITCODE)."
+}
 
 if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
     throw "Executável não encontrado em: $binary"
