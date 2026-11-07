@@ -28,7 +28,7 @@ public:
     bool start_call(const std::wstring&) override { return false; }
     void hangup() override {}
     std::wstring diagnostic() const override {
-        return L"Motor Baresip ainda não integrado; nenhuma chamada foi iniciada.";
+        return L"Esta compilacao nao inclui motor SIP. Instale o pacote nativo AXE-Voice-Native-Candidate-Setup para registrar.";
     }
 };
 }
