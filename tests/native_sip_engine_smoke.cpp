@@ -60,6 +60,7 @@ int main(int argc,char**argv) {
     if(success && (engine.status()!=axv::SipStatus::Registered ||
        !axv::sip_proof_is_current(observed,observed.session))) return 4;
     if(!success && engine.status()!=axv::SipStatus::Failed) return 5;
+    if(mode=="timeout" && text.find(L"Prazo do registro SIP") == std::wstring::npos) return 14;
     if(engine.set_muted(true,{}) || engine.set_held(true,{}) || engine.transfer_call(L"1002",{}) || engine.send_dtmf(L'5',{}) || engine.answer_call({}) || engine.hangup_call({}) || engine.media_state().available)return 13;
     if(missing_audio){
         if(!engine.start_call(L"1002"))return 11;
