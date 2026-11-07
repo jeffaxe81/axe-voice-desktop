@@ -4,7 +4,63 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="AXE Voice — WinUI 3 (prévia)">
-    <Border x:Name="MainShell" Background="#F5F8FD" Padding="12">
+    <Border x:Name="MainShell" Background="{ThemeResource AxvShellBrush}" Padding="12">
+        <Border.Resources>
+            <ResourceDictionary>
+                <!-- Theme resources update when MainShell.RequestedTheme changes.
+                     Avoid hard-coded light surfaces that stay white in dark mode. -->
+                <ResourceDictionary.ThemeDictionaries>
+                    <ResourceDictionary x:Key="Light">
+                        <SolidColorBrush x:Key="AxvShellBrush" Color="#F5F8FD"/>
+                        <SolidColorBrush x:Key="AxvBrandBrush" Color="#1365BE"/>
+                        <SolidColorBrush x:Key="AxvTitleBrush" Color="#13375D"/>
+                        <SolidColorBrush x:Key="AxvSecondaryBrush" Color="#52647B"/>
+                        <SolidColorBrush x:Key="AxvStatusBackgroundBrush" Color="#FCE7E7"/>
+                        <SolidColorBrush x:Key="AxvStatusTextBrush" Color="#A52834"/>
+                        <SolidColorBrush x:Key="AxvStatusDetailBrush" Color="#80505A"/>
+                        <SolidColorBrush x:Key="AxvInputBrush" Color="#E2E9F4"/>
+                        <SolidColorBrush x:Key="AxvInputTextBrush" Color="#17395F"/>
+                        <SolidColorBrush x:Key="AxvKeyBackgroundBrush" Color="White"/>
+                        <SolidColorBrush x:Key="AxvKeyTextBrush" Color="#183759"/>
+                        <SolidColorBrush x:Key="AxvDetailsBackgroundBrush" Color="#E8EDF6"/>
+                        <SolidColorBrush x:Key="AxvDetailsTitleBrush" Color="#15365C"/>
+                        <SolidColorBrush x:Key="AxvDetailsTextBrush" Color="#415A72"/>
+                    </ResourceDictionary>
+                    <ResourceDictionary x:Key="Dark">
+                        <SolidColorBrush x:Key="AxvShellBrush" Color="#081A31"/>
+                        <SolidColorBrush x:Key="AxvBrandBrush" Color="#1683D8"/>
+                        <SolidColorBrush x:Key="AxvTitleBrush" Color="#ECF4FF"/>
+                        <SolidColorBrush x:Key="AxvSecondaryBrush" Color="#BAD0EA"/>
+                        <SolidColorBrush x:Key="AxvStatusBackgroundBrush" Color="#49212D"/>
+                        <SolidColorBrush x:Key="AxvStatusTextBrush" Color="#FFC0C6"/>
+                        <SolidColorBrush x:Key="AxvStatusDetailBrush" Color="#EBC2C8"/>
+                        <SolidColorBrush x:Key="AxvInputBrush" Color="#243C58"/>
+                        <SolidColorBrush x:Key="AxvInputTextBrush" Color="#ECF4FF"/>
+                        <SolidColorBrush x:Key="AxvKeyBackgroundBrush" Color="#1B3554"/>
+                        <SolidColorBrush x:Key="AxvKeyTextBrush" Color="#ECF4FF"/>
+                        <SolidColorBrush x:Key="AxvDetailsBackgroundBrush" Color="#182E49"/>
+                        <SolidColorBrush x:Key="AxvDetailsTitleBrush" Color="#EAF4FF"/>
+                        <SolidColorBrush x:Key="AxvDetailsTextBrush" Color="#C1D6F0"/>
+                    </ResourceDictionary>
+                    <ResourceDictionary x:Key="Default">
+                        <SolidColorBrush x:Key="AxvShellBrush" Color="#F5F8FD"/>
+                        <SolidColorBrush x:Key="AxvBrandBrush" Color="#1365BE"/>
+                        <SolidColorBrush x:Key="AxvTitleBrush" Color="#13375D"/>
+                        <SolidColorBrush x:Key="AxvSecondaryBrush" Color="#52647B"/>
+                        <SolidColorBrush x:Key="AxvStatusBackgroundBrush" Color="#FCE7E7"/>
+                        <SolidColorBrush x:Key="AxvStatusTextBrush" Color="#A52834"/>
+                        <SolidColorBrush x:Key="AxvStatusDetailBrush" Color="#80505A"/>
+                        <SolidColorBrush x:Key="AxvInputBrush" Color="#E2E9F4"/>
+                        <SolidColorBrush x:Key="AxvInputTextBrush" Color="#17395F"/>
+                        <SolidColorBrush x:Key="AxvKeyBackgroundBrush" Color="White"/>
+                        <SolidColorBrush x:Key="AxvKeyTextBrush" Color="#183759"/>
+                        <SolidColorBrush x:Key="AxvDetailsBackgroundBrush" Color="#E8EDF6"/>
+                        <SolidColorBrush x:Key="AxvDetailsTitleBrush" Color="#15365C"/>
+                        <SolidColorBrush x:Key="AxvDetailsTextBrush" Color="#415A72"/>
+                    </ResourceDictionary>
+                </ResourceDictionary.ThemeDictionaries>
+            </ResourceDictionary>
+        </Border.Resources>
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="48"/>
@@ -21,29 +77,29 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <Border Grid.Column="0" Height="32" Width="32" Background="#1365BE"
+                <Border Grid.Column="0" Height="32" Width="32" Background=="{ThemeResource AxvBrandBrush}"
                         CornerRadius="10" HorizontalAlignment="Left" VerticalAlignment="Center">
-                    <TextBlock Text="A" FontSize="20" FontWeight="Bold" Foreground="White"
+                    <TextBlock Text="A" FontSize="20" FontWeight="Bold" Foreground=="{ThemeResource AxvKeyBackgroundBrush}"
                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Border>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
                     <TextBlock Text="AXE Voice" FontSize="16" FontWeight="SemiBold"
-                               Foreground="#13375D"/>
-                    <TextBlock Text="WinUI 3 · Avaliação" FontSize="10" Foreground="#52647B"/>
+                               Foreground=="{ThemeResource AxvTitleBrush}"/>
+                    <TextBlock Text="WinUI 3 · Avaliação" FontSize="10" Foreground=="{ThemeResource AxvSecondaryBrush}"/>
                 </StackPanel>
-                <Button Grid.Column="2" Content="◐" AutomationProperties.Name="Alternar tema"
+                <Button Grid.Column="2" x:Name="ThemeToggle" Content="☾" AutomationProperties.Name="Usar tema escuro"
                         ToolTipService.ToolTip="Claro / escuro" Click="Theme_Click"
                         Background="Transparent" BorderThickness="0" Padding="10,4"
                         VerticalAlignment="Center"/>
             </Grid>
 
-            <Border Grid.Row="1" CornerRadius="10" Background="#FCE7E7" Padding="10"
+            <Border Grid.Row="1" CornerRadius="10" Background=="{ThemeResource AxvStatusBackgroundBrush}" Padding="10"
                     Margin="0,6,0,7">
                 <StackPanel VerticalAlignment="Center" Spacing="2">
                     <TextBlock x:Name="SipStatusText" Text="● SIP INDISPONÍVEL"
-                               Foreground="#A52834" FontSize="12" FontWeight="SemiBold"/>
+                               Foreground=="{ThemeResource AxvStatusTextBrush}" FontSize="12" FontWeight="SemiBold"/>
                     <TextBlock x:Name="BackendHint" Text="Motor nativo ainda não vinculado"
-                               FontSize="10" Foreground="#80505A" TextWrapping="Wrap"/>
+                               FontSize="10" Foreground=="{ThemeResource AxvStatusDetailBrush}" TextWrapping="Wrap"/>
                 </StackPanel>
             </Border>
 
@@ -57,8 +113,8 @@
                          MaxLength="128" AutomationProperties.Name="Número de destino"
                          VerticalAlignment="Stretch"/>
                 <Button Grid.Column="1" Content="⌫" FontSize="20" Click="Backspace_Click"
-                        CornerRadius="10" Background="#E2E9F4"
-                        Foreground="#17395F" BorderThickness="0"
+                        CornerRadius="10" Background=="{ThemeResource AxvInputBrush}"
+                        Foreground=="{ThemeResource AxvInputTextBrush}" BorderThickness="0"
                         AutomationProperties.Name="Apagar último dígito"/>
             </Grid>
 
@@ -76,38 +132,38 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <Button Grid.Row="0" Grid.Column="0" Content="1" Tag="1" Click="Digit_Click"
-                        FontSize="23" CornerRadius="12" Background="White" Foreground="#183759"/>
+                        FontSize="23" CornerRadius="12" Background=="{ThemeResource AxvKeyBackgroundBrush}" Foreground=="{ThemeResource AxvKeyTextBrush}"/>
                 <Button Grid.Row="0" Grid.Column="1" Content="2" Tag="2" Click="Digit_Click"
-                        FontSize="23" CornerRadius="12" Background="White" Foreground="#183759"/>
+                        FontSize="23" CornerRadius="12" Background=="{ThemeResource AxvKeyBackgroundBrush}" Foreground=="{ThemeResource AxvKeyTextBrush}"/>
                 <Button Grid.Row="0" Grid.Column="2" Content="3" Tag="3" Click="Digit_Click"
-                        FontSize="23" CornerRadius="12" Background="White" Foreground="#183759"/>
+                        FontSize="23" CornerRadius="12" Background=="{ThemeResource AxvKeyBackgroundBrush}" Foreground=="{ThemeResource AxvKeyTextBrush}"/>
                 <Button Grid.Row="1" Grid.Column="0" Content="4" Tag="4" Click="Digit_Click"
-                        FontSize="23" CornerRadius="12" Background="White" Foreground="#183759"/>
+                        FontSize="23" CornerRadius="12" Background=="{ThemeResource AxvKeyBackgroundBrush}" Foreground=="{ThemeResource AxvKeyTextBrush}"/>
                 <Button Grid.Row="1" Grid.Column="1" Content="5" Tag="5" Click="Digit_Click"
-                        FontSize="23" CornerRadius="12" Background="White" Foreground="#183759"/>
+                        FontSize="23" CornerRadius="12" Background=="{ThemeResource AxvKeyBackgroundBrush}" Foreground=="{ThemeResource AxvKeyTextBrush}"/>
                 <Button Grid.Row="1" Grid.Column="2" Content="6" Tag="6" Click="Digit_Click"
-                        FontSize="23" CornerRadius="12" Background="White" Foreground="#183759"/>
+                        FontSize="23" CornerRadius="12" Background=="{ThemeResource AxvKeyBackgroundBrush}" Foreground=="{ThemeResource AxvKeyTextBrush}"/>
                 <Button Grid.Row="2" Grid.Column="0" Content="7" Tag="7" Click="Digit_Click"
-                        FontSize="23" CornerRadius="12" Background="White" Foreground="#183759"/>
+                        FontSize="23" CornerRadius="12" Background=="{ThemeResource AxvKeyBackgroundBrush}" Foreground=="{ThemeResource AxvKeyTextBrush}"/>
                 <Button Grid.Row="2" Grid.Column="1" Content="8" Tag="8" Click="Digit_Click"
-                        FontSize="23" CornerRadius="12" Background="White" Foreground="#183759"/>
+                        FontSize="23" CornerRadius="12" Background=="{ThemeResource AxvKeyBackgroundBrush}" Foreground=="{ThemeResource AxvKeyTextBrush}"/>
                 <Button Grid.Row="2" Grid.Column="2" Content="9" Tag="9" Click="Digit_Click"
-                        FontSize="23" CornerRadius="12" Background="White" Foreground="#183759"/>
+                        FontSize="23" CornerRadius="12" Background=="{ThemeResource AxvKeyBackgroundBrush}" Foreground=="{ThemeResource AxvKeyTextBrush}"/>
                 <Button Grid.Row="3" Grid.Column="0" Content="*" Tag="*" Click="Digit_Click"
-                        FontSize="23" CornerRadius="12" Background="White" Foreground="#183759"/>
+                        FontSize="23" CornerRadius="12" Background=="{ThemeResource AxvKeyBackgroundBrush}" Foreground=="{ThemeResource AxvKeyTextBrush}"/>
                 <Button Grid.Row="3" Grid.Column="1" Content="0" Tag="0" Click="Digit_Click"
-                        FontSize="23" CornerRadius="12" Background="White" Foreground="#183759"/>
+                        FontSize="23" CornerRadius="12" Background=="{ThemeResource AxvKeyBackgroundBrush}" Foreground=="{ThemeResource AxvKeyTextBrush}"/>
                 <Button Grid.Row="3" Grid.Column="2" Content="#" Tag="#" Click="Digit_Click"
-                        FontSize="23" CornerRadius="12" Background="White" Foreground="#183759"/>
+                        FontSize="23" CornerRadius="12" Background=="{ThemeResource AxvKeyBackgroundBrush}" Foreground=="{ThemeResource AxvKeyTextBrush}"/>
             </Grid>
 
             <Border x:Name="DetailsPanel" Grid.Row="3" Visibility="Collapsed"
-                    Background="#E8EDF6" CornerRadius="12" Padding="14">
+                    Background=="{ThemeResource AxvDetailsBackgroundBrush}" CornerRadius="12" Padding="14">
                 <StackPanel Spacing="12" VerticalAlignment="Center">
                     <TextBlock x:Name="DetailsTitle" FontSize="18" FontWeight="SemiBold"
-                               Foreground="#15365C" Text="Monitor SIP"/>
+                               Foreground=="{ThemeResource AxvDetailsTitleBrush}" Text="Monitor SIP"/>
                     <TextBlock x:Name="DetailsDescription" FontSize="12"
-                               Foreground="#415A72" TextWrapping="Wrap"
+                               Foreground=="{ThemeResource AxvDetailsTextBrush}" TextWrapping="Wrap"
                                Text="Nenhum registro SIP disponível nesta prévia."/>
                 </StackPanel>
             </Border>
