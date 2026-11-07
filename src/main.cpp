@@ -43,6 +43,7 @@
 #include "microphone_test.h"
 #include "microphone_test_win32.h"
 #include "incoming_ringtone_policy.h"
+#include "preferences_incoming_policy.h"
 #ifdef AXV_ENABLE_NATIVE_SIP
 #include "native_install_guard.h"
 #include "contact_dialog.h"
@@ -1723,7 +1724,31 @@ void open_faleweb_preferences(HWND owner) {
         if(device.id==g_selected_output_id)prefs.output_index=static_cast<int>(prefs.outputs.size())-1;
         if(device.id==g_selected_ringtone_id)prefs.ring_index=static_cast<int>(prefs.rings.size())-1;
     }
-    if(!axv::edit_faleweb_preferences(owner,prefs))return;
+    axv::FalewebIncomingActions incoming{};
+#ifdef AXV_ENABLE_NATIVE_SIP
+    incoming.context=owner;
+    incoming.available=[](void*)->bool{
+        // Both the active and displayed tokens must be the same verified call.
+        return axv::preferences_incoming_controls_available(
+            native_engine().observation(),g_displayed_sip);
+    };
+    incoming.answer=[](void* context){
+        if(!axv::preferences_incoming_controls_available(
+            native_engine().observation(),g_displayed_sip))return;
+        const HWND window=static_cast<HWND>(context);
+        // Preserve the audited existing WM_COMMAND path and its native guard.
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kAnswerNative,BN_CLICKED),
+            reinterpret_cast<LPARAM>(GetDlgItem(window,kAnswerNative)));
+    };
+    incoming.reject=[](void* context){
+        if(!axv::preferences_incoming_controls_available(
+            native_engine().observation(),g_displayed_sip))return;
+        const HWND window=static_cast<HWND>(context);
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(kHangupFuture,BN_CLICKED),
+            reinterpret_cast<LPARAM>(GetDlgItem(window,kHangupFuture)));
+    };
+#endif
+    if(!axv::edit_faleweb_preferences(owner,prefs,incoming))return;
     // These changes are applied to existing SIP registration controls. Live
     // registrations are NOT silently restarted or overwritten.
     if(g_server)SetWindowTextW(g_server,prefs.server.c_str());
