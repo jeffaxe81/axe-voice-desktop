@@ -1,4 +1,32 @@
-# AXE Voice — edição WinUI 3 (prévia do estágio 1)
+# AXE Voice — edição WinUI 3
+
+## Estágio 2B — candidato opcional com host Baresip real
+
+Há duas distribuições independentes:
+
+- `AXE-Voice-WinUI3-Preview-No-SIP`: prévia convencional, sempre offline.
+- `AXE-Voice-WinUI3-Native-SIP-Lab-Candidate`: contém o mesmo projeto WinUI 3,
+  mas com a `axv_frontend_bridge.dll` construída contra Baresip/libre
+  auditados. **Apenas laboratório**, nunca produção sem homologação.
+
+A versão nativa **não registra automaticamente**. Clique em **Conectar**
+somente depois de salvar, na edição Win32 nativa atualizada, servidor,
+usuário, porta, transporte UDP ou TLS, CA (quando TLS) e uma senha no
+Windows Credential Manager com o checkbox de lembrar senha. A senha não
+passa pela camada C#, pelo clipboard nem pelos relatórios. Dados antigos
+sem transporte explícito são recusados — reabra a configuração no Win32
+e salve a conta novamente. Nunca ocorre downgrade TLS→UDP.
+
+É recomendável desconectar a edição Win32 antes de registrar o mesmo ramal
+pela WinUI 3. **Ligar/Atender/Recusar/Encerrar** dependem da identidade
+de sessão e do evento de registro confirmado pelo SDK; o comando enfileirado
+não garante estabelecimento de chamada. O botão **Desconectar** encerra
+o reactor antes do fechamento.
+
+Este candidato ainda requer **testes reais** de registro, chamadas
+entrantes/saintes, áudio RTP bidirecional, headset, TLS/CA e eventual NAT
+com uma central de homologação, preferencialmente Dígitro.
+
 
 Aplicação Windows independente do AXE Voice Win32, com identidade visual
 Essencial Inteligente, janela compacta, teclado 12 teclas, apagar, temas e
