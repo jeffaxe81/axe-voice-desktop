@@ -1790,7 +1790,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         return 0;
 #endif
     case WM_CREATE: {
-        g_faleweb_mode=!g_smoke_mode || g_faleweb_smoke;
+        g_faleweb_mode=!g_smoke_mode || g_faleweb_smoke || g_essential_smoke;
         g_dpi=axv::normalized_dpi(GetDpiForWindow(window));
         load_ui_preferences();
         read_windows_contrast();
@@ -2870,7 +2870,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show) {
     g_faleweb_smoke=command_line && std::wcscmp(command_line,L"--faleweb-ui-smoke")==0;
-    g_smoke_mode = g_faleweb_smoke || (command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
+    g_essential_smoke=command_line && std::wcscmp(command_line,L"--essential-ui-smoke")==0;
+    g_smoke_mode = g_faleweb_smoke || g_essential_smoke || (command_line && (std::wcscmp(command_line, L"--ui-smoke") == 0 ||
                                       std::wcscmp(command_line, L"--ui-blackbox") == 0 || std::wcscmp(command_line,L"--native-ui-smoke")==0));
 #ifdef AXV_ENABLE_NATIVE_SIP
     const auto guard_names = axv::native_install_guard_names();
@@ -2913,7 +2914,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             LocalFree(argv);
         }
     }
-    g_faleweb_mode=!g_smoke_mode;
+    g_faleweb_mode=!g_smoke_mode || g_essential_smoke;
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     g_dpi=axv::normalized_dpi(GetDpiForSystem());
     const wchar_t* className = L"AXEVoiceDesktopWindow";
@@ -2957,6 +2958,91 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         }
     }
 #endif
+    if(g_essential_smoke){
+        // Exercise the real owner-drawn Win32 controls and their physical
+        // rectangles without registering a SIP account or starting a call.
+        bool passed=true;
+        const auto visible=[](HWND control){
+            return control && (GetWindowLongPtrW(control,GWL_STYLE)&WS_VISIBLE)!=0;
+        };
+        const auto in_client=[&](HWND control){
+            if(!control)return false;
+            RECT client{},rect{};
+            GetClientRect(window,&client);
+            POINT tl{client.left,client.top},br{client.right,client.bottom};
+            ClientToScreen(window,&tl);ClientToScreen(window,&br);
+            GetWindowRect(control,&rect);
+            return rect.left>=tl.x && rect.top>=tl.y &&
+                   rect.right<=br.x && rect.bottom<=br.y &&
+                   rect.right>rect.left && rect.bottom>rect.top;
+        };
+        const auto apply=[&](axv::SipStatus status,std::uint64_t call,
+                             bool verified,axv::EssentialCallView expected){
+            axv::SipRuntimeObservation snapshot{axv::RuntimeProcess::Running,status,
+                verified?axv::SipEvidence::VerifiedNativeApi:axv::SipEvidence::None,
+                17,call};
+            g_essential_actions=axv::essential_call_actions(snapshot,17,true);
+            apply_faleweb_layout(window);
+            const HWND dial=GetDlgItem(window,kCallButton);
+            const HWND end=GetDlgItem(window,kHangupFuture);
+            const HWND mute=GetDlgItem(window,kMuteFuture);
+            const HWND hold=GetDlgItem(window,kHoldFuture);
+            const HWND transfer=GetDlgItem(window,kTransferFuture);
+            const bool incoming=expected==axv::EssentialCallView::Incoming;
+            const bool idle=expected==axv::EssentialCallView::Idle;
+            const bool secondary=expected==axv::EssentialCallView::Connected;
+            passed=passed && g_essential_actions.view==expected &&
+                visible(dial)==idle && visible(end)==!idle &&
+                visible(mute)==secondary && visible(hold)==secondary &&
+                visible(transfer)==secondary && in_client(g_number);
+            if(visible(dial))passed=passed && in_client(dial);
+            if(visible(end))passed=passed && in_client(end);
+#ifdef AXV_ENABLE_NATIVE_SIP
+            const HWND answer=GetDlgItem(window,kAnswerNative);
+            passed=passed && visible(answer)==incoming;
+            if(incoming){
+                RECT a{},b{};GetWindowRect(answer,&a);GetWindowRect(end,&b);
+                passed=passed && in_client(answer) && a.right<b.left &&
+                    a.top==b.top && a.bottom==b.bottom;
+            }
+#else
+            (void)incoming;
+#endif
+            if(secondary){
+                RECT primary{},lower{};
+                GetWindowRect(end,&primary);
+                GetWindowRect(mute,&lower);
+                passed=passed && in_client(mute) && in_client(hold) &&
+                    in_client(transfer) && primary.bottom<lower.top;
+            }
+            if(!idle){
+                wchar_t title[32]{};
+                GetWindowTextW(end,title,32);
+                passed=passed && std::wcscmp(title,incoming?L"Recusar":L"Encerrar")==0;
+            }
+            passed=passed && g_scroll_max==0 && g_scroll_offset==0 &&
+                (GetWindowLongPtrW(window,GWL_STYLE)&WS_VSCROLL)==0;
+        };
+        for(unsigned dpi:{96u,120u,144u}){
+            SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(dpi,dpi),0);
+            apply(axv::SipStatus::Registered,0,true,axv::EssentialCallView::Idle);
+            apply(axv::SipStatus::Ringing,101,true,axv::EssentialCallView::Incoming);
+            apply(axv::SipStatus::Calling,101,true,axv::EssentialCallView::Outgoing);
+            apply(axv::SipStatus::InCall,101,true,axv::EssentialCallView::Connected);
+            apply(axv::SipStatus::Ringing,101,false,axv::EssentialCallView::Idle);
+            apply(axv::SipStatus::Ringing,0,true,axv::EssentialCallView::Idle);
+            // Monitor navigation must preserve the active incoming layout.
+            apply(axv::SipStatus::Ringing,102,true,axv::EssentialCallView::Incoming);
+            show_page(window,3);
+            show_page(window,0);
+            passed=passed && visible(GetDlgItem(window,kHangupFuture));
+#ifdef AXV_ENABLE_NATIVE_SIP
+            passed=passed && visible(GetDlgItem(window,kAnswerNative));
+#endif
+        }
+        DestroyWindow(window);
+        return passed?0:97;
+    }
     if(g_faleweb_smoke){
         bool passed=g_faleweb_mode && !g_scroll_max &&
             !((GetWindowLongPtrW(window,GWL_STYLE))&WS_VSCROLL) &&
