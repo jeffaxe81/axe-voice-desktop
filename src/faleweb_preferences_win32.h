@@ -109,11 +109,13 @@ inline INT_PTR CALLBACK faleweb_preferences_proc(HWND dialog,UINT message,WPARAM
   pref_label(dialog,state,0,L"Senha SIP",28,195,206);
   state->password=pref_edit(dialog,state,0,L"",240,192,230,true);
   pref_label(dialog,state,0,L"Em branco: manter senha atual.",28,226,217,20);
+#ifdef AXV_ENABLE_NATIVE_SIP
   state->remember_password=pref_control(dialog,state,0,L"BUTTON",
    L"Salvar senha SIP",WS_TABSTOP|BS_AUTOCHECKBOX|BS_NOTIFY,248,223,220,26);
   if(state->remember_password)
    SendMessageW(state->remember_password,BM_SETCHECK,
     state->data.remember_password?BST_CHECKED:BST_UNCHECKED,0);
+#endif
   state->tls=pref_control(dialog,state,0,L"BUTTON",L"Usar TLS (CA validada)",
    WS_TABSTOP|BS_AUTOCHECKBOX,28,260,280,26);
   if(state->tls)SendMessageW(state->tls,BM_SETCHECK,state->data.tls?BST_CHECKED:BST_UNCHECKED,0);
