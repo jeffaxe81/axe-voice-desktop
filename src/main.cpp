@@ -3295,21 +3295,40 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
             passed=passed && g_scroll_max==0 && g_scroll_offset==0 &&
                 (GetWindowLongPtrW(window,GWL_STYLE)&WS_VSCROLL)==0;
         };
+        const auto report_failed_stage=[&](const wchar_t* stage){
+            if(!passed)
+                report_design_failure(std::wstring(L"Falhou na etapa ") +
+                    stage+L" com DPI "+std::to_wstring(g_dpi));
+        };
         for(unsigned dpi:{96u,120u,144u,192u}){
             SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(dpi,dpi),0);
             RECT frame{};
             GetWindowRect(window,&frame);
-            passed=passed &&
+            const bool frame_ok=
                 frame.right-frame.left==axv::dpi_pixels(kEssentialWidth,dpi) &&
                 frame.bottom-frame.top==axv::dpi_pixels(kEssentialHeight,dpi);
+            if(!frame_ok)report_design_failure(
+                L"Janela divergente: "+std::to_wstring(frame.right-frame.left)+
+                L"x"+std::to_wstring(frame.bottom-frame.top)+
+                L" ao inves de "+std::to_wstring(axv::dpi_pixels(kEssentialWidth,dpi))+
+                L"x"+std::to_wstring(axv::dpi_pixels(kEssentialHeight,dpi))+
+                L", DPI "+std::to_wstring(g_dpi));
+            passed=passed && frame_ok;
             apply(axv::SipStatus::Registered,0,true,axv::EssentialCallView::Idle);
+            report_failed_stage(L"registrado");
             apply(axv::SipStatus::Ringing,101,true,axv::EssentialCallView::Incoming);
+            report_failed_stage(L"recebendo");
             apply(axv::SipStatus::Calling,101,true,axv::EssentialCallView::Outgoing);
+            report_failed_stage(L"originando");
             apply(axv::SipStatus::InCall,101,true,axv::EssentialCallView::Connected);
+            report_failed_stage(L"em_chamada");
             apply(axv::SipStatus::Ringing,101,false,axv::EssentialCallView::Idle);
+            report_failed_stage(L"evento_nao_confiavel");
             apply(axv::SipStatus::Ringing,0,true,axv::EssentialCallView::Idle);
+            report_failed_stage(L"token_zerado");
             // Monitor navigation must preserve the active incoming layout.
             apply(axv::SipStatus::Ringing,102,true,axv::EssentialCallView::Incoming);
+            report_failed_stage(L"recebendo_apos_refresh");
             show_page(window,3);
             // The fourth page has an independent scroll-free viewport and
             // must not leave dialpad controls behind the monitor.
@@ -3318,15 +3337,18 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                 !visible(GetDlgItem(window,kDigitStart)) &&
                 !visible(g_footer_panel) && g_scroll_max==0 &&
                 !(GetWindowLongPtrW(window,GWL_STYLE)&WS_VSCROLL);
+            report_failed_stage(L"monitor");
             const bool original_dark=g_dark;
             SendMessageW(window,WM_COMMAND,MAKEWPARAM(kTheme,BN_CLICKED),0);
             passed=passed && g_dark!=original_dark &&
                 in_client(g_monitor_events);
             SendMessageW(window,WM_COMMAND,MAKEWPARAM(kTheme,BN_CLICKED),0);
             passed=passed && g_dark==original_dark;
+            report_failed_stage(L"tema");
             show_page(window,0);
             passed=passed && essential_geometry_ok() &&
                 essential_labels_fit() && visible(GetDlgItem(window,kHangupFuture));
+            report_failed_stage(L"retorno_monitor");
 #ifdef AXV_ENABLE_NATIVE_SIP
             passed=passed && visible(GetDlgItem(window,kAnswerNative));
 #endif
