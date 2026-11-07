@@ -79,6 +79,7 @@
                     <ColumnDefinition Width="36"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <Border Grid.Column="0" Height="32" Width="32" Background="{ThemeResource AxvBrandBrush}"
                         CornerRadius="10" HorizontalAlignment="Left" VerticalAlignment="Center">
@@ -90,7 +91,12 @@
                                Foreground="{ThemeResource AxvTitleBrush}"/>
                     <TextBlock Text="WinUI 3 · Avaliação" FontSize="10" Foreground="{ThemeResource AxvSecondaryBrush}"/>
                 </StackPanel>
-                <Button Grid.Column="2" x:Name="ThemeToggle" Content="☾" AutomationProperties.Name="Usar tema escuro"
+                <Button Grid.Column="2" x:Name="ConnectButton" Content="Conectar"
+                        IsEnabled="False" Click="Connect_Click"
+                        FontSize="10" CornerRadius="9" Padding="7,3"
+                        AutomationProperties.Name="Conectar motor SIP nativo"
+                        ToolTipService.ToolTip="Disponível somente na edição nativa"/>
+                <Button Grid.Column="3" x:Name="ThemeToggle" Content="☾" AutomationProperties.Name="Usar tema escuro"
                         ToolTipService.ToolTip="Claro / escuro" Click="Theme_Click"
                         Background="Transparent" BorderThickness="0" Padding="10,4"
                         VerticalAlignment="Center"/>
@@ -216,10 +222,25 @@
                 </StackPanel>
             </Border>
 
-            <Button x:Name="CallButton" Grid.Row="4" Margin="0,2,0,5"
-                    Content="Ligar · indisponível" IsEnabled="False"
-                    CornerRadius="12" FontWeight="SemiBold" FontSize="16"
-                    AutomationProperties.Name="Ligar indisponível nesta prévia"/>
+            <Grid Grid.Row="4" Margin="0,2,0,5" ColumnSpacing="6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Button x:Name="CallButton" Grid.ColumnSpan="2"
+                        Content="Ligar · indisponível" IsEnabled="False"
+                        Click="Call_Click" CornerRadius="12"
+                        FontWeight="SemiBold" FontSize="16"
+                        AutomationProperties.Name="Ligar usando SIP verificado"/>
+                <Button x:Name="AnswerButton" Grid.Column="0"
+                        Visibility="Collapsed" Content="Atender" Click="Answer_Click"
+                        CornerRadius="12" FontWeight="SemiBold" FontSize="15"
+                        AutomationProperties.Name="Atender chamada recebida verificada"/>
+                <Button x:Name="HangupButton" Grid.Column="1"
+                        Visibility="Collapsed" Content="Recusar" Click="Hangup_Click"
+                        CornerRadius="12" FontWeight="SemiBold" FontSize="15"
+                        AutomationProperties.Name="Recusar ou encerrar chamada atual"/>
+            </Grid>
             <Grid Grid.Row="5" ColumnSpacing="4" Margin="0,7,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/><ColumnDefinition Width="*"/>
