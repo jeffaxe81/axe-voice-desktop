@@ -3135,6 +3135,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
         // Exercise the real owner-drawn Win32 controls and their physical
         // rectangles without registering a SIP account or starting a call.
         bool passed=true;
+        std::wstring design_failure;
+        const auto report_design_failure=[&](const std::wstring& reason) {
+            if(design_failure.empty()) design_failure=reason;
+        };
         const auto visible=[](HWND control){
             return control && (GetWindowLongPtrW(control,GWL_STYLE)&WS_VISIBLE)!=0;
         };
@@ -3171,15 +3175,24 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                 controls.push_back(GetDlgItem(window,kDigitStart+i));
             std::vector<RECT> occupied;
             for(const HWND control:controls){
-                if(!control)return false;
+                if(!control) {report_design_failure(L"Controle obrigatório não existe.");return false;}
                 if(!visible(control))continue;
-                if(!in_client(control))return false;
+                if(!in_client(control)) {
+                    report_design_failure(L"Controle fora da janela: ID "+
+                        std::to_wstring(GetDlgCtrlID(control))+
+                        L", DPI "+std::to_wstring(g_dpi));
+                    return false;
+                }
                 RECT bounds{};
                 if(!GetWindowRect(control,&bounds))return false;
                 for(const RECT& other:occupied)
                     if(bounds.left<other.right && other.left<bounds.right &&
-                       bounds.top<other.bottom && other.top<bounds.bottom)
+                       bounds.top<other.bottom && other.top<bounds.bottom) {
+                        report_design_failure(L"Sobreposição: ID "+
+                            std::to_wstring(GetDlgCtrlID(control))+
+                            L", DPI "+std::to_wstring(g_dpi));
                         return false;
+                    }
                 occupied.push_back(bounds);
             }
             return occupied.size()>=18 && !visible(g_footer_panel) &&
@@ -3219,8 +3232,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                 const int vertical_space= axv::dpi_pixels(4,g_dpi);
                 if(!measured ||
                    text_size.cx>bounds.right-bounds.left-horizontal_space ||
-                   text_size.cy>bounds.bottom-bounds.top-vertical_space)
+                   text_size.cy>bounds.bottom-bounds.top-vertical_space) {
+                    report_design_failure(L"Texto cortado: "+
+                        std::wstring(value)+L", ID "+
+                        std::to_wstring(GetDlgCtrlID(control))+
+                        L", espaço "+std::to_wstring(bounds.right-bounds.left)+
+                        L", texto "+std::to_wstring(text_size.cx)+
+                        L", DPI "+std::to_wstring(g_dpi));
                     return false;
+                }
             }
             return true;
         };
@@ -3307,6 +3327,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
 #ifdef AXV_ENABLE_NATIVE_SIP
             passed=passed && visible(GetDlgItem(window,kAnswerNative));
 #endif
+        }
+        if(!passed) {
+            if(design_failure.empty())
+                design_failure=L"Outro critério de aceitação do layout não passou.";
+            FILE* report=nullptr;
+            if(_wfopen_s(&report,L"AXV_DESIGN_FAILURE.txt",L"wt")==0 && report) {
+                std::fwprintf(report,L"%ls\n",design_failure.c_str());
+                std::fclose(report);
+            }
         }
         DestroyWindow(window);
         return passed?0:97;
