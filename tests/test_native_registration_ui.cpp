@@ -67,10 +67,12 @@ struct Engine {
     bool configure_ok=true,register_ok=true,throw_configure=false,throw_register=false;
     unsigned configurations=0,registrations=0;
     unsigned short configured_port=0;
+    axv::NativeCodecMode configured_codec=axv::NativeCodecMode::Automatic;
     bool configure_authenticated(const axv::SipAccount& account,const std::wstring&,std::string password,unsigned,const axv::NativeAudioRoute&){
         struct Guard{std::string& value;~Guard(){SecureZeroMemory(value.data(),value.size());}} guard{password};
         ++configurations;
         configured_port=account.port;
+        configured_codec=account.codec_mode;
         if(password!=credential)throw 99;
         if(throw_configure)throw std::bad_alloc();
         return configure_ok;
@@ -103,6 +105,19 @@ axv::NativeRegistrationResult run(Fixture& f,Engine& e,long nth=-1){
 int main(){
     using R=axv::NativeRegistrationResult;
     {Fixture f;Engine e;check(run(f,e)==R::Requested,"valid registration failed");check(e.registrations==1,"registration missing");}
+    // Native registration helper forwards explicit codec choice, without
+    // consuming the password when the selection value is invalid.
+    {Fixture f;Engine e;
+        check(axv::register_native_account_ui(e,f.controls(),f.input,f.output,axv::NativeCodecMode::Pcma)==R::Requested,
+              "manual PCMA registration failed");
+        check(e.configured_codec==axv::NativeCodecMode::Pcma,"manual codec not forwarded");
+    }
+    {Fixture f;Engine e;
+        check(axv::register_native_account_ui(e,f.controls(),f.input,f.output,
+              static_cast<axv::NativeCodecMode>(99))==R::InvalidAccount,
+              "invalid codec accepted");
+        check(f.password.reads==0 && e.configurations==0,"invalid codec consumed password");
+    }
     {Fixture f;Engine e;f.server.text.clear();check(run(f,e)==R::InvalidAccount,"invalid account result");check(e.registrations==0,"invalid account registered");check(f.password.reads==0,"invalid account read password");check(!f.password.text.empty(),"invalid account discarded password");}
     for(const auto& port: {std::wstring(L"000000000005060x"),std::wstring(L"000000000005060")+std::wstring(112,L'0')+L"x",std::wstring(123,L'0')+L"5060x",std::wstring(123,L'0')+L"65536"}){
         Fixture f;Engine e;f.port.text=port;

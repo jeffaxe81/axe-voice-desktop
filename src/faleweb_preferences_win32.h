@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <array>
+#include "native_codec_mode.h"
 
 namespace axv {
 struct FalewebPreferences {
@@ -12,6 +13,7 @@ struct FalewebPreferences {
  bool tls=false;
  int ringtone=2;
  bool mute_ringtone=false;
+ NativeCodecMode codec_mode=NativeCodecMode::Automatic;
  std::vector<std::wstring> inputs,outputs,rings;
  int input_index=-1,output_index=-1,ring_index=-1;
 };
@@ -21,6 +23,7 @@ struct FalewebPrefsDialog {
  std::array<HWND,6> tabs{};
  HWND server=nullptr,user=nullptr,port=nullptr,password=nullptr,ca=nullptr,tls=nullptr;
  HWND ringtone=nullptr,muted=nullptr,inputs=nullptr,outputs=nullptr,rings=nullptr;
+ HWND codec=nullptr;
  int page=0;
 };
 inline std::wstring pref_edit_text(HWND control){
@@ -136,8 +139,16 @@ inline INT_PTR CALLBACK faleweb_preferences_proc(HWND dialog,UINT message,WPARAM
   pref_label(dialog,state,3,L"O gerenciamento da agenda permanece no recurso CONTATOS.",28,125,440,55);
   pref_label(dialog,state,4,L"Discagem e transferencia",28,85,440);
   pref_label(dialog,state,4,L"As regras da central e as rotas seguem no PABX SIP.",28,125,440,55);
-  pref_label(dialog,state,5,L"Seguranca e conectividade",28,85,440);
-  pref_label(dialog,state,5,L"TLS exige certificado CA confiavel. Opcoes de codecs / QoS e atualizacoes nao sao alteradas por esta janela.",28,126,440,65);
+  pref_label(dialog,state,5,L"Codec de audio SIP",28,83,440);
+  state->codec=pref_control(dialog,state,5,L"COMBOBOX",L"",
+   CBS_DROPDOWNLIST|WS_VSCROLL|WS_TABSTOP,28,113,442,160);
+  pref_list_items(state->codec,{
+   L"Automatico (G.711 A-law / mu-law)",
+   L"G.711 A-law (PCMA)",
+   L"G.711 mu-law (PCMU)"
+  },static_cast<int>(state->data.codec_mode));
+  pref_label(dialog,state,5,L"Codec aplicado apenas no proximo registro SIP.",28,168,440,35);
+  pref_label(dialog,state,5,L"Somente G.711 suportado pelo motor nativo atual. TLS requer CA confiavel.",28,216,440,60);
   const int bottom=static_cast<int>(client.bottom)-pref_px(dialog,43);
   auto button=[&](LPCWSTR title,int id,int x){
    HWND h=CreateWindowExW(0,L"BUTTON",title,WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,
@@ -167,6 +178,8 @@ inline INT_PTR CALLBACK faleweb_preferences_proc(HWND dialog,UINT message,WPARAM
    state->data.input_index=static_cast<int>(SendMessageW(state->inputs,CB_GETCURSEL,0,0));
    state->data.output_index=static_cast<int>(SendMessageW(state->outputs,CB_GETCURSEL,0,0));
    state->data.ring_index=static_cast<int>(SendMessageW(state->rings,CB_GETCURSEL,0,0));
+   const int choice=static_cast<int>(SendMessageW(state->codec,CB_GETCURSEL,0,0));
+   if(choice>=0 && choice<=2)state->data.codec_mode=static_cast<NativeCodecMode>(choice);
    EndDialog(dialog,IDOK);return TRUE;
   }
  }

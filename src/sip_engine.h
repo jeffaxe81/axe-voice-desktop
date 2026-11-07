@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include "native_codec_mode.h"
 namespace axv {
 enum class SipStatus { Unavailable, Disconnected, Registering, Registered, Calling, Ringing, InCall, Failed };
 struct SipAccount {
@@ -7,6 +8,7 @@ struct SipAccount {
     std::wstring username;
     unsigned short port = 5060;
     bool use_tls = false;
+    NativeCodecMode codec_mode = NativeCodecMode::Automatic;
 };
 class SipEngine {
 public:
