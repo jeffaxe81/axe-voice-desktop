@@ -357,6 +357,11 @@ void load_ui_preferences() {
                      nullptr, &value, &size) == ERROR_SUCCESS) {
         g_compact = value != 0;
     }
+    value = 0; size = sizeof(value);
+    if(RegGetValueW(HKEY_CURRENT_USER,kPrefsKey,L"AudioCodecMode",RRF_RT_REG_DWORD,
+                    nullptr,&value,&size)==ERROR_SUCCESS &&
+       axv::valid_native_codec_mode(static_cast<axv::NativeCodecMode>(value)))
+        g_codec_mode=static_cast<axv::NativeCodecMode>(value);
     value = 2; size = sizeof(value);
     if(RegGetValueW(HKEY_CURRENT_USER,kPrefsKey,L"RingtonePreset",RRF_RT_REG_DWORD,
                     nullptr,&value,&size)==ERROR_SUCCESS && value<=5)
@@ -383,6 +388,9 @@ void save_ui_preferences() {
                    reinterpret_cast<const BYTE*>(&theme), sizeof(theme));
     RegSetValueExW(key, L"AlwaysOnTop", 0, REG_DWORD,
                    reinterpret_cast<const BYTE*>(&pinned), sizeof(pinned));
+    const DWORD codec=static_cast<DWORD>(g_codec_mode);
+    RegSetValueExW(key,L"AudioCodecMode",0,REG_DWORD,
+                   reinterpret_cast<const BYTE*>(&codec),sizeof(codec));
     const DWORD preset=static_cast<DWORD>(g_ringtone_preset.load());
     RegSetValueExW(key,L"RingtonePreset",0,REG_DWORD,
                    reinterpret_cast<const BYTE*>(&preset),sizeof(preset));
