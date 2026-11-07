@@ -113,7 +113,7 @@ public sealed partial class MainWindow : Window
     {
         if(e.ClickedItem is not string value)return;
         Destination.Text=value;
-        Dialer_Click(sender,new RoutedEventArgs());
+        SwitchTo("","",true);
         // Choosing a favorite fills the number; it NEVER starts a call.
     }
 
