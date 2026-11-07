@@ -140,6 +140,18 @@ jobs:
           path: build/winui3-native-candidate/
           if-no-files-found: error
           retention-days: 14
+      - name: Build and verify second Windows installer (WinUI 3 native LAB)
+        if: matrix.profile == 'tls-media'
+        shell: pwsh
+        run: ./scripts/package-winui3-native-lab.ps1
+      - name: Publish WinUI 3 native LAB installer
+        if: matrix.profile == 'tls-media'
+        uses: actions/upload-artifact@v4
+        with:
+          name: AXE-Voice-WinUI3-Native-Lab-Setup
+          path: build/winui3-native-lab-installer/*.exe
+          if-no-files-found: error
+          retention-days: 14
       - name: Publish candidate installer
         if: matrix.profile == 'tls-media'
         uses: actions/upload-artifact@v4
