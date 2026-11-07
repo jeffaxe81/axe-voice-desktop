@@ -7,7 +7,7 @@ namespace AXEVoice.WinUI3;
 // The bridge deliberately reports no native backend attached in this phase.
 internal static class NativeBridge
 {
-    internal const uint SupportedAbi = 1;
+    internal const uint SupportedAbi = 2;
 
     [StructLayout(LayoutKind.Sequential)]
     internal struct Snapshot
