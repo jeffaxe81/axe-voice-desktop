@@ -850,8 +850,8 @@ void apply_faleweb_layout(HWND root) {
                 ShowWindow(item.handle,shown?SW_SHOW:SW_HIDE);
             }
             position_essential(g_brand_label,23,13,215,39);
-            position_essential(GetDlgItem(root,kTheme),335,15,85,32);
-            position_essential(GetDlgItem(root,kShowSipMonitor),253,15,78,32);
+            position_essential(GetDlgItem(root,kTheme),369,15,52,32);
+            position_essential(GetDlgItem(root,kShowSipMonitor),253,15,108,32);
             position_essential(g_runtime_banner,23,68,397,31);
             position_essential(g_monitor_events,23,116,397,575);
             SetWindowTextW(GetDlgItem(root,kShowSipMonitor),L"TECLADO");
@@ -878,8 +878,8 @@ void apply_faleweb_layout(HWND root) {
         }
         // Logical coordinates reproduce the proportions of the first approved mockup.
         position_essential(g_brand_label,85,13,165,39);
-        position_essential(GetDlgItem(root,kShowSipMonitor),253,15,78,32);
-        position_essential(GetDlgItem(root,kTheme),335,15,85,32);
+        position_essential(GetDlgItem(root,kShowSipMonitor),253,15,108,32);
+        position_essential(GetDlgItem(root,kTheme),369,15,52,32);
         position_essential(g_runtime_banner,26,68,391,31);
         position_essential(g_number,23,124,397,56);
         for(int i=0;i<12;++i)
@@ -1123,7 +1123,7 @@ void paint_button(const DRAWITEMSTRUCT& item) {
         SelectObject(item.hDC, old);
     } else {
         HGDIOBJ old_font = SelectObject(item.hDC,
-            (id==kTheme || id==kShowSipMonitor) && g_faleweb_mode ? g_font_small : g_font_regular);
+            id==kTheme && g_faleweb_mode ? g_font_small : g_font_regular);
         DrawTextW(item.hDC, title, -1, &rect,
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
         SelectObject(item.hDC, old_font);
@@ -1940,7 +1940,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         make_button(window, g_compact ? L"MAX" : L"MINI", kCompact, 344, 65, 70, 29);
         make_button(window, L"?", kHelpButton, 301, 65, 34, 29);
         make_button(window, g_pinned ? L"SOLTAR" : L"FIXAR", kPin, 265, 18, 70, 36);
-        make_button(window, g_dark ? L"CLARO" : L"ESCURO", kTheme, 344, 18, 70, 36);
+        make_button(window, g_faleweb_mode && !g_faleweb_smoke ? (g_dark ? L"☀" : L"☾") : (g_dark ? L"CLARO" : L"ESCURO"), kTheme, 344, 18, 70, 36);
         if (g_pinned) SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0,
                                    SWP_NOMOVE | SWP_NOSIZE);
         make_button(window, L"TECLADO", kShowDial, 24, 103, 92, 42);
@@ -2248,7 +2248,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             }
             if (control == kTheme) {
                 g_dark = !g_dark;
-                SetWindowTextW(GetDlgItem(window, kTheme), g_dark ? L"CLARO" : L"ESCURO");
+                SetWindowTextW(GetDlgItem(window, kTheme), g_faleweb_mode && !g_faleweb_smoke ? (g_dark ? L"☀" : L"☾") : (g_dark ? L"CLARO" : L"ESCURO"));
                 refresh_brushes();
                 save_ui_preferences();
                 InvalidateRect(window, nullptr, TRUE);
@@ -3224,8 +3224,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                 HDC dc=GetDC(control);
                 if(!dc)return false;
                 const HGDIOBJ old=SelectObject(dc,
-                    (control==GetDlgItem(window,kTheme) ||
-                     control==GetDlgItem(window,kShowSipMonitor)) ? g_font_small : g_font_regular);
+                    control==GetDlgItem(window,kTheme) ? g_font_small : g_font_regular);
                 SIZE text_size{};
                 const bool measured=GetTextExtentPoint32W(dc,value,length,&text_size)!=0;
                 SelectObject(dc,old);
