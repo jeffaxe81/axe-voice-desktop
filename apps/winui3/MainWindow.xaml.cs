@@ -1,5 +1,7 @@
 using System;
 using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Automation;
@@ -15,6 +17,9 @@ public sealed partial class MainWindow : Window
     private bool _dark;
     private bool _ready;
     private NativeBridge.Snapshot _snapshot;
+    private readonly DispatcherQueueTimer _sipTimer;
+    private bool _commandBusy;
+    private bool _closing;
     private readonly PreviewProfileStore _profileStore=PreviewProfileStore.ForCurrentUser();
     private readonly PreviewProfile _profile;
 
@@ -28,8 +33,16 @@ public sealed partial class MainWindow : Window
         RefreshMonitor();
         RefreshFavorites();
         ValidateDestination();
-        // No native SIP command API exists for this edition yet.
-        CallButton.IsEnabled=false;
+        _sipTimer=DispatcherQueue.CreateTimer();
+        _sipTimer.Interval=TimeSpan.FromMilliseconds(500);
+        _sipTimer.Tick+=(_,_)=>RefreshMonitor();
+        _sipTimer.Start();
+        Closed+=(_,_)=>{
+            _closing=true;
+            _sipTimer.Stop();
+            // Stop the reactor outside DllMain, before process unload.
+            (void)NativeBridge.Disconnect();
+        };
     }
 
     private void ApplyWindowSize()
@@ -46,13 +59,15 @@ public sealed partial class MainWindow : Window
         var validity=NativeBridge.Validate(Destination.Text??"");
         DestinationFeedback.Text=validity switch {
             NativeBridge.DestinationStatus.Valid=>
-                "Destino válido · chamadas desabilitadas nesta prévia",
+                _ready && _snapshot.BackendAttached==1
+                    ?"Destino válido"
+                    :"Destino válido · motor SIP não vinculado",
             NativeBridge.DestinationStatus.Empty=>"Digite o ramal ou URI SIP",
             NativeBridge.DestinationStatus.Invalid=>"Destino SIP inválido",
             _=>"Validação nativa indisponível"
         };
         AddFavoriteButton.IsEnabled=validity==NativeBridge.DestinationStatus.Valid;
-        CallButton.IsEnabled=false;
+        UpdateCallControls();
     }
 
     private void Destination_TextChanged(object sender,TextChangedEventArgs e)
