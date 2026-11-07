@@ -17,9 +17,12 @@
 extern "C" {
 #endif
 
-#define AXV_FRONTEND_ABI_VERSION 1u
+#define AXV_FRONTEND_ABI_VERSION 2u
 #define AXV_FRONTEND_OK 0
 #define AXV_FRONTEND_ERROR_INVALID -1
+#define AXV_FRONTEND_ERROR_UNAVAILABLE -2
+#define AXV_FRONTEND_ERROR_REJECTED -3
+#define AXV_FRONTEND_ERROR_ACCOUNT -4
 #define AXV_DEST_VALID 0
 #define AXV_DEST_EMPTY 1
 #define AXV_DEST_INVALID 2
@@ -52,6 +55,17 @@ typedef struct AxvFrontendSnapshot {
 } AxvFrontendSnapshot;
 
 AXV_FRONTEND_API uint32_t axv_frontend_abi_version(void);
+// Explicit user action required: read the current Windows user's saved SIP
+// account and Credential Manager secret ONLY inside the optional native DLL.
+// The generic WinUI3 Preview bridge returns UNAVAILABLE for every command.
+AXV_FRONTEND_API int32_t axv_frontend_connect_saved(void);
+AXV_FRONTEND_API int32_t axv_frontend_disconnect(void);
+AXV_FRONTEND_API int32_t axv_frontend_dial(
+    const wchar_t* destination, uint32_t length, uint64_t expected_session);
+AXV_FRONTEND_API int32_t axv_frontend_answer(
+    uint64_t expected_session, uint64_t expected_call_id);
+AXV_FRONTEND_API int32_t axv_frontend_hangup(
+    uint64_t expected_session, uint64_t expected_call_id);
 // The v1 bridge is deliberately read-only and fail-closed. The WinUI 3
 // candidate must NOT claim SIP support before a real native adapter exists.
 AXV_FRONTEND_API int32_t axv_frontend_get_snapshot(
