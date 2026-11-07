@@ -850,10 +850,10 @@ void apply_faleweb_layout(HWND root) {
                 ShowWindow(item.handle,shown?SW_SHOW:SW_HIDE);
             }
             position_essential(g_brand_label,23,13,215,39);
-            position_essential(GetDlgItem(root,kTheme),369,15,52,32);
+            position_essential(GetDlgItem(root,kTheme),362,15,73,32);
             position_essential(GetDlgItem(root,kShowSipMonitor),253,15,108,32);
             position_essential(g_runtime_banner,23,68,397,31);
-            position_essential(g_monitor_events,23,116,397,590);
+            position_essential(g_monitor_events,23,116,397,575);
             SetWindowTextW(GetDlgItem(root,kShowSipMonitor),L"TECLADO");
             ShowWindow(g_footer_panel,SW_HIDE);
             ShowWindow(g_status,SW_HIDE);
@@ -879,7 +879,7 @@ void apply_faleweb_layout(HWND root) {
         // Logical coordinates reproduce the proportions of the first approved mockup.
         position_essential(g_brand_label,85,13,165,39);
         position_essential(GetDlgItem(root,kShowSipMonitor),253,15,108,32);
-        position_essential(GetDlgItem(root,kTheme),369,15,52,32);
+        position_essential(GetDlgItem(root,kTheme),362,15,73,32);
         position_essential(g_runtime_banner,26,68,391,31);
         position_essential(g_number,23,124,397,56);
         for(int i=0;i<12;++i)
@@ -898,10 +898,10 @@ void apply_faleweb_layout(HWND root) {
         position_essential(GetDlgItem(root,kMuteFuture),23,546,126,45);
         position_essential(GetDlgItem(root,kHoldFuture),158,546,126,45);
         position_essential(GetDlgItem(root,kTransferFuture),293,546,127,45);
-        position_essential(GetDlgItem(root,kShowDial),23,637,94,67);
-        position_essential(GetDlgItem(root,kContactsButton),125,637,94,67);
-        position_essential(GetDlgItem(root,kRecentDestinationsButton),227,637,94,67);
-        position_essential(g_faleweb_prefs_button,329,637,94,67);
+        position_essential(GetDlgItem(root,kShowDial),23,622,94,67);
+        position_essential(GetDlgItem(root,kContactsButton),125,622,94,67);
+        position_essential(GetDlgItem(root,kRecentDestinationsButton),227,622,94,67);
+        position_essential(g_faleweb_prefs_button,329,622,94,67);
         // Exactly one verified primary action group is shown at a time.
         // Visibility is presentation; command handlers still enforce native
         // session + displayed-call identity before any SIP operation.
@@ -1122,7 +1122,8 @@ void paint_button(const DRAWITEMSTRUCT& item) {
         }
         SelectObject(item.hDC, old);
     } else {
-        HGDIOBJ old_font = SelectObject(item.hDC, g_font_regular);
+        HGDIOBJ old_font = SelectObject(item.hDC,
+            id==kTheme && g_faleweb_mode ? g_font_small : g_font_regular);
         DrawTextW(item.hDC, title, -1, &rect,
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
         SelectObject(item.hDC, old_font);
@@ -3221,7 +3222,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show)
                 if(length<=0)return false;
                 HDC dc=GetDC(control);
                 if(!dc)return false;
-                const HGDIOBJ old=SelectObject(dc,g_font_regular);
+                const HGDIOBJ old=SelectObject(dc,
+                    control==GetDlgItem(window,kTheme) ? g_font_small : g_font_regular);
                 SIZE text_size{};
                 const bool measured=GetTextExtentPoint32W(dc,value,length,&text_size)!=0;
                 SelectObject(dc,old);
