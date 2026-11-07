@@ -1,5 +1,6 @@
 #include "../src/native_account_config.h"
 #include <cstdlib>
+#include <initializer_list>
 #define CHECK(x) do { if (!(x)) std::abort(); } while (0)
 int main() {
     axv::SipAccount account{L"pbx.example",L"1001",5060,false};
@@ -68,7 +69,7 @@ int main() {
     axv::SipAccount invalid{L"pbx.example",L"1234",0,false};
     CHECK(!axv::native_account_config(invalid,L"").valid);
     CHECK(axv::native_call_destination(L"12345",invalid).empty());
-    for(const std::wstring& bad_host:{
+    for(const std::wstring& bad_host:std::initializer_list<std::wstring>{
         std::wstring{},L"bad host",L"bad\r\nname",L"@pbx.example",
         L"pbx.example;transport=tls",L"pbx.example\tother"
     }) {
@@ -76,7 +77,7 @@ int main() {
         CHECK(!axv::native_account_config(invalid,L"").valid);
     }
     invalid.server=L"pbx.example";invalid.use_tls=true;invalid.port=5061;
-    for(const std::wstring& bad_ca:{std::wstring{},L"#comment",L"bad\nfile",L"bad\rfile",L"bad\"quote"}) {
+    for(const std::wstring& bad_ca:std::initializer_list<std::wstring>{std::wstring{},L"#comment",L"bad\nfile",L"bad\rfile",L"bad\"quote"}) {
         CHECK(!axv::native_account_config(invalid,bad_ca).valid);
     }
     const auto tls_cfg=axv::native_account_config(invalid,L"C:/ca/trust.pem");
