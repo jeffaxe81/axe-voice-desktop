@@ -66,6 +66,35 @@ static class Tests
         Check(comfortable.Width==400 && comfortable.Height==680,"comfortable dimensions");
         Check(PreviewWindowSizing.Dimensions((PreviewSizeMode)99)==compact,
               "invalid saved mode defaults compact");
+        // Stage 2B: UI must not expose SIP commands until the native SDK has
+        // proved registration AND the opaque call/session tokens are present.
+        var offline=NativeCallUiProjector.Project(false,0,0,0,1,1,1,0,0,true);
+        Check(!offline.CanDial && !offline.CanAnswer &&
+              !offline.CanConnect,"missing bridge fail closed");
+        var preview=NativeCallUiProjector.Project(true,0,2,1,1,1,1,4,99,true);
+        Check(!preview.CanDial && !preview.CanAnswer &&
+              !preview.CanHangup && !preview.CanConnect,"preview cannot call");
+        var ready=NativeCallUiProjector.Project(true,1,2,0,1,0,0,4,0,true);
+        Check(ready.CanDial && !ready.CanAnswer &&
+              !ready.CanHangup,"verified registration allows dial");
+        Check(!NativeCallUiProjector.Project(true,1,2,0,1,0,0,0,0,true).CanDial,
+              "zero session denies dial");
+        Check(!NativeCallUiProjector.Project(true,1,2,0,1,0,0,4,0,false).CanDial,
+              "invalid destination denies dial");
+        var ringing=NativeCallUiProjector.Project(true,1,2,1,0,1,1,4,99,false);
+        Check(ringing.CanAnswer && ringing.CanHangup &&
+              !ringing.CanDial,"incoming call actions");
+        var incomplete=NativeCallUiProjector.Project(true,1,2,1,0,1,1,4,0,false);
+        Check(!incomplete.CanAnswer && !incomplete.CanHangup,
+              "missing call id denies answer and hangup");
+        var calling=NativeCallUiProjector.Project(true,1,2,2,0,0,1,4,99,false);
+        Check(!calling.CanAnswer && calling.CanHangup,"outgoing hangup only");
+        var pending=NativeCallUiProjector.Project(true,1,1,0,0,0,0,0,0,true);
+        Check(!pending.CanDial && !pending.CanAnswer &&
+              !pending.CanConnect && pending.CanDisconnect,"pending cannot dial");
+        Check(SipDiagnosticReport.Format(true,true,2,2,1).Contains("recebida",
+              StringComparison.OrdinalIgnoreCase),"incoming status in monitor");
+
         Console.WriteLine("WinUI 3 preview: keyboard, favorites, DPAPI, monitor and sizing checks OK");
     }
 }
