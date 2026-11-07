@@ -123,6 +123,9 @@ public static class NativePostinstallWindows {
         }
         $Deadline = [DateTime]::UtcNow.AddSeconds(120)
         $LastAction = ''
+        $LastActionAt = [DateTime]::MinValue
+        $StableActionRepeats = 0
+        $LastActionCaption = ''
         do {
             Update-OwnedProcesses
             foreach ($Window in [NativePostinstallWindows]::Windows([IntPtr]::Zero)) {
@@ -143,10 +146,26 @@ public static class NativePostinstallWindows {
                     # any unexpected/localized dialog fails within the deadline.
                     if ($Caption -notin @('Next >', 'Install', 'Finish')) { continue }
                     $Action = "$Control/$Caption/$Page"
-                    if ($Action -eq $LastAction) { continue }
+                    if ($Action -eq $LastAction) {
+                        # Inno task pages can reuse the same visible navigation
+                        # and page text signature. Never spin forever on a valid
+                        # Next button: retry conservatively after 3 seconds,
+                        # bounded by the overall timeout and repeat counter.
+                        if (([DateTime]::UtcNow - $LastActionAt).TotalSeconds -lt 3) {
+                            continue
+                        }
+                        $StableActionRepeats++
+                        if ($StableActionRepeats -gt 6) {
+                            throw "Installer navigation stalled on a known $Caption button after bounded retries"
+                        }
+                    } else {
+                        $StableActionRepeats = 0
+                    }
                     if ($Caption -eq 'Finish') { $SawFinish = $true }
                     [NativePostinstallWindows]::Click($Control)
                     $LastAction = $Action
+                    $LastActionAt = [DateTime]::UtcNow
+                    $LastActionCaption = $Caption
                     break
                 }
             }
@@ -155,7 +174,17 @@ public static class NativePostinstallWindows {
             if ($Setup.HasExited -and $ActiveSetup.Count -eq 0) { break }
             Start-Sleep -Milliseconds 200
         } while ([DateTime]::UtcNow -lt $Deadline)
-        if (!$Setup.HasExited -or $ActiveSetup.Count) { throw 'Interactive setup timed out; inspect the desktop for an unexpected wizard/dialog' }
+        if (!$Setup.HasExited -or $ActiveSetup.Count) {
+            # Only known bootstrap process identities and stock button captions
+            # are included; no arbitrary wizard page contents or credentials.
+            $OwnedClasses = @()
+            foreach ($Top in [NativePostinstallWindows]::Windows([IntPtr]::Zero)) {
+                if (Test-OwnedSetupWindow $Top -and [NativePostinstallWindows]::IsWindowVisible($Top)) {
+                    $OwnedClasses += [NativePostinstallWindows]::Class($Top)
+                }
+            }
+            throw "Interactive setup timed out; wizard=$SawWizard finish=$SawFinish lastButton='$LastActionCaption' visibleClasses='$($OwnedClasses -join ',')' activeSetup=$($ActiveSetup.Count)"
+        }
         if ($Setup.ExitCode -ne 0) { throw "Interactive setup failed with exit code $($Setup.ExitCode)" }
         if (!$SawWizard -or !$SawFinish) { throw 'Did not observe and finish the real interactive Inno wizard' }
         if (Test-Marker $SetupMutexName) { throw 'Setup marker remained after interactive setup exited' }
