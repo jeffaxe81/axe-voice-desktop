@@ -23,7 +23,7 @@ RUN_NAMES = {
     "native": "AXE Voice native SDK smoke",
 }
 EXPECTED_ARTIFACTS = {
-    "windows": ("AXE-Voice-Windows-UI-Only-No-SIP",),
+    "windows": ("AXE-Voice-Windows-UI-Only-No-SIP", "AXE-Voice-Policy-10M-Results"),
     "baseline": ("axe-voice-static-baseline-{sha}",),
     "winui": ("AXE-Voice-WinUI3-Preview-No-SIP",),
     "native": (
@@ -87,6 +87,8 @@ def verify_evidence(sha, runs, jobs_by_id, artifacts_by_id, native_run_id=None):
 
     windows_build = passed("windows") and successful_steps(
         jobs("windows"), "build-and-test", "Build and test with project script",
+        "Run 10M deterministic policy scenarios (no live PBX)",
+        "Publish 10M scenario report",
         "Verify quality gates (unit, blackbox, integration)")
     baseline = passed("baseline") and artifacts_ok("baseline") and successful_steps(
         jobs("baseline"), "Integridade MicroSIP",
