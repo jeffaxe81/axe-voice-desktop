@@ -2,9 +2,15 @@
 
 Este roteiro se aplica ao softphone AXE Voice Windows 11, com **Baresip nativo**, interface Essencial, edição Win32 principal e prévia WinUI3. **Exclui** explicitamente as ideias de backlog #234–#238 (Smart Provisioning, Reception, Connect, Quality Guard, Voice AI). Não habilitar nenhuma delas para concluir a release.
 
-## Definição de 100% para a entrega do escopo atual
+## Decisão de escopo — 08/11/2026: entrega de engenharia sem central telefônica real
 
-A conclusão só pode ser afirmada quando TODOS os critérios abaixo tiverem evidência, no **mesmo commit/pacote que será entregue**. Um build verde não substitui interoperabilidade na central.
+Por decisão do titular, **a homologação em PABX real NÃO é mais requisito do aceite de engenharia do software**. A entrega de engenharia poderá ser considerada 100% concluída com evidências dos oito gates automatizados/locais do mesmo commit e pacote, conforme [contrato específico](ENTREGA-DE-ENGENHARIA-SEM-PBX-REAL.md), `src/release_scope_policy.h` e `config/release-scope.json`.
+
+**A homologação externa continua não realizada e não aprovada.** Nenhuma dispensa se aplica à liberação para produção. Os requisitos abaixo são os critérios de **homologação/produção**, não os critérios para fechar o trabalho de engenharia.
+
+## Definição de 100% para homologação e distribuição de produção
+
+A conclusão de produção só pode ser afirmada quando TODOS os critérios abaixo tiverem evidência no mesmo commit/pacote. Um build verde não substitui interoperabilidade na central.
 
 | Gate | Evidência exigida | Automatizável? | Situação inicial |
 |---|---|---|---|
