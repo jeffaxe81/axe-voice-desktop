@@ -68,10 +68,10 @@ function Get-LinearLuminance([string]$Raw) {
     $channels=@()
     foreach($offset in @(1,3,5)) {
         $channel=[Convert]::ToInt32($hex.Substring($offset,2),16)/255.0
-        $channels+=if($channel -le 0.04045) {
-            $channel/12.92
+        if($channel -le 0.04045) {
+            $channels+=($channel/12.92)
         } else {
-            [Math]::Pow(($channel+0.055)/1.055,2.4)
+            $channels+=[Math]::Pow(($channel+0.055)/1.055,2.4)
         }
     }
     return 0.2126*$channels[0]+0.7152*$channels[1]+0.0722*$channels[2]
