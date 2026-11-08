@@ -64,7 +64,10 @@ bool check_report(unsigned r,unsigned s) {
         !bit(s,0)?L"Politica SIP: sem politica de sessao selecionada":bit(s,1)?L"Politica SIP: TLS obrigatorio; CA confiavel exigida":L"Politica SIP: UDP sem criptografia",
         bit(s,2)?L"Sessao nativa: em execucao":L"Sessao nativa: sem sessao em execucao",
         bit(s,0)&&bit(s,2)&&bit(s,3)?L"Registro SIP atual: verificado":L"Registro SIP atual: sem evidencia atual",
-        L"Midia: este candidato nao oferece SRTP",L"Homologacao real: nao concluida"};
+        L"Midia: este candidato nao oferece SRTP",L"Homologacao real: nao concluida",L"",
+        L"ACEITE DE SOFTWARE: testes de engenharia e pacotes independem da central real.",
+        L"HOMOLOGACAO EXTERNA: registro/chamadas/RTP reais adiados, NAO APROVADOS.",
+        L"PRODUCAO: BLOQUEADA ate PBX, headset, seguranca, licencas e assinatura."};
     return lines(report)==expected;
 }
 }
