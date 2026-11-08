@@ -12,6 +12,8 @@ on:
       - 'src/sip_engine.h'
       - 'src/account_form_feedback.h'
       - 'tests/native_sip_engine_smoke.cpp'
+      - 'tests/test_baresip_*.cpp'
+      - 'tests/test_sip_event_projection*.cpp'
   pull_request:
     branches: [main]
     paths:
@@ -30,6 +32,8 @@ on:
       - 'tests/test_audio_endpoint_watcher.cpp'
       - 'tests/audio_watcher_fakes/**'
       - 'tests/test_incoming_*'
+      - 'tests/test_baresip_*.cpp'
+      - 'tests/test_sip_event_projection*.cpp'
       - 'tests/test_tone_cancellation.cpp'
       - 'tests/test_native_*'
       - 'tests/native_libre_reactor_smoke.cpp'
