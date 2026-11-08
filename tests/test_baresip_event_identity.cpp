@@ -45,5 +45,43 @@ int main() {
     s.expected_account_token=41;
     if(apply_identified_event(s,10,{BaresipEventKind::Registering,9,0,41,0})!=IdentityResult::StaleSession) return 30;
     if(apply_identified_event(s,10,{BaresipEventKind::Registering,10,0,40,0})!=IdentityResult::WrongAccount) return 31;
+
+    // 1,024 synthetic account/call generations, including duplicate INVITE,
+    // stale BYE, foreign account injection and transport recovery. An account
+    // must never receive call control for another account's opaque token.
+    for (std::uint64_t i=1; i<=1024; ++i) {
+        const std::uint64_t session=100+i, account=10000+i;
+        const std::uint64_t callA=i*3, callB=callA+1, callC=callA+2;
+        BoundBaresipState bound;
+        bound.observation={RuntimeProcess::Running,SipStatus::Registered,
+                           SipEvidence::VerifiedNativeApi,session};
+        bound.expected_account_token=account;
+        const auto event=[&](BaresipEventKind kind,std::uint64_t call=0,
+                             std::uint64_t acc=0,std::uint64_t epoch=0) {
+            return apply_identified_event(bound,session,{kind,
+                epoch ? epoch : session,0,acc ? acc : account,call});
+        };
+        if(event(BaresipEventKind::CallIncoming,callA)!=IdentityResult::Applied)return 40;
+        if(event(BaresipEventKind::CallIncoming,callB)!=IdentityResult::ConcurrentCall)return 41;
+        if(event(BaresipEventKind::CallEstablished,callA,account+1)!=IdentityResult::WrongAccount)return 42;
+        if(event(BaresipEventKind::CallEstablished,callB)!=IdentityResult::WrongCall)return 43;
+        if(event(BaresipEventKind::CallEstablished,callA,0,session-1)!=IdentityResult::StaleSession)return 44;
+        if(event(BaresipEventKind::CallEstablished,callA)!=IdentityResult::Applied)return 45;
+        if(event(BaresipEventKind::CallClosed,callB)!=IdentityResult::WrongCall)return 46;
+        if(event(BaresipEventKind::CallClosed,callA)!=IdentityResult::Applied)return 47;
+        if(bound.active_call_token || bound.observation.call_id)return 48;
+        if(event(BaresipEventKind::CallIncoming,callA)!=IdentityResult::ReplayedCall)return 49;
+        if(event(BaresipEventKind::CallIncoming,callB)!=IdentityResult::Applied)return 50;
+        if(event(BaresipEventKind::TransportLost)!=IdentityResult::Applied)return 51;
+        if(bound.active_call_token || bound.observation.sip!=SipStatus::Disconnected)return 52;
+        if(event(BaresipEventKind::CallClosed,callB)!=IdentityResult::WrongCall)return 53;
+        if(event(BaresipEventKind::RegisterOk)!=IdentityResult::InvalidOrder)return 54;
+        if(event(BaresipEventKind::Registering)!=IdentityResult::Applied)return 55;
+        if(event(BaresipEventKind::RegisterOk)!=IdentityResult::Applied)return 56;
+        if(event(BaresipEventKind::CallIncoming,callB)!=IdentityResult::ReplayedCall)return 57;
+        if(event(BaresipEventKind::CallIncoming,callC)!=IdentityResult::Applied)return 58;
+        if(event(BaresipEventKind::CallClosed,callC)!=IdentityResult::Applied)return 59;
+        if(event(BaresipEventKind::CallIncoming,callC,account+1)!=IdentityResult::WrongAccount)return 60;
+    }
     return 0;
 }
