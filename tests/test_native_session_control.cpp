@@ -80,4 +80,58 @@ int main(){
   CHECK(state.sip==axv::SipStatus::Registered && !axv::native_command_is_current(cancel,state));
  }
 
+ // Native call commands are authorized against the live session, not the
+ // displayed text. Exhaust process/evidence/token changes for 1,000
+ // synthetic session/call pairs; these do NOT make real RTP/SIP calls.
+ for(std::uint64_t iteration=1;iteration<=1000;++iteration) {
+  const std::uint64_t session=iteration+5000, call=iteration+7000;
+  const axv::SipRuntimeObservation ringing{
+     axv::RuntimeProcess::Running,axv::SipStatus::Ringing,
+     axv::SipEvidence::VerifiedNativeApi,session,call,call-1};
+  const axv::SipRuntimeObservation calling{
+     axv::RuntimeProcess::Running,axv::SipStatus::Calling,
+     axv::SipEvidence::VerifiedNativeApi,session,call,call-1};
+  const axv::SipRuntimeObservation in_call{
+     axv::RuntimeProcess::Running,axv::SipStatus::InCall,
+     axv::SipEvidence::VerifiedNativeApi,session,call,call-1};
+  const axv::SipRuntimeObservation registered{
+     axv::RuntimeProcess::Running,axv::SipStatus::Registered,
+     axv::SipEvidence::VerifiedNativeApi,session,0,call-1};
+  const axv::NativeCallCommand answer{axv::NativeCallAction::Answer,session,call,{}};
+  const axv::NativeCallCommand end{axv::NativeCallAction::Hangup,session,call,{}};
+  const axv::NativeCallCommand mute{axv::NativeCallAction::SetMute,session,call,{}};
+  const axv::NativeCallCommand hold{axv::NativeCallAction::SetHold,session,call,{}};
+  const axv::NativeCallCommand transfer{axv::NativeCallAction::Transfer,session,call,{}};
+  const axv::NativeCallCommand dtmf{axv::NativeCallAction::Dtmf,session,call,"5"};
+  const axv::NativeCallCommand dial{axv::NativeCallAction::Dial,session,0,"1002"};
+  CHECK(axv::native_command_is_current(dial,registered));
+  CHECK(!axv::native_command_is_current(dial,ringing));
+  CHECK(axv::native_command_is_current(answer,ringing));
+  CHECK(!axv::native_command_is_current(answer,in_call));
+  CHECK(axv::native_command_is_current(end,ringing));
+  CHECK(axv::native_command_is_current(end,calling));
+  CHECK(axv::native_command_is_current(end,in_call));
+  for(const auto& c:{mute,hold,transfer,dtmf}) {
+   CHECK(axv::native_command_is_current(c,in_call));
+   CHECK(!axv::native_command_is_current(c,ringing));
+   CHECK(!axv::native_command_is_current(c,calling));
+  }
+  CHECK(axv::native_displayed_call_command_current(axv::NativeCallAction::Answer,ringing,ringing));
+  CHECK(!axv::native_displayed_call_command_current(axv::NativeCallAction::SetMute,in_call,in_call));
+  auto stale=ringing;
+  stale.call_id=call+1;
+  CHECK(!axv::native_displayed_call_command_current(axv::NativeCallAction::Answer,ringing,stale));
+  stale=ringing;stale.session=session+1;
+  CHECK(!axv::native_displayed_call_command_current(axv::NativeCallAction::Answer,ringing,stale));
+  stale=ringing;stale.evidence=axv::SipEvidence::None;
+  CHECK(!axv::native_command_is_current(end,stale));
+  stale=ringing;stale.process=axv::RuntimeProcess::Failed;
+  CHECK(!axv::native_command_is_current(answer,stale));
+  axv::NativeCommandAdmission once;
+  CHECK(once.admit(answer,ringing) && !once.admit(answer,ringing));
+  CHECK(once.admit(transfer,in_call) && !once.admit(transfer,in_call));
+  CHECK(once.admit(end,in_call) && !once.admit(end,in_call));
+  CHECK(once.admit(dtmf,in_call) && once.admit(dtmf,in_call));
+ }
+
 }
