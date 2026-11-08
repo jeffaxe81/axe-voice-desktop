@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AXE Voice | Consolidador de testes Windows</title>
+<style>
+:root{font-family:"Segoe UI",Arial,sans-serif;color:#193044;background:#f3f7fa;line-height:1.45}
+*{box-sizing:border-box}body{margin:0}header{background:linear-gradient(125deg,#10273e,#1b526c);color:#fff;padding:35px max(20px,calc((100vw - 1110px)/2))}
+header .kicker{font-size:.75rem;text-transform:uppercase;letter-spacing:.16em;color:#b1dce9;font-weight:700}h1{margin:6px 0 10px;font-size:clamp(1.5rem,3vw,2.2rem)}header p{margin:0;color:#d3e4ee;max-width:820px}
+main{max-width:1130px;margin:22px auto;padding:0 16px 70px}.card{background:#fff;border:1px solid #dce6ec;border-radius:14px;margin:0 0 16px;padding:20px;box-shadow:0 4px 20px #1d34430d}h2{margin:0 0 10px;font-size:1.08rem}
+small,.muted{color:#566d80}.notice{background:#e9f3f8;border:1px solid #c6dce7;padding:14px 17px;border-radius:10px;margin-bottom:16px}
+button,.filebtn{border:1px solid #bfd2df;border-radius:9px;background:white;color:#20425b;padding:10px 14px;font:inherit;font-weight:650;cursor:pointer;display:inline-block}
+button:hover,.filebtn:hover{background:#e8f2f8}.primary{background:#146b97;color:white;border-color:#146b97}.primary:hover{background:#145779}
+.toolbar{display:flex;gap:9px;flex-wrap:wrap;align-items:center}input[type=file]{max-width:100%}input[type=checkbox]{accent-color:#146b97}
+.metrics{display:grid;grid-template-columns:repeat(5,minmax(125px,1fr));gap:10px}.metric{border:1px solid #dce6ec;border-radius:9px;padding:12px}.metric strong{font-size:1.65rem;display:block;color:#154967}.metric span{font-size:.81rem;color:#526779}
+table{border-collapse:collapse;width:100%;font-size:.9rem}th,td{border-bottom:1px solid #e4edf1;text-align:left;padding:10px 9px;vertical-align:top}th{background:#f2f7fa;color:#2e526a;position:sticky;top:0}td small{display:block}td code{font-family:Consolas,monospace;font-size:.82rem}tr:last-child td{border:0}.scroll{overflow-x:auto}
+.tag{font-size:.76rem;display:inline-block;border-radius:7px;padding:3px 7px;font-weight:700}.tag.good{background:#e7f6ef;color:#126b49}.tag.bad{background:#fbe9e7;color:#9b342f}.tag.warn{background:#fff2d8;color:#8d590f}
+progress{width:100%;height:14px;accent-color:#237c99}.warning{color:#9b431f}.empty{padding:22px;color:#63798a;text-align:center}
+#status{min-height:18px}details{margin-top:8px}summary{cursor:pointer;font-weight:650}
+@media(max-width:720px){.metrics{grid-template-columns:repeat(2,1fr)}.card{padding:15px}th,td{padding:8px}}
+@media print{header{background:#fff;color:#000;padding:10px}.toolbar,#choose,.notice{display:none}.card{box-shadow:none;break-inside:avoid}main{margin:0;padding:0}th{position:static}}
+</style></head><body>
+<header><div class="kicker">AXE VOICE • QUALIDADE WINDOWS</div><h1>Painel de consolidação de testes</h1>
+<p>Reúna fichas JSON exportadas do formulário Windows v1.1. Compare computadores, encontre reprovações recorrentes e gere relatórios para triagem — sem PBX real.</p></header>
+<main>
+<div class="notice"><b>Privacidade e escopo:</b> tudo é processado neste navegador, sem envio automático. Não inclua credenciais, dados de clientes ou SIP em observações. Os testes de telefonia real estão adiados; <b>produção não homologada</b>.</div>
+<section class="card"><h2>1. Importar fichas preenchidas</h2>
+<p class="muted">Selecione um ou vários arquivos JSON exportados pelo formulário AXE Voice. Aceita até 100 fichas de 2 MB cada. O painel não altera os arquivos de origem.</p>
+<div id="choose" class="toolbar"><input type="file" id="files" accept=".json,application/json" multiple aria-label="Selecionar fichas JSON"/>
+<button id="clear">Limpar painel</button><button id="exportcsv" class="primary" disabled>Exportar pendências CSV</button>
+<button id="exportjson" disabled>Exportar resumo JSON</button><button id="exportmd" disabled>Exportar resumo Markdown</button><button id="print" disabled>Imprimir / PDF</button></div>
+<p id="status" role="status" aria-live="polite" class="muted">Nenhuma ficha importada.</p>
+</section>
+<section class="card"><h2>2. Indicadores consolidados</h2>
+<div class="metrics"><div class="metric"><strong id="n-reports">0</strong><span>Fichas importadas</span></div>
+<div class="metric"><strong id="n-accepted">0</strong><span>Aceites locais verificados</span></div>
+<div class="metric"><strong id="n-fail">0</strong><span>Reprovações registradas</span></div>
+<div class="metric"><strong id="n-block">0</strong><span>Bloqueios registrados</span></div>
+<div class="metric"><strong id="n-missing">0</strong><span>Obrigatórios pendentes</span></div></div>
+<p class="muted" id="completion-label">0/0 testes obrigatórios executados.</p><progress id="completion" max="100" value="0"></progress>
+</section>
+<section class="card"><h2>3. Resultado por máquina e edição</h2><div class="scroll"><table><thead><tr><th>Arquivo / máquina</th><th>Windows / edição</th><th>Versão / commit</th><th>Progresso obrigatório</th><th>Resultado local</th></tr></thead><tbody id="sessions"><tr><td class="empty" colspan="5">Importe fichas para visualizar os resultados.</td></tr></tbody></table></div></section>
+<section class="card"><h2>4. Pendências e falhas recorrentes</h2><p class="muted">Contabiliza reprovados, bloqueados e testes obrigatórios não executados, agrupados por caso. Não pressupõe que uma reprovação seja um defeito reproduzido.</p>
+<div class="scroll"><table><thead><tr><th>Teste</th><th>Reprovado</th><th>Bloqueado</th><th>Pendente</th><th>Máquinas impactadas</th></tr></thead><tbody id="issues"><tr><td class="empty" colspan="5">Nenhuma ficha importada.</td></tr></tbody></table></div>
+</section>
+<section class="card"><h2>5. Critérios de aceite</h2><p>O painel <b>recalcula</b> o aceite local usando resultados obrigatórios, problemas e assinatura do responsável; não confia no campo de aprovação declarado no JSON. Uma ficha incompleta ou com problemas não é aprovada.</p>
+<p><b>Não é um certificado de produção:</b> aceite de engenharia via CI, teste físico local e homologação de telefonia real têm estados separados. O aceite no PABX real permanece <b>não realizado</b>.</p></section>
+</main>
+<script>
+"use strict";
+const CASES=[{"id":"A01","title":"Conferir versão e integridade do pacote","group":"A","required":true},{"id":"A02","title":"Instalação limpa da edição Win32","group":"A","required":true},{"id":"A03","title":"Ícones do executável, Menu Iniciar e bandeja","group":"A","required":true},{"id":"A04","title":"Atalho da área de trabalho opcional","group":"A","required":false},{"id":"A05","title":"Abrir, minimizar, restaurar e fechar","group":"A","required":true},{"id":"A06","title":"Instalação com aplicativo aberto","group":"A","required":true},{"id":"A07","title":"Atualizar e desinstalar a edição Win32","group":"A","required":true},{"id":"A08","title":"Instaladores Win32 e WinUI 3 independentes","group":"A","required":true},{"id":"B01","title":"Identidade e referência visual","group":"B","required":true},{"id":"B02","title":"Janela compacta 355 × 602","group":"B","required":true},{"id":"B03","title":"Escala de exibição 100% (DPI 96)","group":"B","required":true},{"id":"B04","title":"Escala de exibição 125% (DPI 120)","group":"B","required":true},{"id":"B05","title":"Escala de exibição 150% (DPI 144)","group":"B","required":true},{"id":"B06","title":"Escala de exibição 200% (DPI 192)","group":"B","required":true},{"id":"B07","title":"Tema claro","group":"B","required":true},{"id":"B08","title":"Tema escuro","group":"B","required":true},{"id":"B09","title":"Campo de discagem e teclas","group":"B","required":true},{"id":"B10","title":"Mensagens flutuantes e ações","group":"B","required":true},{"id":"B11","title":"Troca de abas sem textos fantasmas","group":"B","required":true},{"id":"B12","title":"Estados desconectado / falha sem cor falsa","group":"B","required":true},{"id":"C01","title":"Navegação por teclado e foco","group":"C","required":true},{"id":"C02","title":"Teclas rápidas e digitação repetida","group":"C","required":true},{"id":"C03","title":"Contraste alto do Windows","group":"C","required":false},{"id":"C04","title":"Leitor de tela e acessibilidade básica","group":"C","required":false},{"id":"C05","title":"Dois monitores e escalas diferentes","group":"C","required":false},{"id":"C06","title":"Preferências após reiniciar","group":"C","required":true},{"id":"D01","title":"Inventário de dispositivos de áudio","group":"D","required":true},{"id":"D02","title":"Microfone local","group":"D","required":true},{"id":"D03","title":"Saída local / tom de teste","group":"D","required":true},{"id":"D04","title":"Toque local de chamada","group":"D","required":false},{"id":"D05","title":"Desconectar e reconectar headset USB","group":"D","required":true},{"id":"D06","title":"Alteração do padrão de áudio do Windows","group":"D","required":true},{"id":"D07","title":"Falha de dispositivo / driver","group":"D","required":true},{"id":"E01","title":"Campos SIP sem efetuar registro real","group":"E","required":true},{"id":"E02","title":"Senha mascarada e gravação opcional","group":"E","required":true},{"id":"E03","title":"Remoção de credencial persistida","group":"E","required":true},{"id":"E04","title":"Relatório F2 / Copiar status sem segredos","group":"E","required":true},{"id":"E05","title":"Parada e falhas de configuração seguras","group":"E","required":true},{"id":"E06","title":"Política de transporte e certificado","group":"E","required":true},{"id":"E07","title":"Aviso de escopo no candidato","group":"E","required":true},{"id":"F01","title":"Pré-requisitos WinUI 3","group":"F","required":true},{"id":"F02","title":"Layout e marca WinUI 3","group":"F","required":true},{"id":"F03","title":"Ações em estado não conectado","group":"F","required":true},{"id":"F04","title":"Encerrar WinUI 3 e reabrir","group":"F","required":true}];
+const IDS=new Map(CASES.map(t=>[t.id,t]));
+const ALLOWED=new Set(["","pass","fail","block","na"]);
+const reports=[];
+const $=id=>document.getElementById(id);
+function asText(value,max=180){return typeof value==="string"?value.slice(0,max):"";}
+function cell(parent,tag,content){const e=document.createElement(tag);e.textContent=String(content??"");parent.appendChild(e);return e;}
+function badge(parent,label,type){const el=document.createElement("span");el.className="tag "+type;el.textContent=label;parent.appendChild(el);}
+function normalized(value,filename){
+ if(!value||typeof value!=="object"||Array.isArray(value)||value.format!=="axe_voice_windows_acceptance"||value.schema!==1)throw Error("Formato ou schema incompatível");
+ if(!value.meta||typeof value.meta!=="object"||Array.isArray(value.meta)||!value.results||typeof value.results!=="object"||Array.isArray(value.results))throw Error("Metadados ou resultados ausentes");
+ if(value.tests!==undefined){if(!Array.isArray(value.tests)||value.tests.length!==CASES.length)throw Error("Lista de testes incompleta");const found=new Set(value.tests.map(t=>t&&t.id));if(found.size!==CASES.length||CASES.some(t=>!found.has(t.id)))throw Error("Lista de testes divergente");}
+ const meta={};for(const key of ["tester","date","machine","os","edition","version","commit","reviewer","reviewDate","decision"]){meta[key]=asText(value.meta[key]);}
+ const results={};for(const t of CASES){const o=value.results[t.id];if(o!==undefined&&(o===null||typeof o!=="object"||Array.isArray(o)))throw Error("Resultado inválido: "+t.id);
+  const status=o?.status??"";if(!ALLOWED.has(status))throw Error("Status inválido: "+t.id);results[t.id]=(t.required&&status==="na")?"":status;}
+ const issues=CASES.filter(t=>results[t.id]==="fail"||results[t.id]==="block"||(t.required&&!results[t.id]));
+ const missing=CASES.filter(t=>t.required&&!results[t.id]).length;
+ const passes=CASES.filter(t=>t.required&&results[t.id]==="pass").length;
+ const done=CASES.filter(t=>t.required&&!!results[t.id]).length;
+ const fail=CASES.filter(t=>results[t.id]==="fail").length;
+ const block=CASES.filter(t=>results[t.id]==="block").length;
+ const signature=Boolean(meta.tester&&meta.date&&meta.os&&meta.edition&&meta.reviewer&&meta.reviewDate&&meta.decision.startsWith("Testes locais aprovados"));
+ const accepted=missing===0&&fail===0&&block===0&&signature;
+ return {filename:asText(filename,180),meta,results,issues:issues.map(t=>t.id),missing,passes,done,fail,block,accepted};
+}
+function summarize(){
+ const total=reports.length, accepted=reports.filter(r=>r.accepted).length;
+ const fail=reports.reduce((n,r)=>n+r.fail,0),block=reports.reduce((n,r)=>n+r.block,0),missing=reports.reduce((n,r)=>n+r.missing,0);
+ const done=reports.reduce((n,r)=>n+r.done,0),possible=total*39;
+ const issues=CASES.map(t=>{const affected=reports.filter(r=>r.issues.includes(t.id));return {id:t.id,title:t.title,required:t.required,
+   fail:affected.filter(r=>r.results[t.id]==="fail").length,block:affected.filter(r=>r.results[t.id]==="block").length,
+   missing:affected.filter(r=>!r.results[t.id]).length,
+   machines:affected.map(r=>r.meta.machine||r.filename)};}).filter(t=>t.fail+t.block+t.missing);
+ return {schema:1,format:"axe_voice_windows_qa_consolidated",source_format:"axe_voice_windows_acceptance",reports:total,
+  locallyAccepted:accepted,fail,block,missing,requiredExecuted:done,requiredPossible:possible,
+  productionApproved:false,liveTelephony:"deferred_not_homologated",
+  sessions:reports.map(r=>({filename:r.filename,meta:r.meta,fail:r.fail,block:r.block,missing:r.missing,requiredExecuted:r.done,locallyAccepted:r.accepted})),
+  issues};
+}
+function render(){
+ const a=summarize();$("n-reports").textContent=a.reports;$("n-accepted").textContent=a.locallyAccepted;$("n-fail").textContent=a.fail;$("n-block").textContent=a.block;$("n-missing").textContent=a.missing;
+ $("completion-label").textContent=a.requiredExecuted+"/"+a.requiredPossible+" testes obrigatórios com resultado ("+(a.requiredPossible?Math.round(a.requiredExecuted*100/a.requiredPossible):0)+"%).";
+ $("completion").value=a.requiredPossible?Math.round(a.requiredExecuted*100/a.requiredPossible):0;
+ const body=$("sessions");body.replaceChildren();
+ if(!reports.length){const row=body.insertRow();cell(row,"td","Importe fichas para visualizar os resultados.").colSpan=5;}
+ for(const r of reports){const row=body.insertRow();
+  const name=row.insertCell();cell(name,"strong",r.meta.machine||"(máquina não identificada)");cell(name,"small",r.filename);
+  cell(row.insertCell(),"span",(r.meta.os||"Windows não informado")+" / "+(r.meta.edition||"edição não informada"));
+  const version=row.insertCell();cell(version,"span",r.meta.version||"versão não informada");cell(version,"small",r.meta.commit||"SHA não informado");
+  cell(row.insertCell(),"span",r.done+"/39");
+  const verdict=row.insertCell();badge(verdict,r.accepted?"Aceite local válido":(r.fail+r.block)?"Com problemas":r.missing?"Incompleto":"Pendente revisão",r.accepted?"good":(r.fail+r.block)?"bad":"warn");
+ }
+ const issueBody=$("issues");issueBody.replaceChildren();
+ if(!a.issues.length){const row=issueBody.insertRow();cell(row,"td",a.reports?"Nenhuma pendência registrada.":"Nenhuma ficha importada.").colSpan=5;}
+ for(const x of a.issues.sort((x,y)=>(y.fail+y.block+y.missing)-(x.fail+x.block+x.missing))){const row=issueBody.insertRow();const first=row.insertCell();cell(first,"strong",x.id);cell(first,"small",x.title);cell(row.insertCell(),"span",x.fail);cell(row.insertCell(),"span",x.block);cell(row.insertCell(),"span",x.missing);cell(row.insertCell(),"span",x.machines.join("; "));}
+ for(const id of ["exportcsv","exportjson","exportmd","print"])$(id).disabled=!a.reports;
+}
+function excelCell(v){let s=String(v??"").replace(/[\r\n\t]/g," ");if(/^\s*[=+\-@]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';}
+function md(v){return String(v??"").replace(/[\\|*_`\[\]<>]/g," ").replace(/\s+/g," ").slice(0,200);}
+function download(name,data,type){const blob=new Blob([data],{type});const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportCsv(){const s=summarize();const rows=[["Teste","Título","Reprovado","Bloqueado","Pendente","Máquinas impactadas"]];
+ for(const x of s.issues)rows.push([x.id,x.title,x.fail,x.block,x.missing,x.machines.join(" | ")]);
+ download("axe_voice_windows_pendencias_consolidadas.csv","\ufeff"+rows.map(r=>r.map(excelCell).join(";")).join("\r\n"),"text/csv;charset=utf-8");}
+function exportJson(){download("axe_voice_windows_resumo_consolidado.json",JSON.stringify(summarize(),null,2),"application/json;charset=utf-8");}
+function exportMarkdown(){const s=summarize();const lines=["# AXE Voice — consolidação local Windows","","**Escopo:** sem PBX real; produção NÃO aprovada.","",
+ "- Fichas: "+s.reports,"- Aceites locais válidos: "+s.locallyAccepted,"- Reprovações: "+s.fail,"- Bloqueios: "+s.block,"- Pendências obrigatórias: "+s.missing,
+ "- Obrigatórios executados: "+s.requiredExecuted+"/"+s.requiredPossible,"","## Pendências agregadas",""];
+ for(const x of s.issues){lines.push("### "+x.id+" — "+md(x.title),"","- Reprovado: "+x.fail+"; bloqueado: "+x.block+"; pendente: "+x.missing,"- Máquinas: "+x.machines.map(md).join(", "),"");}
+ lines.push("## Fichas","");for(const r of s.sessions)lines.push("- "+md(r.filename)+": "+(r.locallyAccepted?"aceite local válido":"não aprovado")+"; "+r.requiredExecuted+"/39 obrigatórios.");
+ lines.push("","**Atenção:** revisar dados de máquinas e observações antes de publicar este relatório. Nunca incluir credenciais SIP.");
+ download("axe_voice_windows_consolidado.md",lines.join("\n")+"\n","text/markdown;charset=utf-8");}
+$("files").addEventListener("change",async event=>{const files=Array.from(event.target.files||[]);event.target.value="";
+ const errors=[];if(reports.length+files.length>100){$("status").textContent="Limite de 100 fichas por consolidação.";return;}
+ for(const f of files){try{if(f.size>2_000_000)throw Error("Arquivo acima de 2 MB");const report=normalized(JSON.parse(await f.text()),f.name);reports.push(report);}
+  catch(e){errors.push(f.name+": "+e.message);}}
+ $("status").textContent=reports.length+" ficha(s) carregada(s)."+(errors.length?" Rejeitadas: "+errors.join(" | "):"");render();});
+$("clear").onclick=()=>{if(reports.length&&!confirm("Descartar as fichas carregadas deste painel? Os arquivos originais não serão afetados."))return;reports.length=0;$("status").textContent="Painel limpo.";render();};
+$("exportcsv").onclick=exportCsv;$("exportjson").onclick=exportJson;$("exportmd").onclick=exportMarkdown;$("print").onclick=()=>window.print();
+render();
+</script></body></html>
