@@ -1,5 +1,7 @@
 # AXE Voice v0.83 — checklist do candidato nativo (escopo original)
 
+> **Decisão de escopo em 08/11/2026:** concluir a entrega de engenharia do software **sem exigir testes na telefonia real**. Essa pendência permanece registrada em `src/release_scope_policy.h` e `config/release-scope.json`, é mostrada no diagnóstico F2 e continua sendo requisito obrigatório para produção. O aceite de engenharia depende dos oito gates de software aprovados para o SHA final; não confundir com homologação externa. Veja [matriz separada](release/ENTREGA-DE-ENGENHARIA-SEM-PBX-REAL.md).
+
 > **Liberação para produção ainda bloqueada.** Esta release mantém o Baresip e os recursos previamente solicitados. As cinco ideias para o mercado, registradas nas issues #234 a #238, ficam **fora deste escopo**.
 >
 > [Critérios verificáveis para declarar 100% da entrega atual](release/ACEITE-ESCOPO-ORIGINAL.md). Os testes de CI e a geração de instalador candidato não provam registro/recepção SIP e áudio RTP no PABX real. O marco de 80% em design também não deve ser confundido com conclusão do aplicativo.
