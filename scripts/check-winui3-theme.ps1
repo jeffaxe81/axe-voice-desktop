@@ -61,8 +61,7 @@ if ($code -notmatch 'MainShell.RequestedTheme\s*=\s*ElementTheme.Light' -or
 # on a real Windows monitor are still required.
 function Get-LinearLuminance([string]$Raw) {
     $hex=if($Raw -eq 'White') {'#FFFFFF'} else {$Raw}
-    if($hex -notmatch '^#[0-9a-fA-F]{6}
-) {
+    if($hex -notmatch '^#[0-9a-fA-F]{6}$') {
         throw "Unrecognized theme color syntax"
     }
     $channels=@()
