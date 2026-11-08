@@ -25,6 +25,9 @@ CloseApplications=no
 DisableProgramGroupPage=yes
 SetupIconFile={#WinUI3Source}\Assets\axe-voice.ico
 UninstallDisplayIcon={app}\Assets\axe-voice.ico
+Uninstallable=yes
+CreateUninstallRegKey=yes
+UsePreviousAppDir=no
 [Files]
 Source: "{#WinUI3Source}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 [Tasks]
