@@ -1,16 +1,22 @@
 #pragma once
+#include <algorithm>
 #include <cstdint>
+#include <limits>
 namespace axv {
 inline constexpr unsigned kBaseDpi = 96;
 inline constexpr unsigned normalized_dpi(unsigned dpi) {
     return dpi < 96 ? 96u : (dpi > 384 ? 384u : dpi);
 }
-// Original logical dimensions are always in 96-DPI units, not pre-scaled pixels.
+// Saturated signed 64-bit DPI arithmetic: INT_MIN and giant logical dimensions
+// must not trigger signed overflow or recursive negation of INT_MIN.
 inline constexpr int dpi_pixels(int logical, unsigned dpi) {
-    const auto current = normalized_dpi(dpi);
-    if (logical >= 0)
-        return static_cast<int>((static_cast<std::int64_t>(logical)*current + 48) / 96);
-    return -dpi_pixels(-logical, current);
+    const auto scaled = static_cast<std::int64_t>(logical) * normalized_dpi(dpi);
+    const auto rounded = scaled < 0 ? -((-scaled + 48) / 96) : (scaled + 48) / 96;
+    return rounded > std::numeric_limits<int>::max()
+        ? std::numeric_limits<int>::max()
+        : rounded < std::numeric_limits<int>::min()
+        ? std::numeric_limits<int>::min()
+        : static_cast<int>(rounded);
 }
 struct DpiBox { int x, y, width, height; };
 inline constexpr DpiBox scaled_box(DpiBox b, unsigned dpi) {
