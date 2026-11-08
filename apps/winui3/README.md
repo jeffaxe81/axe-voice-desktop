@@ -67,3 +67,25 @@ Fontes de referência:
 - https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/unpackage-winui-app
 - https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/experimental-channel
 - https://github.com/microsoft/winappCli/tree/main/samples/winui-unpackaged-app
+
+## Instalador Windows separado (somente candidato de laboratório)
+
+A CI do perfil nativo pode produzir **dois formatos** de distribuição WinUI 3:
+`AXE-Voice-WinUI3-Native-SIP-Lab-Candidate` (ZIP de arquivos) e
+`AXE-Voice-WinUI3-Native-Lab-Setup` (instalador Inno Setup por usuário).
+
+O instalador da edição WinUI 3 possui **AppId próprio**. Portanto, não
+desinstala nem substitui a edição Win32. O atalho de área de trabalho é
+opcional e desmarcado por padrão; o instalador não abre o aplicativo nem
+faz registro SIP automaticamente.
+
+O teste em Windows verifica arquivos e hashes instalados, diretório de
+licenças, instalação/desinstalação e criação/remoção de atalho somente
+quando solicitado. Para abrir a edição WinUI 3, o computador ainda
+precisa do **.NET 10 Desktop Runtime** e **Windows App Runtime 2.6.5**
+compatíveis; este instalador candidato não distribui nem instala os
+runtimes e não representa a edição comercial.
+
+Nunca inserir senhas na linha de comando de instalação. O aplicativo
+usa, mediante consentimento explícito, credenciais salvas pelo AXE Voice
+Win32 no Gerenciador de Credenciais do usuário Windows atual.

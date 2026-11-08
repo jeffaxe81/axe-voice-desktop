@@ -48,6 +48,18 @@ jobs:
         profile: [abi, tls-media]
     steps:
       - uses: actions/checkout@v4
+      - name: Parse native lab installer script before expensive SDK builds
+        if: matrix.profile == 'tls-media'
+        shell: pwsh
+        run: |
+          $Tokens = $null
+          $Errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'scripts/package-winui3-native-lab.ps1').Path,
+            [ref]$Tokens, [ref]$Errors
+          )
+          if (@($Errors).Count -gt 0) { throw "WinUI3 installer PowerShell syntax errors: $(@($Errors).Count)" }
+          Write-Host 'WinUI3 installer syntax: PASS'
       - name: Reject syntax errors in release PowerShell before the SDK build
         shell: pwsh
         run: |
@@ -161,6 +173,19 @@ jobs:
           path: build/winui3-native-candidate/
           if-no-files-found: error
           retention-days: 14
+      - name: Build and verify second Windows installer (WinUI 3 native LAB)
+        if: matrix.profile == 'tls-media'
+        shell: pwsh
+        run: ./scripts/package-winui3-native-lab.ps1
+      - name: Publish WinUI 3 native LAB installer
+        if: matrix.profile == 'tls-media'
+        uses: actions/upload-artifact@v4
+        with:
+          name: AXE-Voice-WinUI3-Native-Lab-Setup
+          path: build/winui3-native-lab-installer/*.exe
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Publish candidate installer
         if: matrix.profile == 'tls-media'
         uses: actions/upload-artifact@v4
