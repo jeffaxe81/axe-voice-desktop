@@ -87,11 +87,21 @@ int wmain(int argc,wchar_t** argv) {
     }
     if(!gui.window) return fail(4);
     const HWND window=gui.window;
-    if(!GetDlgItem(window,kDial) || !GetDlgItem(window,kSettings) ||
-       !GetDlgItem(window,kAudio) || !GetDlgItem(window,kDestination) ||
-       !GetDlgItem(window,kCall) || !GetDlgItem(window,kCompact) ||
-       !GetDlgItem(window,kTheme) || !GetDlgItem(window,kFeedback) ||
-       !GetDlgItem(window,kRuntimeBanner)) return fail(5);
+    // Win32 publishes its top-level HWND before creating child controls.
+    // CI can enumerate the window between WM_NCCREATE and the last button.
+    // Require all original controls, but allow a bounded 5-second window
+    // for initialization instead of reporting a spurious missing-control bug.
+    const auto controls_ready=[&]() {
+        for(const int id:{kDial,kSettings,kAudio,kDestination,kCall,
+                          kCompact,kTheme,kFeedback,kRuntimeBanner})
+            if(!GetDlgItem(window,id))return false;
+        return true;
+    };
+    for(int attempt=0;attempt<100 && !controls_ready();++attempt) {
+        if(WaitForSingleObject(child.info.hProcess,0)==WAIT_OBJECT_0) return fail(5);
+        Sleep(50);
+    }
+    if(!controls_ready()) return fail(5);
     if(text(GetDlgItem(window,kRuntimeBanner)).find(L"NAO REGISTRADO")==std::wstring::npos)
         return fail(30);
     if(!clicked(window,kSettings) || !shown(GetDlgItem(window,kServer))) return fail(6);
