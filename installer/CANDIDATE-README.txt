@@ -1,6 +1,11 @@
 AXE Voice Native Candidate 0.83.0
 
 This is a validation build, not a production-approved release.
+Owner decision (2026-11-08): real-PBX registration/calls/audio acceptance is deferred
+from SOFTWARE ENGINEERING delivery criteria only. It remains NOT APPROVED and
+mandatory for PRODUCTION. See config/release-scope.json and
+src/release_scope_policy.h. No SIP account, credential or live PBX is probed
+by the release-scope checks.
 Enter server, extension, port and session password in Settings, then Register.
 Passwords are not saved to account/config files. Stop the engine before changing accounts.
 TLS requires a trusted CA PEM file. Plain UDP is unencrypted; select it only according to your PBX configuration.
