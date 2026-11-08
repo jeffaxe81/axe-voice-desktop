@@ -26,4 +26,36 @@ int main(){
  digit.destination="55";CHECK(!admission.admit(digit,call));
  digit.destination="A";CHECK(!admission.admit(digit,call));
  digit.destination="5";digit.call_id=3;CHECK(!admission.admit(digit,call));
+
+ // Exercise all possible 8-bit keypad inputs. Only ASCII digits, * and #
+ // may be emitted over the selected SIP INFO DTMF policy.
+ for(unsigned k=0;k<256;++k) {
+  const wchar_t key=static_cast<wchar_t>(k);
+  const bool expected=(k>=static_cast<unsigned>('0') && k<=static_cast<unsigned>('9'))||k=='*'||k=='#';
+  CHECK(axv::valid_native_dtmf_key(key)==expected);
+ }
+ // DTMF must be revoked for stale media, missing evidence, rejected call
+ // transfer or local hold. This is synthetic command admission, not audio.
+ for(std::uint64_t i=1;i<=1000;++i) {
+  const axv::SipRuntimeObservation c{axv::RuntimeProcess::Running,
+    axv::SipStatus::InCall,axv::SipEvidence::VerifiedNativeApi,i+10,i+20,i+19};
+  const axv::NativeCallMediaState m{i+10,i+20,true};
+  axv::NativeDtmfMode keypad;
+  CHECK(keypad.toggle(m,c)&&keypad.active(m,c));
+  auto stale=c;stale.session++;
+  CHECK(!keypad.active(m,stale));
+  keypad.synchronize(m,stale);CHECK(!keypad.armed());
+  CHECK(keypad.toggle(m,c));
+  auto held=m;held.local_hold=true;CHECK(!keypad.active(held,c));
+  keypad.synchronize(held,c);CHECK(!keypad.armed());
+  auto transfer=m;transfer.transfer=axv::NativeTransferState::Submitted;
+  CHECK(!keypad.toggle(transfer,c));
+  auto unverified=c;unverified.evidence=axv::SipEvidence::None;
+  CHECK(!keypad.toggle(m,unverified));
+  auto no_audio=m;no_audio.available=false;
+  CHECK(!keypad.toggle(no_audio,c));
+  auto altered=c;altered.call_id++;
+  CHECK(!keypad.toggle(m,altered));
+  CHECK(keypad.toggle(m,c)&&keypad.toggle(m,c)&&!keypad.armed());
+ }
 }
