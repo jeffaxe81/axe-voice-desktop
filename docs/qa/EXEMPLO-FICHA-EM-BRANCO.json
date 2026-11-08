@@ -1,0 +1,21 @@
+{
+  "format": "axe_voice_windows_acceptance",
+  "schema": 1,
+  "meta": {
+    "tester": "",
+    "date": "",
+    "machine": "",
+    "os": "",
+    "edition": "",
+    "version": "0.83.0",
+    "commit": "",
+    "reviewer": "",
+    "reviewDate": "",
+    "decision": ""
+  },
+  "results": {},
+  "scope": {
+    "liveTelephony": "deferred_not_homologated",
+    "productionApproved": false
+  }
+}
