@@ -56,4 +56,53 @@ if ($code -notmatch 'MainShell.RequestedTheme\s*=\s*ElementTheme.Light' -or
     $code -notmatch 'AutomationProperties.SetName\(ThemeToggle') {
     throw 'Theme toggle has no stateful theme/accessible label contract.'
 }
+# Readable compact UI must retain at least WCAG AA 4.5:1 text contrast.
+# This statically checks palette pairs; screenshots and accessibility audits
+# on a real Windows monitor are still required.
+function Get-LinearLuminance([string]$Raw) {
+    $hex=if($Raw -eq 'White') {'#FFFFFF'} else {$Raw}
+    if($hex -notmatch '^#[0-9a-fA-F]{6}
+) {
+        throw "Unrecognized theme color syntax"
+    }
+    $channels=@()
+    foreach($offset in @(1,3,5)) {
+        $channel=[Convert]::ToInt32($hex.Substring($offset,2),16)/255.0
+        $channels+=if($channel -le 0.04045) {
+            $channel/12.92
+        } else {
+            [Math]::Pow(($channel+0.055)/1.055,2.4)
+        }
+    }
+    return 0.2126*$channels[0]+0.7152*$channels[1]+0.0722*$channels[2]
+}
+function Get-Contrast([string]$Foreground,[string]$Background) {
+    $lightness=Get-LinearLuminance $Foreground
+    $darkness=Get-LinearLuminance $Background
+    if($darkness -gt $lightness) {
+        $temp=$lightness;$lightness=$darkness;$darkness=$temp
+    }
+    return ($lightness+0.05)/($darkness+0.05)
+}
+$contrastPairs=@(
+    @('AxvTitleBrush','AxvShellBrush'),
+    @('AxvSecondaryBrush','AxvShellBrush'),
+    @('AxvStatusTextBrush','AxvStatusBackgroundBrush'),
+    @('AxvStatusDetailBrush','AxvStatusBackgroundBrush'),
+    @('AxvInputTextBrush','AxvInputBrush'),
+    @('AxvKeyTextBrush','AxvKeyBackgroundBrush'),
+    @('AxvDetailsTitleBrush','AxvDetailsBackgroundBrush'),
+    @('AxvDetailsTextBrush','AxvDetailsBackgroundBrush')
+)
+foreach($variant in @('Light','Dark','Default')) {
+    foreach($pair in $contrastPairs) {
+        $foreground=$palettes[$variant][$pair[0]]
+        $background=$palettes[$variant][$pair[1]]
+        $ratio=Get-Contrast $foreground $background
+        if($ratio -lt 4.5) {
+            throw "Insufficient theme contrast: $variant/$($pair[0])/$($pair[1]) = $([Math]::Round($ratio,2)):1"
+        }
+    }
+}
+Write-Host "WinUI3 contrast contract: 8 text pairs x 3 themes satisfy 4.5:1 (static palette)."
 Write-Host "WinUI3 theme contract: $($references.Count) references, $($palettes.Count) palettes, PASS."
