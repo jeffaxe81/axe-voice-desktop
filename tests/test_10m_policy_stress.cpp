@@ -160,8 +160,8 @@ void dialpad(Rng& rng) {
         // keypad action; never allow any hidden SIP metacharacter.
         if((i&7)==0) {
             std::wstring destination(base.data(),len);
-            const bool allowed=(std::find(axv::dialpad_keys().begin(),
-                axv::dialpad_keys().end(),action)!=axv::dialpad_keys().end());
+            const auto keys=axv::dialpad_keys();
+            const bool allowed=std::find(keys.begin(),keys.end(),action)!=keys.end();
             const bool admitted=axv::dial_append(destination,action,limit);
             if(admitted!=(allowed && len<limit)||
                destination.size()!=len+(admitted?1:0))
