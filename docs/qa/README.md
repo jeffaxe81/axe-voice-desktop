@@ -50,3 +50,11 @@ A suíte de integridade CI executa também
 `tests/test_windows_qa_dashboard.py` e o script JavaScript isolado
 `tests/qa_dashboard_node_test.cjs`, com casos sintéticos, sem discagem SIP.
 
+
+### Baixar o kit ZIP no GitHub
+
+Na aba **Actions → AXE Voice Windows CI**, escolha a execução aprovada para o
+commit em teste. Em **Artifacts**, baixe `AXE-Voice-Windows-QA-Offline-Kit`.
+O ZIP contém os dois arquivos HTML, o exemplo de ficha JSON e este manual.
+Extraia no Windows e abra os HTML no Edge/Chrome. Não confunda esse kit de
+testes com o instalador nativo do softphone nem com a prévia sem motor SIP.
