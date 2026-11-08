@@ -33,6 +33,9 @@ jobs:
       - name: Executar testes de integridade (não testes SIP)
         run: python -m unittest discover -s tests -p 'test_*.py' -v
 
+      - name: Validar aceite de engenharia sem homologacao PBX real
+        run: python scripts/check_release_scope.py --output evidence/voice-release-scope-checked.json
+
       - name: Conferir 231 arquivos da importação original
         run: python scripts/verify_baseline.py --output evidence/voice-baseline-check.json
 
@@ -41,6 +44,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: axe-voice-static-baseline-${{ github.sha }}
-          path: evidence/voice-baseline-check.json
+          path: |
+            evidence/voice-baseline-check.json
+            evidence/voice-release-scope-checked.json
           if-no-files-found: error
           retention-days: 14

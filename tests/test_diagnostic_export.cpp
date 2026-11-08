@@ -5,6 +5,9 @@ int main(){
  const auto text=axv::format_diagnostic_export(state);
  if(text.find(L"0.83.0")==text.npos || text.find(L"Botao Chamar: disponivel na interface")==text.npos ||
     text.find(L"RTP/SRTP nao verificado")==text.npos || text.find(L"CHECKLIST PENDENTE")==text.npos)return 1;
+ if(text.find(L"ACEITE DE SOFTWARE:") == text.npos ||
+    text.find(L"HOMOLOGACAO EXTERNA:") == text.npos ||
+    text.find(L"PRODUCAO: BLOQUEADA") == text.npos) return 15;
  if(text.find(L"\r\n")==text.npos || text.find(L'\0')!=text.npos)return 2;
  for(std::size_t i=0;i<text.size();++i){
   if(text[i]==L'\n' && (!i || text[i-1]!=L'\r'))return 3;

@@ -4,6 +4,8 @@ Integração solicitada pelo titular. A main recebe o código dos PRs existentes
 
 # AXE Voice Desktop
 
+> **Escopo de entrega — 08/11/2026:** por decisão do titular, **registro/chamadas/áudio com PABX real estão adiados e não impedem a conclusão de engenharia do software**. A pendência continua visível no diagnóstico do aplicativo e no contrato `src/release_scope_policy.h`, com verificação em `config/release-scope.json`. **Não existe aprovação para produção** sem homologação em central/headset reais, compatibilidade de mídia/segurança, licenças e assinatura. Consultar [aceite separado de engenharia e produção](docs/release/ENTREGA-DE-ENGENHARIA-SEM-PBX-REAL.md).
+
 > **Status de integração — 25/10/2026:** a `main` inclui o candidato Win32/Baresip e instalador nativo. A build padrão continua sem SDK; use o pacote nativo candidato para validar telefonia. As verificações automatizadas de Windows/SDK/instalador não substituem o aceite na central Dígitro e com headset físico, mantido pendente. Consulte o [checklist atual](docs/RELEASE-CHECKLIST.md), o [roadmap](docs/ROADMAP.md) e os [critérios de promoção](docs/AXEVOICE-RELEASE-PROMOTION.md).
 
 Projeto para pesquisa, compilação, customização e evolução controlada de um softphone SIP desktop baseado no MicroSIP/PJSIP.

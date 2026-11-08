@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "release": "0.83.0",
+  "profile": "software_engineering_delivery",
+  "engineering_gates": [
+    "windows_build_and_ctest",
+    "upstream_integrity",
+    "native_sdk_abi_and_reactor",
+    "sip_loopback_1000",
+    "native_installer_acceptance",
+    "win32_compact_ui",
+    "winui3_lab_candidate",
+    "credentials_and_security_checks"
+  ],
+  "engineering_status": "evidence_required_per_commit",
+  "real_telephony": {
+    "status": "deferred_not_homologated",
+    "required_for_engineering_delivery": false,
+    "required_for_production": true,
+    "checks": [
+      "authorized_live_pbx_registration",
+      "live_incoming_and_outgoing_calls",
+      "live_bidirectional_rtp_and_headset",
+      "target_crypto_codec_nat_interoperability"
+    ]
+  },
+  "production": {
+    "approved": false,
+    "requires_physical_windows_and_headset": true,
+    "requires_licensing_review_and_signature": true,
+    "requires_live_telephony_acceptance": true
+  },
+  "excluded_future_features": [
+    234, 235, 236, 237, 238
+  ]
+}

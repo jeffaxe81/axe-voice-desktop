@@ -44,7 +44,8 @@ if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
 }
 
 Write-Host "AXE Voice compilado e testado: $binary"
-Write-Warning 'Este é um protótipo de interface. SIP, áudio RTP/SRTP e registro real ainda não estão integrados.'
+Write-Warning 'Build padrão somente visual, sem SDK SIP. Utilize o pacote nativo Baresip para testes autorizados.'
+Write-Warning 'Homologação de PBX e RTP reais não é critério da entrega de engenharia, mas continua exigida para produção.'
 if ($Run) {
     & $binary
     if ($LASTEXITCODE -ne 0) { throw "AXE Voice saiu com código $LASTEXITCODE." }
