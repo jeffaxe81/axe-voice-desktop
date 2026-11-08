@@ -10,6 +10,33 @@ Decisão do titular (08/11/2026): **desconsiderar o teste com a central real par
 
 Fonte operacional de verdade no código: `src/release_scope_policy.h`, com 256 combinações de gates de engenharia × 64 combinações de gates externos no teste `tests/test_release_scope_policy.cpp`. Contrato legível por máquina: `config/release-scope.json`. O diagnóstico F2 registra expressamente a diferença sem exibir dados da conta.
 
+## Certificado automático por commit (gate de release)
+
+O workflow `.github/workflows/engineering-release-gate.yml` executa quando o
+pipeline **AXE Voice native SDK smoke** encerra na `main`. Ele consulta somente
+metadados públicos/permitidos do GitHub Actions, sem usar credenciais SIP nem
+iniciar qualquer ligação, e confere que **quatro workflows** tiveram sucesso
+no **mesmo SHA**: Windows CI, integridade, WinUI 3 e SDK Baresip nativo.
+
+O certificado exige os oito gates listados em `config/release-scope.json`.
+Além de resultados `success`, verifica as etapas nativas de ABI/reactor, os
+1.000 registros SIP de loopback, testes locais de segurança, instalação/
+desinstalação e a presença de artefatos não expirados e não vazios dos
+instaladores Win32 e WinUI 3. Um build de outro commit, um pacote expirado
+ou uma etapa pulada **bloqueia** o certificado.
+
+A saída `AXE-Voice-Engineering-Acceptance-<SHA>` contém
+`engineering-release-exact-sha.json`, com status `approved` ou `blocked`,
+resultados de cada gate e links de evidências. Seu campo
+`production_approved` permanece **false** mesmo com 8/8 gates aprovados.
+Os testes da lógica estão em `tests/test_engineering_release_evidence.py`;
+o validador é `scripts/verify_engineering_release.py`.
+
+Os workflows nativo e WinUI 3 foram configurados para executar em **todos os
+pushes para `main`**, evitando aceitar um pacote gerado apenas em commit
+anterior. Em PRs, os filtros de arquivos permanecem para reduzir gasto de CI.
+**Não tratar 8/8 gates como teste visual presencial ou homologação física.**
+
 ## O que continua fora desta entrega
 
 - Nenhum teste automático de REGISTER, INVITE, RTP ou DTMF contra a conta/PABX de produção.

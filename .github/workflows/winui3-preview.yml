@@ -11,17 +11,10 @@ on:
       - ".github/workflows/winui3-preview.yml"
       - "scripts/check-winui3-theme.ps1"
       - "scripts/check-winui3-brand.ps1"
+  # Same-SHA software acceptance needs WinUI3 results on every main commit;
+  # PR builds remain path-filtered for contributor efficiency.
   push:
     branches: [main]
-    paths:
-      - "apps/winui3/**"
-      - "src/frontend_shared/**"
-      - "src/essential_call_actions.h"
-      - "src/sip_runtime_observation.h"
-      - "CMakeLists.txt"
-      - ".github/workflows/winui3-preview.yml"
-      - "scripts/check-winui3-theme.ps1"
-      - "scripts/check-winui3-brand.ps1"
   workflow_dispatch:
 permissions:
   contents: read
