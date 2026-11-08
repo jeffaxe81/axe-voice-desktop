@@ -16,5 +16,13 @@ int main() {
     // After content shrinks to fit, all offsets return to zero.
     if(clamp_scroll_offset(200,300,400)!=0) return 9;
     if(scroll_for_visible_range(0,900,400,-40,10,8)!=0) return 10;
+    // Integer-edge cases previously overflowed 32-bit arithmetic in scroll
+    // limits / bottom+margin / top-margin during live window resizing.
+    if (max_scroll_offset(2147483647,-2147483647)!=2147483647) return 11;
+    if (max_scroll_offset(-2147483647,2147483647)!=0) return 12;
+    if (max_scroll_offset(2147483647,1)!=2147483646) return 13;
+    if (scroll_for_visible_range(2147483647,2147483647,1,
+                                 -2147483647,2147483647,2147483647)<0) return 14;
+    if (clamp_scroll_offset(2147483647,2147483647,0)!=2147483647) return 15;
     return 0;
 }

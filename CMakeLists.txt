@@ -500,6 +500,14 @@ if(BUILD_TESTING)
   add_executable(test_ui_viewport_policy tests/test_ui_viewport_policy.cpp)
   target_compile_features(test_ui_viewport_policy PRIVATE cxx_std_17)
   add_test(NAME ui_viewport_policy COMMAND test_ui_viewport_policy)
+  # This dedicated stress executable is run ONCE per Windows CI workflow,
+  # outside CTest's 8-repeat quality suite; evidence records 10M real
+  # deterministic policy scenarios (not 10M native SIP registrations).
+  add_executable(axv_10m_policy_stress tests/test_10m_policy_stress.cpp)
+  target_compile_features(axv_10m_policy_stress PRIVATE cxx_std_17)
+  if(MSVC)
+    target_compile_options(axv_10m_policy_stress PRIVATE /utf-8 /W4)
+  endif()
   add_executable(test_ui_contrast_policy tests/test_ui_contrast_policy.cpp)
   target_compile_features(test_ui_contrast_policy PRIVATE cxx_std_17)
   add_test(NAME ui_contrast_policy COMMAND test_ui_contrast_policy)
