@@ -29,6 +29,8 @@ def fixture():
     jobs = {
         ids["windows"]: [success_job("build-and-test",
             "Build and test with project script",
+            "Run 10M deterministic policy scenarios (no live PBX)",
+            "Publish 10M scenario report",
             "Verify quality gates (unit, blackbox, integration)")],
         ids["baseline"]: [success_job("Integridade MicroSIP | 15 testes estáticos",
             "Executar testes de integridade (não testes SIP)",
@@ -74,6 +76,19 @@ class EngineeringDeliveryGateTests(unittest.TestCase):
         self.assertTrue(all(report["gates"].values()))
         self.assertFalse(report["production_approved"])
         self.assertEqual(report["external_live_telephony"], "deferred_not_homologated")
+
+    def test_missing_ten_million_stress_evidence_rejects_release(self):
+        runs, jobs, artifacts, _ = fixture()
+        artifacts[101] = [a for a in artifacts[101] if
+                          a["name"] != "AXE-Voice-Policy-10M-Results"]
+        self.assertFalse(self.check(runs, jobs, artifacts)["gates"]["windows_build_and_ctest"])
+
+    def test_skipped_stress_step_rejects_release(self):
+        runs, jobs, artifacts, _ = fixture()
+        for step in jobs[101][0]["steps"]:
+            if step["name"] == "Run 10M deterministic policy scenarios (no live PBX)":
+                step["conclusion"] = "skipped"
+        self.assertFalse(self.check(runs, jobs, artifacts)["gates"]["windows_build_and_ctest"])
 
     def test_missing_native_run_cannot_reuse_old_package(self):
         runs, jobs, artifacts, _ = fixture()
