@@ -25,4 +25,34 @@ if ($spec -notmatch '(?m)^PrivilegesRequired=lowest\s*$' -or
     $spec -notmatch '(?m)^UninstallDisplayIcon=\{app\}\\AXE-Voice\.exe\s*$') {
     throw 'Per-user installer or uninstall icon contract changed'
 }
+# The supported per-user installation must never mutate HKLM or silently
+# auto-run SIP registration. Verify URL click-to-call remains quoted and
+# limited to HKCU, while the shortcut remains opt-in.
+if($spec -notmatch '(?m)^AppId=AXEVoiceNativeCandidate\s*
+ -or
+   $spec -notmatch '(?m)^DefaultDirName=\{localappdata\}\\Programs\\AXEVoiceNativeCandidate\s*
+ -or
+   $spec -notmatch '(?m)^CloseApplications=no\s*
+) {
+    throw 'Native Win32 installer identity, isolation or close-app safety changed'
+}
+if($spec -match '(?mi)^Root:\s*HKLM' -or
+   $spec -notmatch '(?m)^Root:\s*HKCU;\s*Subkey:\s*"Software\\Classes\\axvoice";.*Flags:\s*uninsdeletekey\s*
+) {
+    throw 'Click-to-call protocol must be isolated to HKCU and removed on uninstall'
+}
+$run=[regex]::Match($spec,'(?ms)^\[Run\]\s*\r?\n(?<body>.*?)(?=^\[|\z)')
+if(!$run.Success -or
+   $run.Groups['body'].Value -notmatch '(?m)^Filename:\s*"\{app\}\\AXE-Voice\.exe";.*Flags:\s*nowait postinstall skipifsilent\s*
+) {
+    throw 'Win32 candidate must not auto-launch during silent installation'
+}
+if($spec -notmatch '(?m)^Root:\s*HKCU;\s*Subkey:\s*"Software\\Classes\\axvoice\\shell\\open\\command";') {
+    throw 'Expected per-user click-to-call command missing'
+}
+if($spec -match '(?m)^Uninstallable=no\s*
+) {
+    throw 'Win32 candidate must be uninstallable'
+}
+Write-Host 'Per-user protocol + explicit launch + reversible setup contract: PASS'
 Write-Host 'Native candidate optional Windows desktop shortcut contract: PASS'
