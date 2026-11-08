@@ -53,7 +53,7 @@ static class Tests
             dirty.Favorites.Add("1001");
             dirty.Favorites.Add("1002");
             dirty.Favorites.Add("1002");
-            dirty.Favorites.Add("bad\\nnumber");
+            dirty.Favorites.Add("bad\nnumber");
             dirty.Favorites.Add(new string('9',129));
             dirty.Favorites.Add("");
             for(int n=3;n<=18;++n)dirty.Favorites.Add((1000+n).ToString());
@@ -62,7 +62,7 @@ static class Tests
             Check(clean.Size==PreviewSizeMode.Compact,"invalid encrypted saved mode rejected");
             Check(clean.Favorites.Count==10,"encrypted favorite list revalidated and capped");
             Check(clean.Favorites[0]=="1001" && clean.Favorites[1]=="1002","unique destinations preserved");
-            Check(!clean.Favorites.Contains("bad\\nnumber") &&
+            Check(!clean.Favorites.Contains("bad\nnumber") &&
                   !clean.Favorites.Contains(new string('9',129)),"unsafe destinations discarded");
             // Bit flips to DPAPI ciphertext must revoke the whole profile,
             // not partially show favorite numbers or leak cleartext.
