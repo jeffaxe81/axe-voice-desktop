@@ -44,6 +44,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: axe-voice-static-baseline-${{ github.sha }}
-          path: evidence/voice-baseline-check.json
+          path: |
+            evidence/voice-baseline-check.json
+            evidence/voice-release-scope-checked.json
           if-no-files-found: error
           retention-days: 14
