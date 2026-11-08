@@ -20,6 +20,27 @@ jobs:
       - name: Build and test with project script
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-windows.ps1
+      - name: Run 10M deterministic policy scenarios (no live PBX)
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          $Exe = 'build/Release/axv_10m_policy_stress.exe'
+          if (!(Test-Path -LiteralPath $Exe -PathType Leaf)) { throw '10M policy test executable missing' }
+          & $Exe 'build/axe-voice-policy-10m.json'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $report = Get-Content -LiteralPath 'build/axe-voice-policy-10m.json' -Raw | ConvertFrom-Json
+          if ($report.executed_scenarios -ne 10000000 -or $report.failed_scenarios -ne 0 -or
+              $report.live_pbx_tested -ne $false -or $report.production_approved -ne $false) {
+            throw '10M synthetic policy evidence missing or inconsistent'
+          }
+          Write-Host '10,000,000 deterministic policy scenarios: approved; no production PBX tested.'
+      - name: Publish 10M scenario report
+        uses: actions/upload-artifact@v4
+        with:
+          name: AXE-Voice-Policy-10M-Results
+          path: build/axe-voice-policy-10m.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Verify quality gates (unit, blackbox, integration)
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/test-quality-gates.ps1
