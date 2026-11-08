@@ -86,5 +86,33 @@ int main() {
     CHECK(tls_cfg.config.find("sip_cafile C:/ca/trust.pem\n")!=std::string::npos);
     CHECK(tls_cfg.config.find("sip_listen")==std::string::npos);
     CHECK(tls_cfg.aor.find(":5061;transport=tls")!=std::string::npos);
+    // Length and label-edge cases are public parser contracts, not DNS
+    // resolution claims. Keep malformed hosts out of the native AOR.
+    const std::wstring label63(63,L'a'),label64(64,L'b');
+    const std::wstring host253=label63+L"."+label63+L"."+label63+L"."+std::wstring(61,L'c');
+    const std::wstring host254=label63+L"."+label63+L"."+label63+L"."+std::wstring(62,L'c');
+    CHECK(host253.size()==253 && host254.size()==254);
+    CHECK(axv::valid_sip_host(label63));
+    CHECK(!axv::valid_sip_host(label64));
+    CHECK(axv::valid_sip_host(host253));
+    CHECK(!axv::valid_sip_host(host254));
+    invalid.use_tls=false;invalid.port=5060;
+    invalid.server=host253;
+    CHECK(axv::native_account_config(invalid,L"").valid);
+    invalid.server=host254;
+    CHECK(!axv::native_account_config(invalid,L"").valid);
+    for(const std::wstring& malformed:std::initializer_list<std::wstring>{
+        L".pbx.example",L"pbx.example.",L"pbx..example",
+        L"-pbx.example",L"pbx-.example",L"pbx.example/extra",
+        L"pbx_example",L"pbx.example:5060"
+    }) {
+        invalid.server=malformed;
+        CHECK(!axv::native_account_config(invalid,L"").valid);
+    }
+    invalid.server=L"pbx.example";invalid.username=std::wstring(128,L'1');
+    CHECK(axv::native_account_config(invalid,L"").valid);
+    invalid.username.push_back(L'1');
+    CHECK(!axv::native_account_config(invalid,L"").valid);
 }
+
 
