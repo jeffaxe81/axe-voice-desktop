@@ -48,6 +48,18 @@ jobs:
         profile: [abi, tls-media]
     steps:
       - uses: actions/checkout@v4
+      - name: Parse native lab installer script before expensive SDK builds
+        if: matrix.profile == 'tls-media'
+        shell: pwsh
+        run: |
+          $Tokens = $null
+          $Errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'scripts/package-winui3-native-lab.ps1').Path,
+            [ref]$Tokens, [ref]$Errors
+          )
+          if (@($Errors).Count -gt 0) { throw "WinUI3 installer PowerShell syntax errors: $(@($Errors).Count)" }
+          Write-Host 'WinUI3 installer syntax: PASS'
       - uses: actions/cache/restore@v4
         id: sdk-cache
         with:
