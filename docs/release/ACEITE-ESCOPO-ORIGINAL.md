@@ -25,7 +25,7 @@ A conclusão de produção só pode ser afirmada quando TODOS os critérios abai
 | I. Rede/segurança media | UDP 5060, DNS, NAT/Contact, TLS/CA e SRTP quando exigido pela central | Exige PBX/rede de teste | NÃO HOMOLOGADO |
 | J. Entrega | Instalação limpa, atualização e rollback, assinatura/SmartScreen, licenças/BOM, aceite responsável | Exige Windows real e revisão legal | PENDENTE |
 
-**Percentual de conclusão do aplicativo:** não atribuir número sem verificar todos os gates. O marco existente de 80% em `docs/design/MARCO-80-ACEITE.md` mede **somente design**, não software pronto para produção.
+**Medição:** o percentual de engenharia depende exclusivamente dos oito gates do contrato de software, com evidência por SHA. Os gates externos desta tabela continuam necessários para produção e não devem reduzir a porcentagem de engenharia. O marco histórico de 80% em `docs/design/MARCO-80-ACEITE.md` mede **somente design**.
 
 ## Captura real do visual (Windows físico, sem envio automático)
 
