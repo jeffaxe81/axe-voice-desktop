@@ -1,6 +1,7 @@
 #pragma once
 #include "call_readiness.h"
 #include "native_security_status.h"
+#include "release_scope_policy.h"
 namespace axv {
 // Boolean-only input prevents account/destination/device values entering export.
 inline std::wstring format_diagnostic_export(const CallReadiness& state,const NativeSecurityStatus& security={}){
