@@ -1,0 +1,50 @@
+name: AXE Voice | aceite de engenharia por SHA
+# The native SDK completes last; verify all independent Windows, WinUI3,
+# integrity and native evidence for the EXACT SAME main SHA. No PBX contacted.
+on:
+  workflow_run:
+    workflows: ["AXE Voice native SDK smoke"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  engineering-acceptance:
+    name: Verificar 8 gates e publicar aceite de engenharia (sem PBX real)
+    # workflow_run can also be triggered by PR/other branch runs. Only accept
+    # completed push builds on the owned main branch, not forks or PR sources.
+    if: ${{ github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout trusted exact-main revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Python for read-only Actions evidence verification
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify offline evidence policy tests before evaluating release
+        run: python -m unittest discover -s tests -p 'test_engineering_release_evidence.py' -v
+      - name: Verify all 8 software gates, run SHA and real installers
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python scripts/verify_engineering_release.py \
+            --repository "${{ github.repository }}" \
+            --sha "${{ github.event.workflow_run.head_sha }}" \
+            --native-run-id "${{ github.event.workflow_run.id }}" \
+            --output evidence/engineering-release-exact-sha.json
+      - name: Publish engineering certificate or failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AXE-Voice-Engineering-Acceptance-${{ github.event.workflow_run.head_sha }}
+          path: evidence/engineering-release-exact-sha.json
+          if-no-files-found: warn
+          retention-days: 30
